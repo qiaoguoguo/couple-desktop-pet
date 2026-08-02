@@ -7,10 +7,12 @@ import {
   type BubbleState,
 } from "../bubble/bubbleStore";
 import {
+  listenForOpenSettings,
   readSettings as readDesktopSettings,
   resetWindowPosition,
   setAlwaysOnTop,
   setClickThrough,
+  startWindowDrag,
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
@@ -82,6 +84,29 @@ export function App() {
   }, [settings.clickThrough]);
 
   useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForOpenSettings(() => {
+      setSettingsOpen(true);
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+
+        unlisten = unsubscribe;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!bubble.visible) {
       return;
     }
@@ -143,6 +168,7 @@ export function App() {
   }, [settings.bubblesEnabled]);
 
   const handleDragStart = useCallback(() => {
+    runDesktopCommand(startWindowDrag);
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_STARTED", at: Date.now() }),
     );

@@ -86,6 +86,20 @@ describe("settings persistence", () => {
     await expect(loadSettings(api)).resolves.toEqual(defaultSettings);
   });
 
+  it("returns a fresh defaults object when reading settings fails", async () => {
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => {
+        throw new Error("settings missing");
+      },
+      writeSettings: async () => undefined,
+    };
+
+    const loadedSettings = await loadSettings(api);
+
+    expect(loadedSettings).toEqual(defaultSettings);
+    expect(loadedSettings).not.toBe(defaultSettings);
+  });
+
   it("falls back to defaults when persisted data is invalid", async () => {
     const api: SettingsPersistenceApi = {
       readSettings: async () => null,

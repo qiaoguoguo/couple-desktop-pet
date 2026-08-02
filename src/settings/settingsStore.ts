@@ -28,12 +28,12 @@ export async function loadSettings(
     const storedSettings = await api.readSettings();
 
     if (!isRecord(storedSettings)) {
-      return defaultSettings;
+      return mergeSettings({});
     }
 
     return mergeSettings(storedSettings as Partial<PetSettings>);
   } catch {
-    return defaultSettings;
+    return mergeSettings({});
   }
 }
 

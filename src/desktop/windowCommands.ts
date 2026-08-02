@@ -1,5 +1,10 @@
 import type { PetSettings } from "../settings/settingsTypes";
-import { invokeCommand } from "./desktopApi";
+import {
+  invokeCommand,
+  listenToDesktopEvent,
+  startCurrentWindowDrag,
+  type DesktopEventUnlisten,
+} from "./desktopApi";
 
 export function readSettings(): Promise<unknown> {
   return invokeCommand<unknown>("read_settings");
@@ -31,4 +36,14 @@ export function hideWindow(): Promise<void> {
 
 export function quitApp(): Promise<void> {
   return invokeCommand<void>("quit_app");
+}
+
+export function listenForOpenSettings(
+  handler: () => void,
+): Promise<DesktopEventUnlisten> {
+  return listenToDesktopEvent("open-settings", handler);
+}
+
+export function startWindowDrag(): Promise<void> {
+  return startCurrentWindowDrag();
 }

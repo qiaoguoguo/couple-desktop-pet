@@ -1,6 +1,12 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+
+const windowCommandsMock = vi.hoisted(() => ({
+  openSettingsHandler: undefined as (() => void) | undefined,
+  openSettingsUnlisten: vi.fn(),
+  startWindowDrag: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: vi.fn().mockResolvedValue({}),
@@ -8,10 +14,18 @@ vi.mock("../desktop/windowCommands", () => ({
   setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   setClickThrough: vi.fn().mockResolvedValue(undefined),
   resetWindowPosition: vi.fn().mockResolvedValue(undefined),
+  startWindowDrag: windowCommandsMock.startWindowDrag,
+  listenForOpenSettings: vi.fn((handler: () => void) => {
+    windowCommandsMock.openSettingsHandler = handler;
+    return Promise.resolve(windowCommandsMock.openSettingsUnlisten);
+  }),
 }));
 
 describe("App", () => {
   afterEach(() => {
+    windowCommandsMock.openSettingsHandler = undefined;
+    windowCommandsMock.openSettingsUnlisten.mockClear();
+    windowCommandsMock.startWindowDrag.mockClear();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -48,5 +62,33 @@ describe("App", () => {
     act(() => vi.advanceTimersByTime(1000));
 
     expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
+  });
+
+  it("opens settings when the desktop open-settings event is received", async () => {
+    render(<App />);
+
+    const settingsButton = screen.getByRole("button", { name: "设置" });
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("false");
+
+    await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("starts desktop window dragging when pet drag begins", () => {
+    const { container } = render(<App />);
+    const petStage = container.querySelector(".pixi-pet-stage");
+
+    if (!petStage) {
+      throw new Error("pet stage missing");
+    }
+
+    fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
+
+    expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
   });
 });
