@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PixiPetStage } from "./PixiPetStage";
+import { FramePetStage } from "./FramePetStage";
+import framePetStageSource from "./FramePetStage.tsx?raw";
 
 function renderStage() {
   const props = {
@@ -10,17 +11,17 @@ function renderStage() {
     onDragStart: vi.fn(),
     onDragEnd: vi.fn(),
   };
-  const view = render(<PixiPetStage {...props} />);
-  const stage = view.container.querySelector(".pixi-pet-stage");
+  const view = render(<FramePetStage {...props} />);
+  const stage = view.container.querySelector(".pet-frame-stage");
 
   if (!stage) {
-    throw new Error("PixiPetStage root missing");
+    throw new Error("FramePetStage root missing");
   }
 
   return { ...view, props, stage };
 }
 
-describe("PixiPetStage DOM frame rendering", () => {
+describe("FramePetStage DOM frame rendering", () => {
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -59,23 +60,14 @@ describe("PixiPetStage DOM frame rendering", () => {
   });
 });
 
-describe("PixiPetStage runtime dependencies", () => {
-  it("does not import PixiJS on the MVP render path", async () => {
-    const [{ readFile }, { join }] = await Promise.all([
-      import("node:fs/promises"),
-      import("node:path"),
-    ]);
-    const source = await readFile(
-      join(process.cwd(), "src/renderer/PixiPetStage.tsx"),
-      "utf8",
-    );
-
-    expect(source).not.toContain('import("pixi.js")');
-    expect(source).not.toContain('from "pixi.js"');
+describe("FramePetStage runtime dependencies", () => {
+  it("does not import PixiJS on the MVP render path", () => {
+    expect(framePetStageSource).not.toContain('import("pixi.js")');
+    expect(framePetStageSource).not.toContain('from "pixi.js"');
   });
 });
 
-describe("PixiPetStage pointer interactions", () => {
+describe("FramePetStage pointer interactions", () => {
   it("does not end dragging on ordinary hover leave", () => {
     const { props, stage } = renderStage();
 

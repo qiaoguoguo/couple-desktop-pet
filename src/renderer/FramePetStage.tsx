@@ -12,7 +12,7 @@ import type { PetActionName } from "../assets/builtInPetManifest";
 import { getFrameIndex } from "./animationPlayer";
 import { getActionDefinition, getFrameAssetUrl } from "./frameAtlas";
 
-interface PixiPetStageProps {
+interface FramePetStageProps {
   action: PetActionName;
   scale: number;
   onPetClick(): void;
@@ -29,13 +29,13 @@ const actionLabels: Record<PetActionName, string> = {
 };
 const dragClickThresholdPx = 4;
 
-export function PixiPetStage({
+export function FramePetStage({
   action,
   scale,
   onPetClick,
   onDragStart,
   onDragEnd,
-}: PixiPetStageProps) {
+}: FramePetStageProps) {
   const activePointerIdRef = useRef<number | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragMovedRef = useRef(false);
@@ -141,7 +141,7 @@ export function PixiPetStage({
 
   return (
     <div
-      className="pixi-pet-stage"
+      className="pet-frame-stage"
       data-action={action}
       style={stageStyle}
       onClick={handleClick}
@@ -170,22 +170,4 @@ export function PixiPetStage({
       ) : null}
     </div>
   );
-}
-
-export function calculateSpriteFitScale(
-  textureWidth: number,
-  textureHeight: number,
-  targetWidth: number,
-  targetHeight: number,
-): number {
-  if (
-    textureWidth <= 0 ||
-    textureHeight <= 0 ||
-    targetWidth <= 0 ||
-    targetHeight <= 0
-  ) {
-    return 1;
-  }
-
-  return Math.min(targetWidth / textureWidth, targetHeight / textureHeight);
 }

@@ -28,7 +28,7 @@ body {
   place-items: center;
 }
 
-.pixi-pet-stage {
+.pet-frame-stage {
   width: 256px;
   height: 320px;
   position: relative;
@@ -41,7 +41,7 @@ body {
   user-select: none;
 }
 
-.pixi-pet-stage:active {
+.pet-frame-stage:active {
   cursor: grabbing;
 }
 

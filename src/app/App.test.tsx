@@ -99,7 +99,7 @@ describe("App", () => {
 
   it("starts desktop window dragging when pet drag begins", () => {
     const { container } = render(<App />);
-    const petStage = container.querySelector(".pixi-pet-stage");
+    const petStage = container.querySelector(".pet-frame-stage");
 
     if (!petStage) {
       throw new Error("pet stage missing");

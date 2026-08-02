@@ -12,7 +12,7 @@
 
 ## 已确认决策
 
-- 技术栈：Tauri 2 + React + TypeScript + PixiJS。
+- 技术栈：Tauri 2 + React + TypeScript + DOM PNG 序列帧渲染。PixiJS/Live2D 作为后续可选渲染能力，不进入当前 MVP 运行路径。
 - 角色表现：第一版使用 2D 序列帧。
 - 养成系统：第一版不做心情、体力、亲密度、投喂、任务或道具。
 - 跨平台策略：Windows 优先验收，macOS/Linux 保持可运行设计。
@@ -96,7 +96,7 @@ src/
     petScheduler.ts
     petTypes.ts
   renderer/
-    PixiPetStage.tsx
+    FramePetStage.tsx
     animationPlayer.ts
     frameAtlas.ts
   bubble/
@@ -118,8 +118,8 @@ src-tauri/
 模块职责：
 
 - `desktop`：封装 Tauri 命令调用，不让 UI 组件直接依赖窗口 API。
-- `pet-core`：纯 TypeScript 状态机和调度逻辑，不依赖 React 或 PixiJS。
-- `renderer`：使用 PixiJS 播放当前动作帧。
+- `pet-core`：纯 TypeScript 状态机和调度逻辑，不依赖 React、DOM 或 Tauri。
+- `renderer`：在严格 CSP 下使用 DOM `<img>` 播放当前 PNG 动作帧，帧 URL 由内置 manifest 和 `frameAtlas` 提供。
 - `bubble`：显示点击反馈、提示和状态气泡。
 - `settings`：管理设置默认值、持久化和设置面板。
 - `assets`：保存第一版内置资源清单和动作配置。
@@ -210,11 +210,11 @@ Windows 是主要验收平台。macOS/Linux 的系统差异要通过封装层隔
 
 ## 错误处理
 
-- 资源加载失败时显示内置占位动作，不让应用白屏。
+- 资源加载失败时显示内置占位动作，不让应用白屏；正常路径只在 PNG 帧 URL 缺失或图片加载错误时进入占位。
 - 设置读取失败时回退默认设置，并保留错误日志。
 - 窗口命令失败时不崩溃，设置状态回滚到实际状态。
 - 自动移动边界异常时回退到屏幕安全区域。
-- PixiJS 初始化失败时显示简单 React 文本占位，方便开发定位。
+- 当前 MVP 不依赖运行时 PixiJS，避免在 Tauri 严格 CSP 下引入 `unsafe-eval` 风险。
 
 ## 测试和验证
 
@@ -260,7 +260,7 @@ Windows 是主要验收平台。macOS/Linux 的系统差异要通过封装层隔
 ## 风险和取舍
 
 - Tauri 的透明窗口、点击穿透和托盘能力在不同平台存在差异，第一版只承诺 Windows 优先验收。
-- PixiJS 渲染足够支持 2D 序列帧，但 Live2D 需要后续单独设计。
+- DOM PNG 序列帧足够支撑第一版 2D 动作展示，并保持严格 CSP；PixiJS 或 Live2D 需要后续单独设计和引入。
 - 固定内置资源能降低第一版复杂度，但后续资源包导入需要补格式校验和错误提示。
 - 不做安装包会降低第一版交付复杂度，但用户试用前仍需要开发环境。
 - 不做养成系统能保持底座清晰，但第一版玩法会偏基础。

@@ -31,7 +31,7 @@ import {
   transitionPetState,
   type PetState,
 } from "../pet-core/petStateMachine";
-import { PixiPetStage } from "../renderer/PixiPetStage";
+import { FramePetStage } from "../renderer/FramePetStage";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import {
   loadSettings,
@@ -311,7 +311,7 @@ export function App() {
         onContextMenu={handlePetContextMenu}
       >
         <BubbleLayer message={bubble.message} visible={bubble.visible} />
-        <PixiPetStage
+        <FramePetStage
           action={actionByState[petState.name]}
           scale={settings.scale}
           onPetClick={handlePetClick}
