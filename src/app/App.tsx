@@ -48,10 +48,10 @@ const contextMenuHeight = 148;
 const contextMenuMargin = 8;
 
 const actionByState: Record<PetState["name"], PetActionName> = {
-  idle: "idle",
+  idle: "idle-breathe",
   walking: "walk",
   dragging: "drag",
-  happy: "happy",
+  happy: "act-cute",
   sleeping: "sleep",
 };
 

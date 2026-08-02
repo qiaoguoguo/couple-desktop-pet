@@ -21,11 +21,18 @@ interface FramePetStageProps {
 }
 
 const actionLabels: Record<PetActionName, string> = {
-  idle: "待机",
+  "idle-breathe": "待机",
+  "idle-look": "张望",
+  "idle-stretch": "伸懒腰",
   walk: "散步",
   drag: "拖拽",
-  happy: "开心",
   sleep: "睡觉",
+  "act-cute": "撒娇",
+  "act-typing": "敲电脑",
+  "act-wave": "打招呼",
+  "act-hug": "求抱抱",
+  "act-pout": "生气",
+  "act-drowsy": "犯困",
 };
 const dragClickThresholdPx = 4;
 

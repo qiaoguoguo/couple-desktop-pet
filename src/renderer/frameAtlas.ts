@@ -1,4 +1,7 @@
-import { builtInPetManifest, type PetActionName } from "../assets/builtInPetManifest";
+import {
+  getActionDefinition as getBuiltInActionDefinition,
+  type PetActionName,
+} from "../assets/builtInPetManifest";
 
 const petFrameUrls = import.meta.glob<string>("../assets/pets/star-sleeper/*.png", {
   eager: true,
@@ -7,7 +10,7 @@ const petFrameUrls = import.meta.glob<string>("../assets/pets/star-sleeper/*.png
 });
 
 export function getActionDefinition(action: PetActionName) {
-  return builtInPetManifest.actions[action];
+  return getBuiltInActionDefinition(action);
 }
 
 export function getFrameAssetUrl(framePath: string): string | null {

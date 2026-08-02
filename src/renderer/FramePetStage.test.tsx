@@ -5,7 +5,7 @@ import framePetStageSource from "./FramePetStage.tsx?raw";
 
 function renderStage() {
   const props = {
-    action: "idle" as const,
+    action: "idle-breathe" as const,
     scale: 1,
     onPetClick: vi.fn(),
     onDragStart: vi.fn(),
@@ -52,7 +52,7 @@ describe("FramePetStage DOM frame rendering", () => {
       "idle-01",
     );
 
-    act(() => vi.advanceTimersByTime(200));
+    act(() => vi.advanceTimersByTime(400));
 
     expect(screen.getByRole("img", { name: "星星睡衣小星人" }).getAttribute("src")).toContain(
       "idle-02",

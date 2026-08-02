@@ -12,7 +12,8 @@ Generation boundary:
 - Keep future replacement assets first-party, clearly licensed, or explicitly documented.
 
 Current built-in package:
-- `pets/star-sleeper/`: 20 transparent 512x512 PNG animation frames referenced by `builtInPetManifest.ts`.
+- `pets/star-sleeper/`: transparent 512x512 PNG animation frames referenced by `builtInPetManifest.ts`.
+- The current manifest supports long idle and interaction action ids. During the transition, some long actions may temporarily reuse existing frames until the regenerated transparent PNG set is installed.
 
 ## Built-In Package Contract
 
