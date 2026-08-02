@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

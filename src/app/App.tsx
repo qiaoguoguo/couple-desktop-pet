@@ -321,7 +321,7 @@ export function App() {
       </section>
 
       <button
-        className="settings-toggle"
+        className={settingsOpen ? "settings-toggle is-visible" : "settings-toggle is-hidden"}
         type="button"
         aria-expanded={settingsOpen}
         aria-controls="settings-panel"

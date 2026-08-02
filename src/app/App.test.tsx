@@ -58,6 +58,14 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
   });
 
+  it("keeps the settings button visually hidden by default", async () => {
+    render(<App />);
+
+    const settingsButton = await screen.findByRole("button", { name: "设置" });
+
+    expect(settingsButton.className).toBe("settings-toggle is-hidden");
+  });
+
   it("shows a bubble when clicking the pet frame", async () => {
     render(<App />);
 
@@ -95,6 +103,7 @@ describe("App", () => {
     });
 
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(settingsButton.classList.contains("is-visible")).toBe(true);
   });
 
   it("starts desktop window dragging when pet drag begins", () => {

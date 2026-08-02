@@ -5,6 +5,9 @@
 - [x] `pnpm test` exits 0.
 - [x] `pnpm build` exits 0.
 - [ ] `pnpm tauri dev` opens a transparent undecorated desktop pet window.
+- [ ] Running `src-tauri\target\debug\couple-desktop-pet.exe` directly does not open a background console window.
+- [ ] Desktop pet window has no visible 1px square border or shadow around the transparent pet area.
+- [ ] Settings button is not shown as a persistent on-window control by default; settings can still be opened from the pet right-click menu or tray menu.
 - [ ] Desktop pet is always on top by default.
 - [ ] Desktop pet can be dragged and keeps a safe visible position.
 - [ ] Clicking the pet shows a happy action and bubble.
