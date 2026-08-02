@@ -13,9 +13,54 @@ body {
 .app-shell {
   width: 100vw;
   height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.pet-surface {
+  position: relative;
+  width: 320px;
+  height: 360px;
   display: grid;
   place-items: center;
-  background: transparent;
+}
+
+.pixi-pet-stage {
+  width: 256px;
+  height: 320px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  transform: scale(var(--pet-scale));
+  transform-origin: center bottom;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.pixi-pet-stage:active {
+  cursor: grabbing;
+}
+
+.pixi-canvas-host {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.pixi-canvas-host canvas {
+  width: 256px;
+  height: 320px;
+  display: block;
+}
+
+.pixi-canvas-host.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pet-dev-card {
@@ -23,6 +68,10 @@ body {
   justify-items: center;
   gap: 8px;
   user-select: none;
+}
+
+.pet-fallback-card {
+  pointer-events: none;
 }
 
 .pet-dev-face {
@@ -45,4 +94,98 @@ body {
   border-radius: 8px;
   background: rgb(255 255 255 / 0.78);
   font-size: 14px;
+}
+
+.bubble-layer {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 4;
+  min-width: 72px;
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 2px solid #4b2b1a;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 6px 16px rgb(75 43 26 / 0.14);
+  color: #2c1f18;
+  font-size: 14px;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.settings-toggle {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 8;
+  min-width: 56px;
+  height: 32px;
+  border: 1px solid rgb(75 43 26 / 0.32);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.86);
+  color: #2c1f18;
+  font-size: 13px;
+}
+
+.settings-dock {
+  position: absolute;
+  right: 12px;
+  bottom: 52px;
+  z-index: 7;
+  width: min(292px, calc(100vw - 24px));
+}
+
+.settings-dock.is-hidden {
+  display: none;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(75 43 26 / 0.22);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 12px 28px rgb(75 43 26 / 0.16);
+  font-size: 13px;
+}
+
+.settings-row,
+.settings-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-row-scale {
+  display: grid;
+  grid-template-columns: 42px 1fr 38px;
+}
+
+.settings-panel input[type="range"] {
+  width: 100%;
+}
+
+.settings-panel select {
+  width: 128px;
+}
+
+.settings-check {
+  justify-content: flex-start;
+}
+
+.settings-check input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.settings-reset {
+  height: 32px;
+  border: 1px solid rgb(75 43 26 / 0.28);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #2c1f18;
 }
