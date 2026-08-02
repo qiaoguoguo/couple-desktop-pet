@@ -224,6 +224,10 @@ export function App() {
     (patch: Partial<PetSettings>) => {
       const nextSettings = mergeSettings({ ...settings, ...patch });
 
+      if (patch.clickThrough === true && settingsOpen) {
+        setSettingsOpen(false);
+      }
+
       settingsRef.current = nextSettings;
       setSettings(nextSettings);
       persistSettings(nextSettings);
@@ -234,7 +238,7 @@ export function App() {
         }),
       );
     },
-    [persistSettings, settings],
+    [persistSettings, settings, settingsOpen],
   );
 
   const handlePetClick = useCallback(() => {

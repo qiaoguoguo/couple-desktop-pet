@@ -126,6 +126,9 @@ describe("App", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
     });
+    await waitFor(() =>
+      expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true),
+    );
     windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.writeSettings.mockClear();
 
@@ -136,6 +139,33 @@ describe("App", () => {
     expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
     expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
       expect.objectContaining({ clickThrough: false }),
+    );
+  });
+
+  it("closes the settings panel before enabling click-through from settings", async () => {
+    render(<App />);
+
+    const settingsButton = screen.getByRole("button", { name: "设置" });
+    fireEvent.click(settingsButton);
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
+
+    windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
+    fireEvent.click(screen.getByLabelText("点击穿透"));
+
+    await waitFor(() =>
+      expect(settingsButton.getAttribute("aria-expanded")).toBe("false"),
+    );
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ clickThrough: true }),
+      ),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true),
     );
   });
 
