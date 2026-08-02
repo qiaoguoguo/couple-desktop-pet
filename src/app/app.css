@@ -222,3 +222,34 @@ body {
   background: #fff1d8;
   outline: none;
 }
+
+.pet-interaction-menu {
+  position: absolute;
+  z-index: 9;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 4px;
+  width: 164px;
+  padding: 6px;
+  border: 1px solid rgb(75 43 26 / 0.26);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: 0 10px 24px rgb(75 43 26 / 0.16);
+}
+
+.pet-interaction-menu button {
+  height: 32px;
+  min-width: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #2c1f18;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pet-interaction-menu button:hover,
+.pet-interaction-menu button:focus-visible {
+  background: #ffe8bd;
+  outline: none;
+}
