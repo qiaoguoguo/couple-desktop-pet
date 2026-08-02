@@ -43,13 +43,18 @@ import type { PetSettings } from "../settings/settingsTypes";
 import {
   getActionDefinition,
   idleActionNames,
+  interactionOptions,
+  type InteractionActionName,
 } from "../assets/builtInPetManifest";
 import { selectNextIdleAction } from "../pet-core/idleActionSelector";
+import { InteractionMenu } from "../interaction/InteractionMenu";
 
 const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
 const contextMenuHeight = 148;
 const contextMenuMargin = 8;
+const interactionMenuWidth = 164;
+const interactionMenuHeight = 112;
 
 export function App() {
   const settingsApi = useMemo<SettingsPersistenceApi>(
@@ -67,6 +72,10 @@ export function App() {
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [interactionMenuPosition, setInteractionMenuPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
@@ -162,24 +171,33 @@ export function App() {
   }, [bubble.id, bubble.visible]);
 
   useEffect(() => {
-    if (!contextMenuPosition) {
+    if (!contextMenuPosition && !interactionMenuPosition) {
       return;
     }
 
     function handlePointerDown(event: globalThis.PointerEvent) {
+      const target = event.target instanceof Element ? event.target : null;
+
       if (
-        event.target instanceof Element &&
-        event.target.closest(".pet-context-menu")
+        target?.closest(".pet-context-menu") ||
+        target?.closest(".pet-interaction-menu")
       ) {
         return;
       }
 
-      setContextMenuPosition(null);
+      if (contextMenuPosition) {
+        setContextMenuPosition(null);
+      }
+
+      if (interactionMenuPosition && !target?.closest(".pet-frame-stage")) {
+        setInteractionMenuPosition(null);
+      }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setContextMenuPosition(null);
+        setInteractionMenuPosition(null);
       }
     }
 
@@ -190,7 +208,7 @@ export function App() {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [contextMenuPosition]);
+  }, [contextMenuPosition, interactionMenuPosition]);
 
   useEffect(() => {
     const schedulerTimer = window.setInterval(() => {
@@ -246,19 +264,38 @@ export function App() {
   );
 
   const handlePetClick = useCallback(() => {
+    if (settingsOpen) {
+      return;
+    }
+
+    setContextMenuPosition(null);
+    setInteractionMenuPosition((current) =>
+      current ? null : getInteractionMenuPosition(),
+    );
+  }, [settingsOpen]);
+
+  const handleInteractionSelect = useCallback((action: InteractionActionName) => {
+    const option = interactionOptions.find((candidate) => candidate.id === action);
+
+    setInteractionMenuPosition(null);
     setPetState((currentState) =>
-      transitionPetState(currentState, { type: "PET_CLICKED", at: Date.now() }),
+      transitionPetState(currentState, {
+        type: "INTERACTION_SELECTED",
+        action,
+        at: Date.now(),
+      }),
     );
 
-    if (settings.bubblesEnabled) {
-      setBubble(showBubble(bubbleMessage));
+    if (option && settingsRef.current.bubblesEnabled) {
+      setBubble(showBubble(option.bubble));
     }
-  }, [settings.bubblesEnabled]);
+  }, []);
 
   const handlePetContextMenu = useCallback((event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
 
+    setInteractionMenuPosition(null);
     setContextMenuPosition({
       x: clampMenuAxis(event.clientX, window.innerWidth, contextMenuWidth),
       y: clampMenuAxis(event.clientY, window.innerHeight, contextMenuHeight),
@@ -266,6 +303,8 @@ export function App() {
   }, []);
 
   const handleDragStart = useCallback(() => {
+    setInteractionMenuPosition(null);
+    setContextMenuPosition(null);
     runDesktopCommand(startWindowDrag);
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_STARTED", at: Date.now() }),
@@ -288,6 +327,7 @@ export function App() {
       return;
     }
 
+    setInteractionMenuPosition(null);
     openSettingsPanel();
   }, [openSettingsPanel, settingsOpen]);
 
@@ -375,6 +415,14 @@ export function App() {
           </button>
         </div>
       ) : null}
+
+      <InteractionMenu
+        open={Boolean(interactionMenuPosition)}
+        x={interactionMenuPosition?.x ?? 0}
+        y={interactionMenuPosition?.y ?? 0}
+        options={interactionOptions}
+        onSelect={handleInteractionSelect}
+      />
     </main>
   );
 }
@@ -391,4 +439,19 @@ function clampMenuAxis(position: number, viewportSize: number, menuSize: number)
   const max = Math.max(contextMenuMargin, viewportSize - menuSize - contextMenuMargin);
 
   return Math.min(Math.max(position, contextMenuMargin), max);
+}
+
+function getInteractionMenuPosition() {
+  return {
+    x: clampMenuAxis(
+      window.innerWidth / 2 - interactionMenuWidth / 2,
+      window.innerWidth,
+      interactionMenuWidth,
+    ),
+    y: clampMenuAxis(
+      window.innerHeight - interactionMenuHeight - 42,
+      window.innerHeight,
+      interactionMenuHeight,
+    ),
+  };
 }

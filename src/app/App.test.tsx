@@ -66,12 +66,23 @@ describe("App", () => {
     expect(settingsButton.className).toBe("settings-toggle is-hidden");
   });
 
-  it("shows a bubble when clicking the pet frame", async () => {
+  it("opens interaction options when clicking the pet", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "星星睡衣小星人" }));
 
-    expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
+    expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
+  });
+
+  it("selects an interaction, closes the menu, and shows the interaction bubble", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "星星睡衣小星人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
   });
 
   it("refreshes the hide timer when the same bubble is shown again", async () => {
@@ -81,13 +92,15 @@ describe("App", () => {
     const petFrame = screen.getByRole("img", { name: "星星睡衣小星人" });
 
     fireEvent.click(petFrame);
-    expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
+    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
 
     act(() => vi.advanceTimersByTime(1000));
     fireEvent.click(petFrame);
+    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
     act(() => vi.advanceTimersByTime(1000));
 
-    expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
+    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
   });
 
   it("opens settings when the desktop open-settings event is received", async () => {
@@ -201,6 +214,7 @@ describe("App", () => {
 
     expect(wasNotPrevented).toBe(false);
     expect(await screen.findByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
 
     fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
 
