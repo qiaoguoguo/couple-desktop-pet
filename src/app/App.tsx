@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleLayer } from "../bubble/BubbleLayer";
 import {
   createHiddenBubble,
@@ -8,6 +8,7 @@ import {
 } from "../bubble/bubbleStore";
 import {
   listenForOpenSettings,
+  moveWindowForAutoStep,
   readSettings as readDesktopSettings,
   resetWindowPosition,
   setAlwaysOnTop,
@@ -54,6 +55,7 @@ export function App() {
     createInitialPetState(Date.now()),
   );
   const [settings, setSettings] = useState<PetSettings>(() => mergeSettings({}));
+  const settingsRef = useRef(settings);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -84,11 +86,40 @@ export function App() {
   }, [settings.clickThrough]);
 
   useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const persistSettings = useCallback(
+    (nextSettings: PetSettings) => {
+      void saveSettings(settingsApi, nextSettings).catch(() => undefined);
+    },
+    [settingsApi],
+  );
+
+  const openSettingsPanel = useCallback(() => {
+    const currentSettings = settingsRef.current;
+
+    if (currentSettings.clickThrough) {
+      const nextSettings = mergeSettings({
+        ...currentSettings,
+        clickThrough: false,
+      });
+
+      settingsRef.current = nextSettings;
+      setSettings(nextSettings);
+      persistSettings(nextSettings);
+      runDesktopCommand(() => setClickThrough(false));
+    }
+
+    setSettingsOpen(true);
+  }, [persistSettings]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
     void listenForOpenSettings(() => {
-      setSettingsOpen(true);
+      openSettingsPanel();
     })
       .then((unsubscribe) => {
         if (disposed) {
@@ -104,7 +135,7 @@ export function App() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [openSettingsPanel]);
 
   useEffect(() => {
     if (!bubble.visible) {
@@ -127,24 +158,26 @@ export function App() {
           settings.autoMoveEnabled,
         );
 
-        return event ? transitionPetState(currentState, event) : currentState;
+        if (!event) {
+          return currentState;
+        }
+
+        if (event.type === "AUTO_MOVE_TICK") {
+          runDesktopCommand(() => moveWindowForAutoStep(settings.movementRange));
+        }
+
+        return transitionPetState(currentState, event);
       });
     }, 250);
 
     return () => window.clearInterval(schedulerTimer);
-  }, [settings.autoMoveEnabled]);
-
-  const persistSettings = useCallback(
-    (nextSettings: PetSettings) => {
-      void saveSettings(settingsApi, nextSettings).catch(() => undefined);
-    },
-    [settingsApi],
-  );
+  }, [settings.autoMoveEnabled, settings.movementRange]);
 
   const handleSettingsChange = useCallback(
     (patch: Partial<PetSettings>) => {
       const nextSettings = mergeSettings({ ...settings, ...patch });
 
+      settingsRef.current = nextSettings;
       setSettings(nextSettings);
       persistSettings(nextSettings);
       setPetState((currentState) =>
@@ -184,6 +217,15 @@ export function App() {
     runDesktopCommand(resetWindowPosition);
   }, []);
 
+  const handleSettingsToggle = useCallback(() => {
+    if (settingsOpen) {
+      setSettingsOpen(false);
+      return;
+    }
+
+    openSettingsPanel();
+  }, [openSettingsPanel, settingsOpen]);
+
   return (
     <main className="app-shell">
       <section className="pet-surface" aria-label="情侣桌宠 MVP">
@@ -202,7 +244,7 @@ export function App() {
         type="button"
         aria-expanded={settingsOpen}
         aria-controls="settings-panel"
-        onClick={() => setSettingsOpen((open) => !open)}
+        onClick={handleSettingsToggle}
       >
         设置
       </button>

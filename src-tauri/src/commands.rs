@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewWindo
 const MAIN_WINDOW_LABEL: &str = "main";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
+const AUTO_MOVE_STEP_X_PX: i32 = 96;
+const AUTO_MOVE_STEP_Y_PX: i32 = 48;
 
 #[tauri::command]
 pub fn ping() -> String {
@@ -51,6 +53,42 @@ pub fn reset_window_position(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn move_window_for_auto_step(app: AppHandle, movement_range: String) -> Result<(), String> {
+    let window = main_window(&app)?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| format!("failed to read current monitor: {error}"))?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or_else(|| "failed to find a visible monitor for auto movement".to_string())?;
+    let work_area = monitor.work_area();
+    let outer_position = window
+        .outer_position()
+        .map_err(|error| format!("failed to read main window position: {error}"))?;
+    let outer_size = window
+        .outer_size()
+        .map_err(|error| format!("failed to read main window size: {error}"))?;
+    let next_position = calculate_auto_move_position(
+        MovementRangeMode::from_value(&movement_range),
+        WorkArea {
+            x: work_area.position.x,
+            y: work_area.position.y,
+            width: work_area.size.width,
+            height: work_area.size.height,
+        },
+        WindowGeometry {
+            x: outer_position.x,
+            y: outer_position.y,
+            width: outer_size.width,
+            height: outer_size.height,
+        },
+    );
+
+    window
+        .set_position(next_position)
+        .map_err(|error| format!("failed to move main window for auto step: {error}"))
+}
+
+#[tauri::command]
 pub fn show_window(app: AppHandle) -> Result<(), String> {
     show_main_window(&app)
 }
@@ -83,7 +121,14 @@ pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 }
 
 pub fn emit_open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    show_main_window(app)?;
+    let window = main_window(app)?;
+    set_window_click_through(&window, false)?;
+    window
+        .show()
+        .map_err(|error| format!("failed to show main window: {error}"))?;
+    window
+        .set_focus()
+        .map_err(|error| format!("failed to focus main window: {error}"))?;
     app.emit("open-settings", ())
         .map_err(|error| format!("failed to emit open-settings: {error}"))
 }
@@ -156,6 +201,135 @@ fn reset_window_to_safe_position<R: Runtime>(window: &WebviewWindow<R>) -> Resul
         .map_err(|error| format!("failed to reset main window position: {error}"))
 }
 
+#[derive(Clone, Copy)]
+struct WorkArea {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Clone, Copy)]
+struct WindowGeometry {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[cfg(test)]
+type TestWorkArea = WorkArea;
+
+#[cfg(test)]
+type TestWindowGeometry = WindowGeometry;
+
+#[derive(Clone, Copy)]
+enum MovementRangeMode {
+    Bottom,
+    ActiveScreen,
+    Free,
+}
+
+impl MovementRangeMode {
+    fn from_value(value: &str) -> Self {
+        match value {
+            "active-screen" => Self::ActiveScreen,
+            "free" => Self::Free,
+            _ => Self::Bottom,
+        }
+    }
+}
+
+fn calculate_auto_move_position(
+    mode: MovementRangeMode,
+    work_area: WorkArea,
+    window: WindowGeometry,
+) -> PhysicalPosition<i32> {
+    let next_x = step_axis(
+        window.x,
+        work_area.x,
+        work_area.width,
+        window.width,
+        AUTO_MOVE_STEP_X_PX,
+    );
+
+    match mode {
+        MovementRangeMode::Bottom => PhysicalPosition::new(
+            next_x,
+            bottom_axis(work_area.y, work_area.height, window.height),
+        ),
+        MovementRangeMode::ActiveScreen => PhysicalPosition::new(
+            next_x,
+            clamp_axis(window.y, work_area.y, work_area.height, window.height),
+        ),
+        MovementRangeMode::Free => PhysicalPosition::new(
+            next_x,
+            step_axis(
+                window.y,
+                work_area.y,
+                work_area.height,
+                window.height,
+                AUTO_MOVE_STEP_Y_PX,
+            ),
+        ),
+    }
+}
+
+fn step_axis(
+    current: i32,
+    area_start: i32,
+    area_size: u32,
+    window_size: u32,
+    step: i32,
+) -> i32 {
+    let (min, max) = safe_axis_bounds(area_start, area_size, window_size);
+
+    if max < min {
+        return centered_axis(area_start, area_size, window_size);
+    }
+
+    let next = current + step;
+    if next > max || next < min {
+        min
+    } else {
+        next
+    }
+}
+
+fn clamp_axis(current: i32, area_start: i32, area_size: u32, window_size: u32) -> i32 {
+    let (min, max) = safe_axis_bounds(area_start, area_size, window_size);
+
+    if max < min {
+        return centered_axis(area_start, area_size, window_size);
+    }
+
+    current.clamp(min, max)
+}
+
+fn bottom_axis(area_start: i32, area_size: u32, window_size: u32) -> i32 {
+    let (min, max) = safe_axis_bounds(area_start, area_size, window_size);
+
+    if max < min {
+        return centered_axis(area_start, area_size, window_size);
+    }
+
+    max
+}
+
+fn safe_axis_bounds(area_start: i32, area_size: u32, window_size: u32) -> (i32, i32) {
+    let area_size = area_size as i32;
+    let window_size = window_size as i32;
+
+    (
+        area_start + SAFE_WINDOW_MARGIN_PX,
+        area_start + area_size - window_size - SAFE_WINDOW_MARGIN_PX,
+    )
+}
+
+fn centered_axis(area_start: i32, area_size: u32, window_size: u32) -> i32 {
+    area_start + ((area_size as i32 - window_size as i32) / 2).max(0)
+}
+
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn set_window_click_through<R: Runtime>(
     window: &WebviewWindow<R>,
@@ -207,6 +381,67 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
         assert_eq!(stored_settings, settings);
         let _ = fs::remove_dir_all(settings_path.parent().unwrap());
+    }
+
+    #[test]
+    fn bottom_auto_move_wraps_to_left_and_stays_near_bottom() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let window = TestWindowGeometry {
+            x: 700,
+            y: 120,
+            width: 100,
+            height: 120,
+        };
+
+        let position = calculate_auto_move_position(MovementRangeMode::Bottom, work_area, window);
+
+        assert_eq!(position, PhysicalPosition::new(24, 456));
+    }
+
+    #[test]
+    fn active_screen_auto_move_steps_x_and_keeps_current_y() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let window = TestWindowGeometry {
+            x: 100,
+            y: 222,
+            width: 100,
+            height: 120,
+        };
+
+        let position =
+            calculate_auto_move_position(MovementRangeMode::ActiveScreen, work_area, window);
+
+        assert_eq!(position, PhysicalPosition::new(196, 222));
+    }
+
+    #[test]
+    fn free_auto_move_steps_x_and_y_with_safe_wrap() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let window = TestWindowGeometry {
+            x: 630,
+            y: 440,
+            width: 100,
+            height: 120,
+        };
+
+        let position = calculate_auto_move_position(MovementRangeMode::Free, work_area, window);
+
+        assert_eq!(position, PhysicalPosition::new(24, 24));
     }
 
     fn unique_settings_path(label: &str) -> PathBuf {

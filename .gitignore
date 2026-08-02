@@ -12,6 +12,7 @@ vitest.config.d.ts
 
 # Tauri / Rust build output
 target/
+src-tauri/gen/
 
 # Local app data created while testing
 .local-data/

@@ -5,15 +5,20 @@ import { App } from "./App";
 const windowCommandsMock = vi.hoisted(() => ({
   openSettingsHandler: undefined as (() => void) | undefined,
   openSettingsUnlisten: vi.fn(),
+  moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
+  readSettings: vi.fn().mockResolvedValue({}),
+  setClickThrough: vi.fn().mockResolvedValue(undefined),
   startWindowDrag: vi.fn().mockResolvedValue(undefined),
+  writeSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../desktop/windowCommands", () => ({
-  readSettings: vi.fn().mockResolvedValue({}),
-  writeSettings: vi.fn().mockResolvedValue(undefined),
+  readSettings: windowCommandsMock.readSettings,
+  writeSettings: windowCommandsMock.writeSettings,
   setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
-  setClickThrough: vi.fn().mockResolvedValue(undefined),
+  setClickThrough: windowCommandsMock.setClickThrough,
   resetWindowPosition: vi.fn().mockResolvedValue(undefined),
+  moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
   startWindowDrag: windowCommandsMock.startWindowDrag,
   listenForOpenSettings: vi.fn((handler: () => void) => {
     windowCommandsMock.openSettingsHandler = handler;
@@ -25,7 +30,12 @@ describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
     windowCommandsMock.openSettingsUnlisten.mockClear();
+    windowCommandsMock.moveWindowForAutoStep.mockClear();
+    windowCommandsMock.readSettings.mockReset();
+    windowCommandsMock.readSettings.mockResolvedValue({});
+    windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.startWindowDrag.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -90,5 +100,40 @@ describe("App", () => {
     fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
 
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables and persists click-through before opening settings from the button", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
+    render(<App />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+    });
+    windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
+
+    const settingsButton = screen.getByRole("button", { name: "设置" });
+    fireEvent.click(settingsButton);
+
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ clickThrough: false }),
+    );
+  });
+
+  it("passes the current movement range to desktop auto movement", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    render(<App />);
+
+    act(() => {
+      fireEvent.change(screen.getByLabelText("活动范围"), {
+        target: { value: "free" },
+      });
+    });
+    act(() => vi.advanceTimersByTime(8000));
+
+    expect(windowCommandsMock.moveWindowForAutoStep).toHaveBeenCalledWith("free");
   });
 });

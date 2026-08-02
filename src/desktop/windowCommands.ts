@@ -1,4 +1,4 @@
-import type { PetSettings } from "../settings/settingsTypes";
+import type { MovementRange, PetSettings } from "../settings/settingsTypes";
 import {
   invokeCommand,
   listenToDesktopEvent,
@@ -24,6 +24,12 @@ export function setClickThrough(enabled: boolean): Promise<void> {
 
 export function resetWindowPosition(): Promise<void> {
   return invokeCommand<void>("reset_window_position");
+}
+
+export function moveWindowForAutoStep(
+  movementRange: MovementRange,
+): Promise<void> {
+  return invokeCommand<void>("move_window_for_auto_step", { movementRange });
 }
 
 export function showWindow(): Promise<void> {
