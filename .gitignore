@@ -16,6 +16,7 @@ src-tauri/gen/
 
 # Local app data created while testing
 .local-data/
+tmp/
 
 # Logs
 *.log
