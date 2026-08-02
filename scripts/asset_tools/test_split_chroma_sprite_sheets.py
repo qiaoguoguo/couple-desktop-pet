@@ -8,6 +8,7 @@ from PIL import Image
 
 from scripts.asset_tools.split_chroma_sprite_sheets import (
     assert_all_cells_have_components,
+    find_foreground_components,
     group_components_by_theoretical_cell,
     has_top_fragment_vertical_split,
     merge_component_bbox,
@@ -70,6 +71,35 @@ class SpriteSheetComponentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "idle-look-02, idle-look-03"):
             assert_all_cells_have_components("idle-look", groups)
+
+    def test_ignores_noisy_green_background_while_detecting_warm_subject(self) -> None:
+        sheet = Image.new("RGBA", (300, 600), KEY)
+        pixels = sheet.load()
+        for y in range(sheet.height):
+            for x in range(sheet.width):
+                pixels[x, y] = (
+                    (x + y) % 18,
+                    224 + ((x * 3 + y * 5) % 28),
+                    (x * 2 + y) % 20,
+                    255,
+                )
+        draw_rect(sheet, (22, 24, 78, 88))
+
+        components = find_foreground_components(
+            sheet,
+            min_component_pixels=1,
+        )
+        groups = group_components_by_theoretical_cell(
+            sheet,
+            columns=3,
+            rows=6,
+            min_component_pixels=1,
+        )
+
+        self.assertEqual(len(components), 1)
+        self.assertEqual(components[0].bbox, (22, 24, 78, 88))
+        self.assertEqual(len(groups[0]), 1)
+        self.assertTrue(all(not group for group in groups[1:]))
 
 
 class FrameValidationTests(unittest.TestCase):

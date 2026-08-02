@@ -48,6 +48,22 @@ def split_bounds(total: int, parts: int) -> list[tuple[int, int]]:
     ]
 
 
+def is_chroma_key_background_pixel(
+    pixel: tuple[int, int, int, int],
+    min_green: int = 120,
+    green_dominance: int = 24,
+) -> bool:
+    red, green, blue, alpha = pixel
+    if alpha == 0:
+        return True
+
+    return (
+        green >= min_green
+        and green - red >= green_dominance
+        and green - blue >= green_dominance
+    )
+
+
 def is_foreground_pixel(
     pixel: tuple[int, int, int, int],
     key_color: Color = (0, 255, 0),
@@ -56,11 +72,12 @@ def is_foreground_pixel(
     if pixel[3] == 0:
         return False
 
-    return max(
-        abs(pixel[0] - key_color[0]),
-        abs(pixel[1] - key_color[1]),
-        abs(pixel[2] - key_color[2]),
-    ) > tolerance
+    min_green = max(80, key_color[1] - 135)
+    return not is_chroma_key_background_pixel(
+        pixel,
+        min_green=min_green,
+        green_dominance=tolerance,
+    )
 
 
 def create_foreground_mask(
