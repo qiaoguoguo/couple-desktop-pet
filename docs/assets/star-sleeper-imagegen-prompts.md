@@ -2,11 +2,11 @@
 
 Reference image:
 
-`C:\Users\14567\AppData\Local\Temp\codex-clipboard-ecc24c2d-c87a-4d89-ae7d-0fffbcdfd58c.png`
+User-provided reference image from the conversation; not committed to the repository.
 
 Final asset directory:
 
-`C:\Users\14567\.codex\worktrees\6515\情侣桌宠\src\assets\pets\star-sleeper\`
+`src/assets/pets/star-sleeper/`
 
 Generation order:
 
@@ -17,7 +17,7 @@ Generation order:
 3. Generate one image per file, not a sprite sheet.
 4. Use a flat `#00ff00` chroma-key background. After generation, remove the chroma key locally and save a transparent PNG.
 
-Recommended output size before chroma removal: square, at least `1024x1024`. Final assets can be resized/cropped later to `256x320` transparent PNGs.
+Recommended output size before chroma removal: square, at least `1024x1024`. Final installed assets are 512x512 transparent PNGs.
 
 ## Shared Prompt
 
@@ -250,7 +250,7 @@ Validation checklist for every final PNG:
 
 Final files are installed in:
 
-`C:\Users\14567\.codex\worktrees\6515\情侣桌宠\src\assets\pets\star-sleeper\`
+`src/assets/pets/star-sleeper/`
 
 Local validation result on 2026-08-02:
 
