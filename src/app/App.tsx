@@ -40,20 +40,16 @@ import {
   type SettingsPersistenceApi,
 } from "../settings/settingsStore";
 import type { PetSettings } from "../settings/settingsTypes";
-import type { PetActionName } from "../assets/builtInPetManifest";
+import {
+  getActionDefinition,
+  idleActionNames,
+} from "../assets/builtInPetManifest";
+import { selectNextIdleAction } from "../pet-core/idleActionSelector";
 
 const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
 const contextMenuHeight = 148;
 const contextMenuMargin = 8;
-
-const actionByState: Record<PetState["name"], PetActionName> = {
-  idle: "idle-breathe",
-  walking: "walk",
-  dragging: "drag",
-  happy: "act-cute",
-  sleeping: "sleep",
-};
 
 export function App() {
   const settingsApi = useMemo<SettingsPersistenceApi>(
@@ -203,6 +199,7 @@ export function App() {
           currentState,
           Date.now(),
           settings.autoMoveEnabled,
+          getActionDefinition(currentState.action).durationMs,
         );
 
         if (!event) {
@@ -211,6 +208,13 @@ export function App() {
 
         if (event.type === "AUTO_MOVE_TICK") {
           runDesktopCommand(() => moveWindowForAutoStep(settings.movementRange));
+        }
+
+        if (event.type === "IDLE_ANIMATION_FINISHED") {
+          return transitionPetState(currentState, {
+            ...event,
+            action: selectNextIdleAction(currentState.idleHistory, idleActionNames),
+          });
         }
 
         return transitionPetState(currentState, event);
@@ -316,7 +320,7 @@ export function App() {
       >
         <BubbleLayer message={bubble.message} visible={bubble.visible} />
         <FramePetStage
-          action={actionByState[petState.name]}
+          action={petState.action}
           scale={settings.scale}
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}

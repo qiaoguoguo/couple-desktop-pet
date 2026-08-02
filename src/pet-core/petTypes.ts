@@ -1,23 +1,35 @@
-export type PetStateName = "idle" | "walking" | "dragging" | "happy" | "sleeping";
+import type {
+  IdleActionName,
+  InteractionActionName,
+  PetActionName,
+} from "../assets/builtInPetManifest";
 
-export type PetEventType =
-  | "APP_READY"
-  | "PET_CLICKED"
-  | "DRAG_STARTED"
-  | "DRAG_ENDED"
-  | "AUTO_MOVE_TICK"
-  | "IDLE_TIMEOUT"
-  | "SETTINGS_CHANGED"
-  | "ANIMATION_FINISHED";
+export type PetStateName =
+  | "idle"
+  | "walking"
+  | "dragging"
+  | "interacting"
+  | "sleeping";
+
+export type PetEvent =
+  | { type: "APP_READY"; at: number }
+  | { type: "PET_CLICKED"; at: number }
+  | { type: "DRAG_STARTED"; at: number }
+  | { type: "DRAG_ENDED"; at: number }
+  | { type: "AUTO_MOVE_TICK"; at: number }
+  | { type: "IDLE_TIMEOUT"; at: number }
+  | { type: "SETTINGS_CHANGED"; at: number }
+  | { type: "ANIMATION_FINISHED"; at: number }
+  | { type: "IDLE_ANIMATION_FINISHED"; action: IdleActionName; at: number }
+  | { type: "INTERACTION_SELECTED"; action: InteractionActionName; at: number };
+
+export type PetEventType = PetEvent["type"];
 
 export interface PetState {
   name: PetStateName;
+  action: PetActionName;
   enteredAt: number;
   lastInteractionAt: number;
   direction: -1 | 1;
-}
-
-export interface PetEvent {
-  type: PetEventType;
-  at: number;
+  idleHistory: readonly IdleActionName[];
 }
