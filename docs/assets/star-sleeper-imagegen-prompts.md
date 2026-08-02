@@ -19,9 +19,11 @@ The committed frames are first-party project-generated raster assets. They are n
 1. The main agent used Codex built-in Image Gen to generate twelve action sprite sheets.
 2. Each sprite sheet uses a 3 columns x 6 rows layout, exactly 18 frames per action.
 3. Every sheet uses a flat `#00ff00` chroma-key background with no floor plane, shadow, watermark, or text.
-4. The sheets were split locally with `scripts/asset_tools/split_chroma_sprite_sheets.py`.
-5. The splitting script calls Codex `remove_chroma_key.py` to remove the green background and writes transparent PNG frames.
-6. Final frame files are normalized to 512x512 transparent PNGs.
+4. The sheets are split locally with `scripts/asset_tools/split_chroma_sprite_sheets.py`.
+5. The splitting script detects non-`#00ff00` foreground components on the whole sheet before cropping.
+6. Each component is assigned to a theoretical 3x6 cell by its center point; multiple components in the same cell, such as props or motion accents, are merged into one frame bbox.
+7. The script renders only the components assigned to the target cell, adds padding, calls Codex `remove_chroma_key.py`, and writes transparent PNG frames.
+8. Final frame files are normalized to 512x512 transparent PNGs.
 
 Runtime manifest contract:
 - `durationMs`: 6000 for every action.
@@ -105,7 +107,9 @@ python scripts\asset_tools\split_chroma_sprite_sheets.py `
   --output-dir src\assets\pets\star-sleeper
 ```
 
-That script splits each 3x6 sheet, calls Codex `remove_chroma_key.py` with `#00ff00`, writes 512x512 transparent PNGs, and validates every output frame.
+That script detects foreground components across the whole source sheet, assigns components to theoretical cells by center point, merges all components in each cell, and renders only those components into the source crop before chroma-key removal. This avoids the earlier failure mode where a simple equal-grid crop could include the top or bottom of a neighboring row.
+
+The script calls Codex `remove_chroma_key.py` with `#00ff00`, writes 512x512 transparent PNGs, and validates every output frame. If any theoretical 3x6 cell has no detected foreground component, the script fails before overwriting output files and reports the missing action frame ids.
 
 Validation checks:
 - Every manifest frame exists.
@@ -114,8 +118,9 @@ Validation checks:
 - Alpha channel exists.
 - All four corners are transparent.
 - No frame is fully transparent or suspiciously small.
+- Alpha row projection does not show a top-edge fragment separated from a lower main body by a large transparent vertical gap.
 
-Final validation result:
-- 12 action sheets processed.
-- 216 manifest frames installed.
-- All installed manifest frames passed local transparent PNG validation.
+Current reprocessing status:
+- The component-based splitter is the required path for replacing installed long-animation frames.
+- The current staging `idle-look-sheet.png` source does not contain foreground components for `idle-look-16`, `idle-look-17`, and `idle-look-18`.
+- Regenerate or replace that source sheet before overwriting the installed `star-sleeper` package with a fresh 216-frame output set.
