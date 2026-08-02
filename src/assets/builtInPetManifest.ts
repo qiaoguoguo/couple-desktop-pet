@@ -54,54 +54,23 @@ export const interactionOptions = [
   { id: "act-drowsy", label: "困困打盹", bubble: "有点困啦。" },
 ] as const satisfies readonly PetInteractionOption[];
 
-const repeatFrames = (frames: readonly string[], count = 18) =>
-  Array.from({ length: count }, (_, index) => frames[index % frames.length]);
-
-const oldIdleFrames = [
-  "pets/star-sleeper/idle-01.png",
-  "pets/star-sleeper/idle-02.png",
-  "pets/star-sleeper/idle-03.png",
-  "pets/star-sleeper/idle-04.png",
-] as const;
-
-const oldWalkFrames = [
-  "pets/star-sleeper/walk-01.png",
-  "pets/star-sleeper/walk-02.png",
-  "pets/star-sleeper/walk-03.png",
-  "pets/star-sleeper/walk-04.png",
-  "pets/star-sleeper/walk-05.png",
-  "pets/star-sleeper/walk-06.png",
-] as const;
-
-const oldDragFrames = [
-  "pets/star-sleeper/drag-01.png",
-  "pets/star-sleeper/drag-02.png",
-] as const;
-
-const oldHappyFrames = [
-  "pets/star-sleeper/happy-01.png",
-  "pets/star-sleeper/happy-02.png",
-  "pets/star-sleeper/happy-03.png",
-  "pets/star-sleeper/happy-04.png",
-] as const;
-
-const oldSleepFrames = [
-  "pets/star-sleeper/sleep-01.png",
-  "pets/star-sleeper/sleep-02.png",
-  "pets/star-sleeper/sleep-03.png",
-  "pets/star-sleeper/sleep-04.png",
-] as const;
+const frameSequence = (action: PetActionName, count = 18) =>
+  Array.from(
+    { length: count },
+    (_, index) =>
+      `pets/star-sleeper/${action}-${String(index + 1).padStart(2, "0")}.png`,
+  );
 
 const longAction = (
   category: PetActionDefinition["category"],
-  frames: readonly string[],
+  action: PetActionName,
   loop: boolean,
 ): PetActionDefinition => ({
   fps: 3,
   loop,
   durationMs: 6000,
   category,
-  frames: repeatFrames(frames),
+  frames: frameSequence(action),
 });
 
 export const builtInPetManifest = {
@@ -109,18 +78,18 @@ export const builtInPetManifest = {
   name: "星星睡衣小星人",
   baseSize: { width: 256, height: 320 },
   actions: {
-    "idle-breathe": longAction("idle", oldIdleFrames, true),
-    "idle-look": longAction("idle", oldIdleFrames, true),
-    "idle-stretch": longAction("idle", oldHappyFrames, true),
-    walk: longAction("movement", oldWalkFrames, true),
-    drag: longAction("movement", oldDragFrames, true),
-    sleep: longAction("movement", oldSleepFrames, true),
-    "act-cute": longAction("interaction", oldHappyFrames, false),
-    "act-typing": longAction("interaction", oldHappyFrames, false),
-    "act-wave": longAction("interaction", oldHappyFrames, false),
-    "act-hug": longAction("interaction", oldHappyFrames, false),
-    "act-pout": longAction("interaction", oldHappyFrames, false),
-    "act-drowsy": longAction("interaction", oldSleepFrames, false),
+    "idle-breathe": longAction("idle", "idle-breathe", true),
+    "idle-look": longAction("idle", "idle-look", true),
+    "idle-stretch": longAction("idle", "idle-stretch", true),
+    walk: longAction("movement", "walk", true),
+    drag: longAction("movement", "drag", true),
+    sleep: longAction("movement", "sleep", true),
+    "act-cute": longAction("interaction", "act-cute", false),
+    "act-typing": longAction("interaction", "act-typing", false),
+    "act-wave": longAction("interaction", "act-wave", false),
+    "act-hug": longAction("interaction", "act-hug", false),
+    "act-pout": longAction("interaction", "act-pout", false),
+    "act-drowsy": longAction("interaction", "act-drowsy", false),
   },
 } as const satisfies BuiltInPetManifest;
 

@@ -246,15 +246,17 @@ Validation checklist for every final PNG:
 - Still readable at 128px height.
 - No clothing text or watermark.
 
-## Final Installed Assets
+## Historical Short-Frame Install Record
 
-Final files are installed in:
+These notes document the initial short-frame asset pass. The current long-animation package is installed in:
 
 `src/assets/pets/star-sleeper/`
 
 Local validation result on 2026-08-02:
 
-- Manifest references 20 unique `pets/star-sleeper/*.png` files.
-- All 20 referenced PNG files exist.
-- All 20 PNG files are 512x512 `RGBA` images with transparent corners.
+- The original short-frame pass produced 20 unique `pets/star-sleeper/*.png` files.
+- The original 20 referenced PNG files existed.
+- The original 20 PNG files were 512x512 `RGBA` images with transparent corners.
 - No opaque green-like chroma-key pixels were detected by the local Pillow validation script.
+
+Current long-animation frames are first-party project assets generated as 3 columns x 6 rows sprite sheets, split locally, chroma-key processed, and installed as 512x512 transparent PNGs under `src/assets/pets/star-sleeper/`.

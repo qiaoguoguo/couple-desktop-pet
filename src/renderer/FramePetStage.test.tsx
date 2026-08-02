@@ -32,7 +32,7 @@ describe("FramePetStage DOM frame rendering", () => {
 
     const frameImage = screen.getByRole("img", { name: "星星睡衣小星人" });
 
-    expect(frameImage.getAttribute("src")).toContain("idle-01");
+    expect(frameImage.getAttribute("src")).toContain("idle-breathe-01");
     expect(document.querySelector(".pet-fallback-card")).toBeNull();
   });
 
@@ -49,13 +49,13 @@ describe("FramePetStage DOM frame rendering", () => {
     renderStage();
 
     expect(screen.getByRole("img", { name: "星星睡衣小星人" }).getAttribute("src")).toContain(
-      "idle-01",
+      "idle-breathe-01",
     );
 
     act(() => vi.advanceTimersByTime(400));
 
     expect(screen.getByRole("img", { name: "星星睡衣小星人" }).getAttribute("src")).toContain(
-      "idle-02",
+      "idle-breathe-02",
     );
   });
 });

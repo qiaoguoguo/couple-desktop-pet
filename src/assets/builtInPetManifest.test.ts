@@ -4,9 +4,37 @@ import {
   idleActionNames,
   interactionOptions,
   type InteractionActionName,
+  type PetActionName,
 } from "./builtInPetManifest";
 
+const expectedActionNames = [
+  "idle-breathe",
+  "idle-look",
+  "idle-stretch",
+  "walk",
+  "drag",
+  "sleep",
+  "act-cute",
+  "act-typing",
+  "act-wave",
+  "act-hug",
+  "act-pout",
+  "act-drowsy",
+] as const satisfies readonly PetActionName[];
+
+const bundledFrameUrls = import.meta.glob<string>("./pets/star-sleeper/*.png", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
+
 describe("builtInPetManifest", () => {
+  it("defines the expected long animation action set", () => {
+    expect(Object.keys(builtInPetManifest.actions)).toEqual([
+      ...expectedActionNames,
+    ]);
+  });
+
   it("defines six single-click interaction options", () => {
     expect(interactionOptions.map((option) => option.id)).toEqual([
       "act-cute",
@@ -45,5 +73,30 @@ describe("builtInPetManifest", () => {
     expect(builtInPetManifest.actions["act-cute"].category).toBe(
       "interaction",
     );
+  });
+
+  it("uses eighteen generated PNG frames for every action", () => {
+    for (const actionId of expectedActionNames) {
+      const action = builtInPetManifest.actions[actionId];
+
+      expect(action.frames).toHaveLength(18);
+      expect(action.durationMs).toBe(6000);
+      expect(action.fps).toBe(3);
+
+      action.frames.forEach((frame, index) => {
+        const frameNumber = String(index + 1).padStart(2, "0");
+
+        expect(frame).toBe(`pets/star-sleeper/${actionId}-${frameNumber}.png`);
+      });
+    }
+  });
+
+  it("references only bundled PNG frame files", () => {
+    for (const action of Object.values(builtInPetManifest.actions)) {
+      for (const frame of action.frames) {
+        expect(frame.endsWith(".png")).toBe(true);
+        expect(bundledFrameUrls[`./${frame}`]).toBeTruthy();
+      }
+    }
   });
 });
