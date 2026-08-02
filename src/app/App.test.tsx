@@ -54,14 +54,14 @@ describe("App", () => {
     expect(
       await screen.findByRole("region", { name: "情侣桌宠 MVP" }),
     ).toBeTruthy();
-    expect(screen.getByLabelText("星星睡衣小星人开发占位")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "星星睡衣小星人" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
   });
 
-  it("shows a bubble when clicking the fallback pet", async () => {
+  it("shows a bubble when clicking the pet frame", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByLabelText("星星睡衣小星人开发占位"));
+    fireEvent.click(await screen.findByRole("img", { name: "星星睡衣小星人" }));
 
     expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
   });
@@ -70,13 +70,13 @@ describe("App", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    const fallbackPet = screen.getByLabelText("星星睡衣小星人开发占位");
+    const petFrame = screen.getByRole("img", { name: "星星睡衣小星人" });
 
-    fireEvent.click(fallbackPet);
+    fireEvent.click(petFrame);
     expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
 
     act(() => vi.advanceTimersByTime(1000));
-    fireEvent.click(fallbackPet);
+    fireEvent.click(petFrame);
     act(() => vi.advanceTimersByTime(1000));
 
     expect(screen.getByText("我在这里。").textContent).toBe("我在这里。");
@@ -147,7 +147,7 @@ describe("App", () => {
 
   it("opens the pet context menu with right-click and can open settings", async () => {
     render(<App />);
-    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
     const contextMenuEvent = new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -157,7 +157,7 @@ describe("App", () => {
 
     let wasNotPrevented = true;
     act(() => {
-      wasNotPrevented = fallbackPet.dispatchEvent(contextMenuEvent);
+      wasNotPrevented = petFrame.dispatchEvent(contextMenuEvent);
     });
 
     expect(wasNotPrevented).toBe(false);
@@ -170,26 +170,26 @@ describe("App", () => {
 
   it("routes pet context menu commands through the desktop facade", async () => {
     render(<App />);
-    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
 
-    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     fireEvent.click(screen.getByRole("menuitem", { name: "重置位置" }));
     expect(windowCommandsMock.resetWindowPosition).toHaveBeenCalledTimes(1);
 
-    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     fireEvent.click(screen.getByRole("menuitem", { name: "隐藏" }));
     expect(windowCommandsMock.hideWindow).toHaveBeenCalledTimes(1);
 
-    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     fireEvent.click(screen.getByRole("menuitem", { name: "退出" }));
     expect(windowCommandsMock.quitApp).toHaveBeenCalledTimes(1);
   });
 
   it("closes the pet context menu with Escape", async () => {
     render(<App />);
-    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
 
-    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     expect(screen.getByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
 
     fireEvent.keyDown(document, { key: "Escape" });

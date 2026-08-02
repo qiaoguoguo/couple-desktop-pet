@@ -8,8 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import type { Application, Sprite } from "pixi.js";
-import { builtInPetManifest, type PetActionName } from "../assets/builtInPetManifest";
+import type { PetActionName } from "../assets/builtInPetManifest";
 import { getFrameIndex } from "./animationPlayer";
 import { getActionDefinition, getFrameAssetUrl } from "./frameAtlas";
 
@@ -19,11 +18,6 @@ interface PixiPetStageProps {
   onPetClick(): void;
   onDragStart(): void;
   onDragEnd(): void;
-}
-
-interface PixiStageInstance {
-  app: Application;
-  sprite: Sprite;
 }
 
 const actionLabels: Record<PetActionName, string> = {
@@ -42,15 +36,12 @@ export function PixiPetStage({
   onDragStart,
   onDragEnd,
 }: PixiPetStageProps) {
-  const canvasHostRef = useRef<HTMLDivElement>(null);
-  const pixiStageRef = useRef<PixiStageInstance | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragMovedRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [pixiReady, setPixiReady] = useState(false);
-  const [textureReady, setTextureReady] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const actionDefinition = getActionDefinition(action);
 
   const currentFrameUrl = useMemo(() => {
@@ -77,99 +68,10 @@ export function PixiPetStage({
   }, []);
 
   useEffect(() => {
-    let disposed = false;
-    let app: Application | null = null;
+    setImageFailed(false);
+  }, [currentFrameUrl]);
 
-    async function initPixiStage() {
-      try {
-        const [{ Application: PixiApplication, Sprite: PixiSprite, Texture }] =
-          await Promise.all([import("pixi.js")]);
-        const host = canvasHostRef.current;
-
-        if (!host || disposed) {
-          return;
-        }
-
-        app = new PixiApplication();
-        await app.init({
-          width: builtInPetManifest.baseSize.width,
-          height: builtInPetManifest.baseSize.height,
-          backgroundAlpha: 0,
-          autoDensity: true,
-          resolution: Math.min(window.devicePixelRatio || 1, 2),
-        });
-
-        if (disposed) {
-          app.destroy({ removeView: true }, { children: true });
-          return;
-        }
-
-        const sprite = new PixiSprite(Texture.EMPTY);
-        sprite.anchor.set(0.5);
-        sprite.position.set(
-          builtInPetManifest.baseSize.width / 2,
-          builtInPetManifest.baseSize.height / 2,
-        );
-        app.stage.addChild(sprite);
-        host.replaceChildren(app.canvas);
-        pixiStageRef.current = { app, sprite };
-        setPixiReady(true);
-      } catch {
-        setPixiReady(false);
-        setTextureReady(false);
-      }
-    }
-
-    void initPixiStage();
-
-    return () => {
-      disposed = true;
-      pixiStageRef.current = null;
-      canvasHostRef.current?.replaceChildren();
-      app?.destroy({ removeView: true }, { children: true });
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-
-    async function loadFrame() {
-      if (!pixiStageRef.current || !currentFrameUrl) {
-        setTextureReady(false);
-        return;
-      }
-
-      try {
-        const { Assets } = await import("pixi.js");
-        const texture = await Assets.load(currentFrameUrl);
-
-        if (!disposed && pixiStageRef.current) {
-          pixiStageRef.current.sprite.texture = texture;
-          pixiStageRef.current.sprite.scale.set(
-            calculateSpriteFitScale(
-              texture.width,
-              texture.height,
-              builtInPetManifest.baseSize.width,
-              builtInPetManifest.baseSize.height,
-            ),
-          );
-          setTextureReady(true);
-        }
-      } catch {
-        if (!disposed) {
-          setTextureReady(false);
-        }
-      }
-    }
-
-    void loadFrame();
-
-    return () => {
-      disposed = true;
-    };
-  }, [currentFrameUrl, pixiReady]);
-
-  const showFallback = !pixiReady || !textureReady;
+  const showFallback = !currentFrameUrl || imageFailed;
   const stageStyle = { "--pet-scale": String(scale) } as CSSProperties;
   const finishDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -249,11 +151,15 @@ export function PixiPetStage({
       onPointerCancel={finishDrag}
       onPointerLeave={finishDrag}
     >
-      <div
-        ref={canvasHostRef}
-        className={showFallback ? "pixi-canvas-host is-hidden" : "pixi-canvas-host"}
-        aria-hidden={showFallback}
-      />
+      {currentFrameUrl && !imageFailed ? (
+        <img
+          className="pet-frame-image"
+          src={currentFrameUrl}
+          alt="星星睡衣小星人"
+          draggable={false}
+          onError={() => setImageFailed(true)}
+        />
+      ) : null}
       {showFallback ? (
         <div className="pet-dev-card pet-fallback-card" aria-label="星星睡衣小星人开发占位">
           <div className="pet-dev-face">
