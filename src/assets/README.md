@@ -13,3 +13,17 @@ Generation boundary:
 
 Current built-in package:
 - `pets/star-sleeper/`: 20 transparent 512x512 PNG animation frames referenced by `builtInPetManifest.ts`.
+
+## Built-In Package Contract
+
+Built-in pets are declared in `builtInPetManifest.ts`.
+
+The manifest defines:
+- `id`: stable pet package id.
+- `baseSize`: target render canvas size used by the renderer.
+- `actions`: named animation groups.
+- `fps`: playback speed for each action.
+- `loop`: whether an action repeats.
+- `frames`: repository-relative frame paths under `src/assets/`.
+
+The current loader resolves the `star-sleeper` built-in package from `src/assets/pets/star-sleeper/`. External resource import is intentionally out of scope for this MVP and should be added later as a separate resource system extension.

@@ -145,6 +145,14 @@ export function PixiPetStage({
 
         if (!disposed && pixiStageRef.current) {
           pixiStageRef.current.sprite.texture = texture;
+          pixiStageRef.current.sprite.scale.set(
+            calculateSpriteFitScale(
+              texture.width,
+              texture.height,
+              builtInPetManifest.baseSize.width,
+              builtInPetManifest.baseSize.height,
+            ),
+          );
           setTextureReady(true);
         }
       } catch {
@@ -256,4 +264,22 @@ export function PixiPetStage({
       ) : null}
     </div>
   );
+}
+
+export function calculateSpriteFitScale(
+  textureWidth: number,
+  textureHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+): number {
+  if (
+    textureWidth <= 0 ||
+    textureHeight <= 0 ||
+    targetWidth <= 0 ||
+    targetHeight <= 0
+  ) {
+    return 1;
+  }
+
+  return Math.min(targetWidth / textureWidth, targetHeight / textureHeight);
 }

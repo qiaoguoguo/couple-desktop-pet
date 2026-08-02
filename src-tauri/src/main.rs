@@ -5,6 +5,12 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             setup_tray(app)?;
+            if let Err(error) = commands::restore_saved_window_position(app.handle()) {
+                eprintln!("failed to restore saved window position: {error}");
+            }
+            if let Err(error) = commands::track_window_position(app.handle()) {
+                eprintln!("failed to track window position: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -7,6 +7,9 @@ const windowCommandsMock = vi.hoisted(() => ({
   openSettingsUnlisten: vi.fn(),
   moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
   readSettings: vi.fn().mockResolvedValue({}),
+  hideWindow: vi.fn().mockResolvedValue(undefined),
+  quitApp: vi.fn().mockResolvedValue(undefined),
+  resetWindowPosition: vi.fn().mockResolvedValue(undefined),
   setClickThrough: vi.fn().mockResolvedValue(undefined),
   startWindowDrag: vi.fn().mockResolvedValue(undefined),
   writeSettings: vi.fn().mockResolvedValue(undefined),
@@ -17,8 +20,10 @@ vi.mock("../desktop/windowCommands", () => ({
   writeSettings: windowCommandsMock.writeSettings,
   setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   setClickThrough: windowCommandsMock.setClickThrough,
-  resetWindowPosition: vi.fn().mockResolvedValue(undefined),
+  resetWindowPosition: windowCommandsMock.resetWindowPosition,
   moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
+  hideWindow: windowCommandsMock.hideWindow,
+  quitApp: windowCommandsMock.quitApp,
   startWindowDrag: windowCommandsMock.startWindowDrag,
   listenForOpenSettings: vi.fn((handler: () => void) => {
     windowCommandsMock.openSettingsHandler = handler;
@@ -33,6 +38,9 @@ describe("App", () => {
     windowCommandsMock.moveWindowForAutoStep.mockClear();
     windowCommandsMock.readSettings.mockReset();
     windowCommandsMock.readSettings.mockResolvedValue({});
+    windowCommandsMock.hideWindow.mockClear();
+    windowCommandsMock.quitApp.mockClear();
+    windowCommandsMock.resetWindowPosition.mockClear();
     windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.startWindowDrag.mockClear();
     windowCommandsMock.writeSettings.mockClear();
@@ -135,5 +143,57 @@ describe("App", () => {
     act(() => vi.advanceTimersByTime(8000));
 
     expect(windowCommandsMock.moveWindowForAutoStep).toHaveBeenCalledWith("free");
+  });
+
+  it("opens the pet context menu with right-click and can open settings", async () => {
+    render(<App />);
+    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 50,
+    });
+
+    let wasNotPrevented = true;
+    act(() => {
+      wasNotPrevented = fallbackPet.dispatchEvent(contextMenuEvent);
+    });
+
+    expect(wasNotPrevented).toBe(false);
+    expect(await screen.findByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+
+    expect(screen.getByRole("button", { name: "设置" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("routes pet context menu commands through the desktop facade", async () => {
+    render(<App />);
+    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+
+    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "重置位置" }));
+    expect(windowCommandsMock.resetWindowPosition).toHaveBeenCalledTimes(1);
+
+    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "隐藏" }));
+    expect(windowCommandsMock.hideWindow).toHaveBeenCalledTimes(1);
+
+    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "退出" }));
+    expect(windowCommandsMock.quitApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the pet context menu with Escape", async () => {
+    render(<App />);
+    const fallbackPet = await screen.findByLabelText("星星睡衣小星人开发占位");
+
+    fireEvent.contextMenu(fallbackPet, { clientX: 48, clientY: 52 });
+    expect(screen.getByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
   });
 });

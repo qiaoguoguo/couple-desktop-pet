@@ -19,5 +19,6 @@
 - `pnpm tauri dev` is a long-running interactive process, so GUI verification was not run in this automated coding pass.
 - `pnpm tauri --version` exits 0 with `tauri-cli 2.11.4`.
 - `cargo check` exits 0 when run through VsDevCmd with Cargo on PATH.
-- `cargo test` exits 0 for the Rust settings persistence helpers: 2 passed.
-- Task 5 action-frame PNG generation remains blocked outside this task; the app keeps the existing renderer fallback.
+- `cargo test` exits 0 for the Rust settings persistence, window position, and auto-move helpers: 8 passed.
+- `pnpm tauri build --debug` exits 0 when run through VsDevCmd with Cargo on PATH.
+- Task 5 generated and installed 20 transparent PNG action frames; `pnpm build` bundles those assets.

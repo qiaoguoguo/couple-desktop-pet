@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { BubbleLayer } from "../bubble/BubbleLayer";
 import {
   createHiddenBubble,
@@ -7,8 +14,10 @@ import {
   type BubbleState,
 } from "../bubble/bubbleStore";
 import {
+  hideWindow,
   listenForOpenSettings,
   moveWindowForAutoStep,
+  quitApp,
   readSettings as readDesktopSettings,
   resetWindowPosition,
   setAlwaysOnTop,
@@ -34,6 +43,9 @@ import type { PetSettings } from "../settings/settingsTypes";
 import type { PetActionName } from "../assets/builtInPetManifest";
 
 const bubbleMessage = "我在这里。";
+const contextMenuWidth = 132;
+const contextMenuHeight = 148;
+const contextMenuMargin = 8;
 
 const actionByState: Record<PetState["name"], PetActionName> = {
   idle: "idle",
@@ -58,6 +70,10 @@ export function App() {
   const settingsRef = useRef(settings);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -150,6 +166,37 @@ export function App() {
   }, [bubble.id, bubble.visible]);
 
   useEffect(() => {
+    if (!contextMenuPosition) {
+      return;
+    }
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".pet-context-menu")
+      ) {
+        return;
+      }
+
+      setContextMenuPosition(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenuPosition(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenuPosition]);
+
+  useEffect(() => {
     const schedulerTimer = window.setInterval(() => {
       setPetState((currentState) => {
         const event = getNextScheduledEvent(
@@ -200,6 +247,16 @@ export function App() {
     }
   }, [settings.bubblesEnabled]);
 
+  const handlePetContextMenu = useCallback((event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setContextMenuPosition({
+      x: clampMenuAxis(event.clientX, window.innerWidth, contextMenuWidth),
+      y: clampMenuAxis(event.clientY, window.innerHeight, contextMenuHeight),
+    });
+  }, []);
+
   const handleDragStart = useCallback(() => {
     runDesktopCommand(startWindowDrag);
     setPetState((currentState) =>
@@ -226,9 +283,33 @@ export function App() {
     openSettingsPanel();
   }, [openSettingsPanel, settingsOpen]);
 
+  const handleContextSettings = useCallback(() => {
+    setContextMenuPosition(null);
+    openSettingsPanel();
+  }, [openSettingsPanel]);
+
+  const handleContextResetPosition = useCallback(() => {
+    setContextMenuPosition(null);
+    handleResetPosition();
+  }, [handleResetPosition]);
+
+  const handleContextHide = useCallback(() => {
+    setContextMenuPosition(null);
+    runDesktopCommand(hideWindow);
+  }, []);
+
+  const handleContextQuit = useCallback(() => {
+    setContextMenuPosition(null);
+    runDesktopCommand(quitApp);
+  }, []);
+
   return (
     <main className="app-shell">
-      <section className="pet-surface" aria-label="情侣桌宠 MVP">
+      <section
+        className="pet-surface"
+        aria-label="情侣桌宠 MVP"
+        onContextMenu={handlePetContextMenu}
+      >
         <BubbleLayer message={bubble.message} visible={bubble.visible} />
         <PixiPetStage
           action={actionByState[petState.name]}
@@ -256,6 +337,36 @@ export function App() {
           onResetPosition={handleResetPosition}
         />
       </div>
+
+      {contextMenuPosition ? (
+        <div
+          className="pet-context-menu"
+          role="menu"
+          aria-label="桌宠菜单"
+          style={{
+            left: contextMenuPosition.x,
+            top: contextMenuPosition.y,
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" role="menuitem" onClick={handleContextSettings}>
+            设置
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleContextResetPosition}
+          >
+            重置位置
+          </button>
+          <button type="button" role="menuitem" onClick={handleContextHide}>
+            隐藏
+          </button>
+          <button type="button" role="menuitem" onClick={handleContextQuit}>
+            退出
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -266,4 +377,10 @@ function runDesktopCommand(command: () => Promise<void>) {
   } catch {
     // Desktop commands are stubbed in browser-only development until Task 6.
   }
+}
+
+function clampMenuAxis(position: number, viewportSize: number, menuSize: number) {
+  const max = Math.max(contextMenuMargin, viewportSize - menuSize - contextMenuMargin);
+
+  return Math.min(Math.max(position, contextMenuMargin), max);
 }
