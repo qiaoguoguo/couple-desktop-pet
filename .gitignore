@@ -4,9 +4,22 @@ node_modules/
 # Frontend build output
 dist/
 build/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+vitest.config.js
+vitest.config.d.ts
 
 # Tauri / Rust build output
 target/
+
+# Tauri generated icons and temporary bundles
+src-tauri/icons/icon.ico
+src-tauri/icons/icon.icns
+src-tauri/icons/*.png
+
+# Local app data created while testing
+.local-data/
 
 # Logs
 *.log
