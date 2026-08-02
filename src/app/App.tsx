@@ -91,7 +91,7 @@ export function App() {
     }, 1800);
 
     return () => window.clearTimeout(hideTimer);
-  }, [bubble.visible, bubble.message]);
+  }, [bubble.id, bubble.visible]);
 
   useEffect(() => {
     const schedulerTimer = window.setInterval(() => {

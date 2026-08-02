@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import type { Application, Sprite } from "pixi.js";
 import { builtInPetManifest, type PetActionName } from "../assets/builtInPetManifest";
 import { getFrameIndex } from "./animationPlayer";
@@ -24,6 +33,7 @@ const actionLabels: Record<PetActionName, string> = {
   happy: "开心",
   sleep: "睡觉",
 };
+const dragClickThresholdPx = 4;
 
 export function PixiPetStage({
   action,
@@ -34,6 +44,10 @@ export function PixiPetStage({
 }: PixiPetStageProps) {
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const pixiStageRef = useRef<PixiStageInstance | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragMovedRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [pixiReady, setPixiReady] = useState(false);
   const [textureReady, setTextureReady] = useState(false);
@@ -149,17 +163,83 @@ export function PixiPetStage({
 
   const showFallback = !pixiReady || !textureReady;
   const stageStyle = { "--pet-scale": String(scale) } as CSSProperties;
+  const finishDrag = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (activePointerIdRef.current !== event.pointerId) {
+        return;
+      }
+
+      if (dragMovedRef.current) {
+        suppressNextClickRef.current = true;
+      }
+
+      activePointerIdRef.current = null;
+      pointerStartRef.current = null;
+      dragMovedRef.current = false;
+
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      onDragEnd();
+    },
+    [onDragEnd],
+  );
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (activePointerIdRef.current !== null) {
+        return;
+      }
+
+      activePointerIdRef.current = event.pointerId;
+      pointerStartRef.current = { x: event.clientX, y: event.clientY };
+      dragMovedRef.current = false;
+      suppressNextClickRef.current = false;
+
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      onDragStart();
+    },
+    [onDragStart],
+  );
+  const handlePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const pointerStart = pointerStartRef.current;
+
+    if (activePointerIdRef.current !== event.pointerId || !pointerStart) {
+      return;
+    }
+
+    const deltaX = event.clientX - pointerStart.x;
+    const deltaY = event.clientY - pointerStart.y;
+
+    if (Math.hypot(deltaX, deltaY) > dragClickThresholdPx) {
+      dragMovedRef.current = true;
+    }
+  }, []);
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      onPetClick();
+    },
+    [onPetClick],
+  );
 
   return (
     <div
       className="pixi-pet-stage"
       data-action={action}
       style={stageStyle}
-      onClick={onPetClick}
-      onPointerDown={onDragStart}
-      onPointerUp={onDragEnd}
-      onPointerCancel={onDragEnd}
-      onPointerLeave={onDragEnd}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onPointerLeave={finishDrag}
     >
       <div
         ref={canvasHostRef}
