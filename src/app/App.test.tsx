@@ -64,6 +64,23 @@ const realtimeSyncMock = vi.hoisted(() => {
   return mock;
 });
 
+const relayHttpClientMock = vi.hoisted(() => {
+  const mock = {
+    acceptPairCode: vi.fn(),
+    createPairCode: vi.fn(),
+    getPairCodeStatus: vi.fn(),
+    constructor: vi.fn(function RelayHttpClientMock() {
+      return {
+        acceptPairCode: mock.acceptPairCode,
+        createPairCode: mock.createPairCode,
+        getPairCodeStatus: mock.getPairCodeStatus,
+      };
+    }),
+  };
+
+  return mock;
+});
+
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
   writeSettings: windowCommandsMock.writeSettings,
@@ -82,6 +99,10 @@ vi.mock("../desktop/windowCommands", () => ({
 
 vi.mock("../sync/useRealtimeSync", () => ({
   useRealtimeSync: realtimeSyncMock.useRealtimeSync,
+}));
+
+vi.mock("../sync/relayHttpClient", () => ({
+  RelayHttpClient: relayHttpClientMock.constructor,
 }));
 
 describe("App", () => {
@@ -103,6 +124,10 @@ describe("App", () => {
     realtimeSyncMock.state.peerPresence = "unknown";
     realtimeSyncMock.state.lastError = null;
     realtimeSyncMock.useRealtimeSync.mockClear();
+    relayHttpClientMock.acceptPairCode.mockReset();
+    relayHttpClientMock.createPairCode.mockReset();
+    relayHttpClientMock.getPairCodeStatus.mockReset();
+    relayHttpClientMock.constructor.mockClear();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -329,6 +354,70 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("polls a generated pair code and stores the accepted pair for the creator", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-03T12:00:00.000Z"));
+    relayHttpClientMock.createPairCode.mockResolvedValueOnce({
+      ok: true,
+      code: "123456",
+      expiresAt: "2026-08-03T12:10:00.000Z",
+    });
+    relayHttpClientMock.getPairCodeStatus.mockResolvedValueOnce({
+      ok: true,
+      status: "paired",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
+      true,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("等待对方输入绑定码")).toBeTruthy();
+    expect(screen.getByLabelText("当前绑定码").textContent).toBe("123456");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(relayHttpClientMock.getPairCodeStatus).toHaveBeenCalledWith({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      code: "123456",
+    });
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync: expect.objectContaining({
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }),
+      }),
+    );
+    expect(screen.queryByLabelText("当前绑定码")).toBeNull();
+    expect(screen.getByText("已绑定")).toBeTruthy();
   });
 
   it("passes the current movement range to desktop auto movement", () => {

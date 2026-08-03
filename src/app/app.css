@@ -262,6 +262,11 @@ body {
   letter-spacing: 0;
 }
 
+.sync-pair-status {
+  color: #6d4c36;
+  font-size: 12px;
+}
+
 .sync-message-list {
   display: grid;
   gap: 4px;

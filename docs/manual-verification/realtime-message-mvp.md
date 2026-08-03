@@ -36,19 +36,23 @@ pnpm tauri dev
    cross-host LAN testing, enter the relay host LAN URL, for example
    `http://192.168.1.47:8787`; `127.0.0.1` only points to the current machine.
 4. Click `生成绑定码`.
-5. Open settings on client B.
-6. Enable remote interaction.
-7. Enter A's code and click `绑定`.
-8. Confirm both clients show paired state.
-9. Confirm both clients show peer online after WebSocket auth.
-10. Send `想你啦` from A.
-11. Confirm B shows `想你啦` in current-session history.
-12. Confirm B shows a pet bubble with `想你啦` when bubbles are enabled.
-13. Close B and confirm A changes peer presence to offline.
-14. Restart relay and confirm the pair remains valid after both clients reconnect.
+5. Confirm client A shows the generated code and `等待对方输入绑定码`.
+6. Open settings on client B.
+7. Enable remote interaction.
+8. Enter A's code and click `绑定`.
+9. Confirm client B shows paired state immediately.
+10. Confirm client A changes from waiting to `已绑定` automatically without generating another code.
+11. Confirm both clients show peer online after WebSocket auth.
+12. Send `想你啦` from A.
+13. Confirm B shows `想你啦` in current-session history.
+14. Confirm B shows a pet bubble with `想你啦` when bubbles are enabled.
+15. Close B and confirm A changes peer presence to offline.
+16. Restart relay and confirm the pair remains valid after both clients reconnect.
 
 ## Expected Data Behavior
 
 - `server/.data/relay.sqlite` contains devices, pair codes, and pairs.
+- Pair creation stores the accepted pair code so the creator can poll
+  `POST /pair-codes/status` and save `sync.pairId` / `sync.peerDeviceId`.
 - Message text is not stored in SQLite.
 - Local settings contain `sync.deviceId`, `sync.deviceSecret`, `sync.pairId`, and `sync.peerDeviceId`.

@@ -66,6 +66,44 @@ describe("SyncPanel", () => {
     expect(onCreatePairCode).not.toHaveBeenCalled();
   });
 
+  it("shows waiting and paired binding states", () => {
+    const { rerender } = render(
+      <SyncPanel
+        sync={{ ...defaultSettings.sync, enabled: true }}
+        status={{ status: "disconnected", peerPresence: "unknown", lastError: null }}
+        messages={[]}
+        pairCode={{ code: "123456", expiresAt: "2026-08-03T12:10:00.000Z" }}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={vi.fn()}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("当前绑定码").textContent).toBe("123456");
+    expect(screen.getByText("等待对方输入绑定码")).toBeTruthy();
+
+    rerender(
+      <SyncPanel
+        sync={{
+          ...defaultSettings.sync,
+          enabled: true,
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }}
+        status={{ status: "disconnected", peerPresence: "unknown", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={vi.fn()}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("已绑定")).toBeTruthy();
+  });
+
   it("disables sending while the peer is offline", () => {
     const onSendMessage = vi.fn();
 

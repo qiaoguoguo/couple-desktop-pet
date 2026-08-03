@@ -36,6 +36,11 @@ export function SyncPanel({
     sync.enabled && sync.pairId && !canSend
       ? "对方当前不在线"
       : null;
+  const pairStatusText = sync.pairId
+    ? "已绑定"
+    : pairCode
+      ? "等待对方输入绑定码"
+      : null;
 
   function handleAccept(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,6 +95,7 @@ export function SyncPanel({
             {pairCode.code}
           </output>
         ) : null}
+        {pairStatusText ? <span className="sync-pair-status">{pairStatusText}</span> : null}
       </div>
 
       <form className="sync-inline-form" onSubmit={handleAccept}>

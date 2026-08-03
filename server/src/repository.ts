@@ -1,5 +1,8 @@
 import type Database from "better-sqlite3";
-import { PAIR_CODE_TTL_MS } from "../../shared/syncProtocol.js";
+import {
+  PAIR_CODE_TTL_MS,
+  type PairCodeStatusResponse,
+} from "../../shared/syncProtocol.js";
 import { RelayError } from "./errors.js";
 import { createPairCode, createPairId, hashDeviceSecret } from "./ids.js";
 
@@ -23,6 +26,12 @@ export interface AcceptPairCodeInput extends EnsureDeviceInput {
 export interface AcceptPairCodeResult {
   pairId: string;
   peerDeviceId: string;
+}
+
+export interface PairCodeStatusInput {
+  deviceId: string;
+  deviceSecret: string;
+  code: string;
 }
 
 export interface AuthenticateInput {
@@ -53,6 +62,7 @@ interface PairRow {
   pair_id: string;
   device_a_id: string;
   device_b_id: string;
+  pair_code: string | null;
 }
 
 export class RelayRepository {
@@ -150,9 +160,9 @@ export class RelayRepository {
       const pairId = createPairId();
       this.db
         .prepare(
-          "INSERT INTO pairs (pair_id, device_a_id, device_b_id, created_at) VALUES (?, ?, ?, ?)",
+          "INSERT INTO pairs (pair_id, device_a_id, device_b_id, pair_code, created_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(pairId, row.creator_device_id, input.deviceId, now);
+        .run(pairId, row.creator_device_id, input.deviceId, input.code, now);
       this.db
         .prepare("UPDATE pair_codes SET consumed_at = ? WHERE code = ?")
         .run(now, input.code);
@@ -161,15 +171,54 @@ export class RelayRepository {
     })();
   }
 
-  authenticateDeviceForPair(input: AuthenticateInput): AuthenticatedPair {
-    const secretHash = hashDeviceSecret(input.deviceSecret);
-    const device = this.db
-      .prepare("SELECT device_id, device_secret_hash FROM devices WHERE device_id = ?")
-      .get(input.deviceId) as DeviceRow | undefined;
+  getPairCodeStatus(input: PairCodeStatusInput): PairCodeStatusResponse {
+    this.verifyDeviceCredentials(input.deviceId, input.deviceSecret);
 
-    if (!device || device.device_secret_hash !== secretHash) {
-      throw new RelayError("auth_failed", 401, "Device authentication failed");
+    const row = this.db
+      .prepare(
+        "SELECT code, creator_device_id, expires_at, consumed_at FROM pair_codes WHERE code = ?",
+      )
+      .get(input.code) as PairCodeRow | undefined;
+
+    if (!row) {
+      throw new RelayError("invalid_code", 404, "Pair code is invalid");
     }
+
+    if (row.creator_device_id !== input.deviceId) {
+      throw new RelayError("auth_failed", 401, "Device is not the pair code creator");
+    }
+
+    const pair = this.findPairByCode(row.code);
+    if (pair) {
+      const peerDeviceId = getPeerFromPair(pair, input.deviceId);
+
+      if (!peerDeviceId) {
+        throw new RelayError("auth_failed", 401, "Device is not part of this pair");
+      }
+
+      return {
+        status: "paired",
+        pairId: pair.pair_id,
+        peerDeviceId,
+      };
+    }
+
+    if (row.consumed_at) {
+      return { status: "consumed" };
+    }
+
+    if (row.expires_at <= this.nowIso()) {
+      return { status: "expired" };
+    }
+
+    return {
+      status: "pending",
+      expiresAt: row.expires_at,
+    };
+  }
+
+  authenticateDeviceForPair(input: AuthenticateInput): AuthenticatedPair {
+    this.verifyDeviceCredentials(input.deviceId, input.deviceSecret);
 
     const row = this.findPair(input.pairId);
     if (!row) {
@@ -216,12 +265,31 @@ export class RelayRepository {
     return Boolean(row);
   }
 
+  private verifyDeviceCredentials(deviceId: string, deviceSecret: string): void {
+    const secretHash = hashDeviceSecret(deviceSecret);
+    const device = this.db
+      .prepare("SELECT device_id, device_secret_hash FROM devices WHERE device_id = ?")
+      .get(deviceId) as DeviceRow | undefined;
+
+    if (!device || device.device_secret_hash !== secretHash) {
+      throw new RelayError("auth_failed", 401, "Device authentication failed");
+    }
+  }
+
   private findPair(pairId: string): PairRow | undefined {
     return this.db
       .prepare(
-        "SELECT pair_id, device_a_id, device_b_id FROM pairs WHERE pair_id = ? AND disabled_at IS NULL",
+        "SELECT pair_id, device_a_id, device_b_id, pair_code FROM pairs WHERE pair_id = ? AND disabled_at IS NULL",
       )
       .get(pairId) as PairRow | undefined;
+  }
+
+  private findPairByCode(code: string): PairRow | undefined {
+    return this.db
+      .prepare(
+        "SELECT pair_id, device_a_id, device_b_id, pair_code FROM pairs WHERE pair_code = ? AND disabled_at IS NULL",
+      )
+      .get(code) as PairRow | undefined;
   }
 
   private nowIso(): string {

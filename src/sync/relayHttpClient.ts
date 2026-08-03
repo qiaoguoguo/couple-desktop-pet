@@ -4,6 +4,8 @@ import {
   type AcceptPairCodeResponse,
   type CreatePairCodeRequest,
   type CreatePairCodeResponse,
+  type PairCodeStatusRequest,
+  type PairCodeStatusResponse,
   type SyncErrorCode,
 } from "../../shared/syncProtocol";
 
@@ -34,6 +36,12 @@ export class RelayHttpClient {
     request: AcceptPairCodeRequest,
   ): Promise<RelayResult<AcceptPairCodeResponse>> {
     return this.post("/pairs/accept", request);
+  }
+
+  getPairCodeStatus(
+    request: PairCodeStatusRequest,
+  ): Promise<RelayResult<PairCodeStatusResponse>> {
+    return this.post("/pair-codes/status", request);
   }
 
   private async post<T>(path: string, body: unknown): Promise<RelayResult<T>> {

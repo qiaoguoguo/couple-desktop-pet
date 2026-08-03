@@ -60,6 +60,7 @@ const contextMenuHeight = 148;
 const contextMenuMargin = 8;
 const interactionMenuWidth = 164;
 const interactionMenuHeight = 112;
+const pairCodePollIntervalMs = 2000;
 
 export function App() {
   const settingsApi = useMemo<SettingsPersistenceApi>(
@@ -320,6 +321,129 @@ export function App() {
     [handleSettingsChange],
   );
 
+  useEffect(() => {
+    if (!pairCode) {
+      return;
+    }
+
+    const activePairCode = pairCode;
+    let disposed = false;
+    let timerId: number | undefined;
+    const expiresAtMs = Date.parse(activePairCode.expiresAt);
+
+    function clearTimer() {
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+        timerId = undefined;
+      }
+    }
+
+    function stopWithError(message: string) {
+      clearTimer();
+      setPairCode(null);
+      setSyncError(message);
+    }
+
+    function scheduleNextPoll() {
+      if (disposed) {
+        return;
+      }
+
+      if (!Number.isFinite(expiresAtMs)) {
+        stopWithError("绑定码状态异常，请重新生成");
+        return;
+      }
+
+      const remainingMs = expiresAtMs - Date.now();
+      if (remainingMs <= 0) {
+        stopWithError("绑定码已过期，请重新生成");
+        return;
+      }
+
+      timerId = window.setTimeout(() => {
+        void pollPairCodeStatus();
+      }, Math.min(pairCodePollIntervalMs, remainingMs));
+    }
+
+    async function pollPairCodeStatus() {
+      const currentSync = settingsRef.current.sync;
+
+      if (
+        !currentSync.enabled ||
+        !currentSync.deviceId ||
+        !currentSync.deviceSecret
+      ) {
+        scheduleNextPoll();
+        return;
+      }
+
+      if (currentSync.pairId) {
+        clearTimer();
+        setPairCode(null);
+        return;
+      }
+
+      const result = await new RelayHttpClient(currentSync.relayUrl).getPairCodeStatus({
+        deviceId: currentSync.deviceId,
+        deviceSecret: currentSync.deviceSecret,
+        code: activePairCode.code,
+      });
+
+      if (disposed) {
+        return;
+      }
+
+      if (!result.ok) {
+        setSyncError(readRelayUserMessage(result.code, result.message));
+
+        if (
+          result.code === "invalid_code" ||
+          result.code === "code_expired" ||
+          result.code === "code_consumed" ||
+          result.code === "auth_failed"
+        ) {
+          setPairCode(null);
+          return;
+        }
+
+        scheduleNextPoll();
+        return;
+      }
+
+      if (result.status === "paired") {
+        handleSyncChange({
+          ...currentSync,
+          pairId: result.pairId,
+          peerDeviceId: result.peerDeviceId,
+        });
+        setPairCode(null);
+        setSessionMessages([]);
+        setSyncError(null);
+        return;
+      }
+
+      if (result.status === "expired") {
+        stopWithError("绑定码已过期，请重新生成");
+        return;
+      }
+
+      if (result.status === "consumed") {
+        stopWithError("绑定码已失效，请重新生成");
+        return;
+      }
+
+      setSyncError(null);
+      scheduleNextPoll();
+    }
+
+    scheduleNextPoll();
+
+    return () => {
+      disposed = true;
+      clearTimer();
+    };
+  }, [handleSyncChange, pairCode]);
+
   const handleCreatePairCode = useCallback(async () => {
     const currentSync = settingsRef.current.sync;
     if (!currentSync.enabled) {
@@ -342,7 +466,7 @@ export function App() {
       return;
     }
 
-    setSyncError(result.message);
+    setSyncError(readRelayUserMessage(result.code, result.message));
   }, [handleSyncChange]);
 
   const handleAcceptPairCode = useCallback(
@@ -372,7 +496,7 @@ export function App() {
         return;
       }
 
-      setSyncError(result.message);
+      setSyncError(readRelayUserMessage(result.code, result.message));
     },
     [handleSyncChange],
   );
@@ -612,4 +736,12 @@ function getInteractionMenuPosition() {
       interactionMenuHeight,
     ),
   };
+}
+
+function readRelayUserMessage(code: string, fallback: string) {
+  if (code === "device_already_paired") {
+    return "这台设备已在中继服务中完成绑定，请稍等自动同步或重新打开设置查看。";
+  }
+
+  return fallback;
 }

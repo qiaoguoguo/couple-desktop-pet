@@ -30,10 +30,22 @@ export function initializeRelayDatabase(db: Database.Database): void {
       pair_id TEXT PRIMARY KEY,
       device_a_id TEXT NOT NULL,
       device_b_id TEXT NOT NULL,
+      pair_code TEXT,
       created_at TEXT NOT NULL,
       disabled_at TEXT,
       FOREIGN KEY (device_a_id) REFERENCES devices(device_id),
       FOREIGN KEY (device_b_id) REFERENCES devices(device_id)
     );
   `);
+  ensurePairsPairCodeColumn(db);
+}
+
+function ensurePairsPairCodeColumn(db: Database.Database): void {
+  const columns = db.prepare("PRAGMA table_info(pairs)").all() as Array<{
+    name: string;
+  }>;
+
+  if (!columns.some((column) => column.name === "pair_code")) {
+    db.exec("ALTER TABLE pairs ADD COLUMN pair_code TEXT");
+  }
 }

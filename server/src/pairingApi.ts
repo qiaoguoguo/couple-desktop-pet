@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   AcceptPairCodeRequest,
   CreatePairCodeRequest,
+  PairCodeStatusRequest,
 } from "../../shared/syncProtocol.js";
 import { RelayError } from "./errors.js";
 import { readJsonBody, writeEmpty, writeError, writeJson } from "./httpJson.js";
@@ -36,6 +37,12 @@ async function handleRequest(
     if (request.method === "POST" && url.pathname === "/pair-codes") {
       const body = readCreatePairCodeRequest(await readBodyOrThrow(request));
       writeJson(response, 200, repository.createPairCode(body));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/pair-codes/status") {
+      const body = readPairCodeStatusRequest(await readBodyOrThrow(request));
+      writeJson(response, 200, repository.getPairCodeStatus(body));
       return;
     }
 
@@ -80,6 +87,18 @@ function readAcceptPairCodeRequest(input: unknown): AcceptPairCodeRequest {
 
   return {
     ...readCreatePairCodeRequest(input),
+    code: readRequiredString(input.code, "code"),
+  };
+}
+
+function readPairCodeStatusRequest(input: unknown): PairCodeStatusRequest {
+  if (!isRecord(input)) {
+    throw new RelayError("invalid_request", 400, "Request body must be an object");
+  }
+
+  return {
+    deviceId: readRequiredString(input.deviceId, "deviceId"),
+    deviceSecret: readRequiredString(input.deviceSecret, "deviceSecret"),
     code: readRequiredString(input.code, "code"),
   };
 }

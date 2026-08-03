@@ -51,8 +51,22 @@ describe("pairing HTTP API", () => {
     });
 
     expect(acceptResponse.status).toBe(200);
-    await expect(acceptResponse.json()).resolves.toMatchObject({
+    const acceptBody = await acceptResponse.json();
+    expect(acceptBody).toMatchObject({
       peerDeviceId: "dev_a",
+    });
+
+    const statusResponse = await postJson(`${baseUrl}/pair-codes/status`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      code: codeBody.code,
+    });
+
+    expect(statusResponse.status).toBe(200);
+    await expect(statusResponse.json()).resolves.toEqual({
+      status: "paired",
+      pairId: acceptBody.pairId,
+      peerDeviceId: "dev_b",
     });
   });
 

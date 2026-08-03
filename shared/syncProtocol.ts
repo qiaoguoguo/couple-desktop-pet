@@ -43,6 +43,11 @@ export interface DeviceCredentialsPayload {
   displayName: string;
 }
 
+export interface DeviceAuthPayload {
+  deviceId: string;
+  deviceSecret: string;
+}
+
 export type CreatePairCodeRequest = DeviceCredentialsPayload;
 
 export interface CreatePairCodeResponse {
@@ -58,6 +63,16 @@ export interface AcceptPairCodeResponse {
   pairId: string;
   peerDeviceId: string;
 }
+
+export interface PairCodeStatusRequest extends DeviceAuthPayload {
+  code: string;
+}
+
+export type PairCodeStatusResponse =
+  | { status: "pending"; expiresAt: string }
+  | { status: "paired"; pairId: string; peerDeviceId: string }
+  | { status: "expired" }
+  | { status: "consumed" };
 
 export interface AuthClientMessage {
   type: "auth";

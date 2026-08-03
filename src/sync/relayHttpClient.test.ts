@@ -83,6 +83,40 @@ describe("RelayHttpClient", () => {
     });
   });
 
+  it("reads pair code status", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: "paired",
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const client = new RelayHttpClient("http://127.0.0.1:8787", fetchMock as typeof fetch);
+
+    await expect(
+      client.getPairCodeStatus({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        code: "123456",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      status: "paired",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/pair-codes/status",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("rejects unknown relay error codes", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(
