@@ -1,10 +1,15 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import { createErrorPayload, PlatformApiError } from "./errors.js";
+import type { PlatformRepository } from "./repository.js";
+import { registerAdminRoutes } from "./routes/adminRoutes.js";
+import { registerAuthRoutes } from "./routes/authRoutes.js";
+import { registerDeviceRoutes } from "./routes/deviceRoutes.js";
+import { registerReleaseRoutes } from "./routes/releaseRoutes.js";
 
 export interface PlatformServerOptions {
   jwtSecret: string;
-  repository: unknown;
+  repository: PlatformRepository;
 }
 
 export async function createPlatformServer(
@@ -18,8 +23,6 @@ export async function createPlatformServer(
     origin: true,
     credentials: true,
   });
-
-  server.decorate("platform", options);
 
   server.setErrorHandler((error, _request, reply) => {
     if (error instanceof PlatformApiError) {
@@ -38,6 +41,11 @@ export async function createPlatformServer(
     ok: true,
     service: "platform-api",
   }));
+
+  await registerAuthRoutes(server, options);
+  await registerDeviceRoutes(server, options);
+  await registerReleaseRoutes(server, options);
+  await registerAdminRoutes(server, options);
 
   return server;
 }

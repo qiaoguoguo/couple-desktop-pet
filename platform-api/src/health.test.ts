@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { createMemoryPlatformRepository } from "./repository.js";
 import { createPlatformServer } from "./server.js";
 
 describe("platform health", () => {
@@ -12,7 +13,7 @@ describe("platform health", () => {
   it("returns ok from health endpoint", async () => {
     const server = await createPlatformServer({
       jwtSecret: "test-secret",
-      repository: createNoopRepository(),
+      repository: createMemoryPlatformRepository(),
     });
     servers.push(server);
 
@@ -22,7 +23,3 @@ describe("platform health", () => {
     expect(response.json()).toEqual({ ok: true, service: "platform-api" });
   });
 });
-
-function createNoopRepository(): unknown {
-  return {};
-}
