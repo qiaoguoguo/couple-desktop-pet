@@ -64,4 +64,14 @@ describe("parseServerToClientMessage", () => {
     expect(parseServerToClientMessage({ type: "message.received" })).toBeNull();
     expect(parseServerToClientMessage(null)).toBeNull();
   });
+
+  it("rejects error messages with unknown error codes", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "error",
+        code: "not_a_code",
+        message: "bad",
+      }),
+    ).toBeNull();
+  });
 });

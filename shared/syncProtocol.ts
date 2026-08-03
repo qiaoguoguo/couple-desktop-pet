@@ -19,6 +19,24 @@ export type SyncErrorCode =
   | "relay_unavailable"
   | "malformed_message";
 
+const SYNC_ERROR_CODES = new Set<string>([
+  "invalid_request",
+  "invalid_code",
+  "code_expired",
+  "code_consumed",
+  "self_pair_not_allowed",
+  "device_already_paired",
+  "peer_already_paired",
+  "pair_not_found",
+  "auth_failed",
+  "peer_offline",
+  "message_empty",
+  "message_too_long",
+  "rate_limited",
+  "relay_unavailable",
+  "malformed_message",
+]);
+
 export interface DeviceCredentialsPayload {
   deviceId: string;
   deviceSecret: string;
@@ -232,16 +250,24 @@ function readMessageDelivered(input: Record<string, unknown>): MessageDeliveredS
 }
 
 function readError(input: Record<string, unknown>): ErrorServerMessage | null {
-  if (typeof input.code !== "string" || typeof input.message !== "string") {
+  if (
+    typeof input.code !== "string" ||
+    !isSyncErrorCode(input.code) ||
+    typeof input.message !== "string"
+  ) {
     return null;
   }
 
   return {
     type: "error",
     requestId: typeof input.requestId === "string" ? input.requestId : undefined,
-    code: input.code as SyncErrorCode,
+    code: input.code,
     message: input.message,
   };
+}
+
+function isSyncErrorCode(code: string): code is SyncErrorCode {
+  return SYNC_ERROR_CODES.has(code);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
