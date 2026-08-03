@@ -99,6 +99,40 @@ describe("SyncPanel", () => {
     expect(onSendMessage).not.toHaveBeenCalled();
   });
 
+  it("disables sending when disconnected even if stale presence says online", () => {
+    const onSendMessage = vi.fn();
+
+    render(
+      <SyncPanel
+        sync={{
+          ...defaultSettings.sync,
+          enabled: true,
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }}
+        status={{ status: "disconnected", peerPresence: "online", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={vi.fn()}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    expect(screen.getByText("未连接")).toBeTruthy();
+    expect(screen.queryByText("对方在线")).toBeNull();
+    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+
+    const button = screen.getByRole("button", { name: "发送" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+
+    expect(onSendMessage).not.toHaveBeenCalled();
+  });
+
   it("shows current-session received messages", () => {
     render(
       <SyncPanel

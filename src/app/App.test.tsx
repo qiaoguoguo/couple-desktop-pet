@@ -299,6 +299,38 @@ describe("App", () => {
     expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("does not send messages while disconnected with stale online presence", async () => {
+    realtimeSyncMock.state.status = "disconnected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
+        true,
+      ),
+    );
+
+    expect(screen.getByText("未连接")).toBeTruthy();
+    expect(screen.queryByText("对方在线")).toBeNull();
+    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("passes the current movement range to desktop auto movement", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

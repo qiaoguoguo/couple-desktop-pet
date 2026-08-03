@@ -26,10 +26,14 @@ export function SyncPanel({
   const [acceptCode, setAcceptCode] = useState("");
   const [messageText, setMessageText] = useState("");
   const controlsDisabled = !sync.enabled;
-  const sendDisabled =
-    controlsDisabled || !sync.pairId || status.peerPresence !== "online";
+  const canSend =
+    sync.enabled &&
+    Boolean(sync.pairId) &&
+    status.status === "connected" &&
+    status.peerPresence === "online";
+  const sendDisabled = !canSend;
   const peerUnavailableMessage =
-    sync.enabled && sync.pairId && status.peerPresence !== "online"
+    sync.enabled && sync.pairId && !canSend
       ? "对方当前不在线"
       : null;
 
@@ -136,16 +140,24 @@ export function SyncPanel({
 }
 
 function readPresenceLabel(status: SyncRuntimeState): string {
+  if (status.status === "connecting") {
+    return "连接中";
+  }
+
+  if (status.status === "authFailed") {
+    return "认证失败";
+  }
+
+  if (status.status !== "connected") {
+    return "未连接";
+  }
+
   if (status.peerPresence === "online") {
     return "对方在线";
   }
 
   if (status.peerPresence === "offline") {
     return "对方离线";
-  }
-
-  if (status.status === "connected") {
-    return "未连接";
   }
 
   return "未连接";

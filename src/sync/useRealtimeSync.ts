@@ -49,7 +49,12 @@ export function useRealtimeSync(
         }
 
         if (event.type === "status") {
-          setState((current) => ({ ...current, status: event.status }));
+          setState((current) => ({
+            ...current,
+            status: event.status,
+            peerPresence:
+              event.status === "connected" ? current.peerPresence : "unknown",
+          }));
           return;
         }
 

@@ -379,7 +379,10 @@ export function App() {
 
   const handleSendMessage = useCallback(
     (text: string) => {
-      if (realtime.state.peerPresence !== "online") {
+      if (
+        realtime.state.status !== "connected" ||
+        realtime.state.peerPresence !== "online"
+      ) {
         setSyncError("对方当前不在线");
         return;
       }
@@ -405,7 +408,7 @@ export function App() {
         },
       ]);
     },
-    [realtime.client, realtime.state.peerPresence],
+    [realtime.client, realtime.state.peerPresence, realtime.state.status],
   );
 
   const handlePetClick = useCallback(() => {
