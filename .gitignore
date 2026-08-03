@@ -16,6 +16,7 @@ src-tauri/gen/
 
 # Local app data created while testing
 .local-data/
+server/.data/
 tmp/
 __pycache__/
 *.pyc
