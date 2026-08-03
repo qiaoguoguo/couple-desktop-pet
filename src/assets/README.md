@@ -27,4 +27,12 @@ The manifest defines:
 - `loop`: whether an action repeats.
 - `frames`: repository-relative frame paths under `src/assets/`.
 
-The current loader resolves the `star-sleeper` built-in package from `src/assets/pets/star-sleeper/`. External resource import is intentionally out of scope for this MVP and should be added later as a separate resource system extension.
+The current loader resolves the `star-sleeper` built-in package from `src/assets/pets/star-sleeper/`.
+
+## External Resource Packages
+
+External pet packages are documented in `docs/pet-resource-pack-format.md`.
+
+The app imports `.cdpet` files into the app data directory under `pet-packages/` and never reads imported runtime frames from `src/assets`. Imported packages use the runtime id format `imported:<manifest-id>`, while the built-in fallback remains `builtin:star-sleeper`.
+
+The first version only supports PNG sequence frames using the same manifest contract: `id`, `baseSize`, fixed `actions`, `fps`, `loop`, and frame files named `<action>-01.png` through `<action>-18.png`. The relay does not transfer package files in this version.
