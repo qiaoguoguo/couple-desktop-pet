@@ -228,8 +228,15 @@ export function App({
     setError("");
 
     try {
-      await resolvedApiClient.recordDownload(release.id);
-      window.open(release.downloadUrl, "_blank");
+      const blob = await resolvedApiClient.downloadRelease(release.id);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = release.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
     } catch (caughtError) {
       setError(readError(caughtError));
     }
@@ -271,13 +278,27 @@ export function App({
       ) : route === "/login" ? (
         <LoginPage onSubmit={handleLogin} />
       ) : route === "/download" ? (
-        <DownloadPage
-          currentUser={currentUser}
-          releases={releases}
-          onDownload={handleDownload}
-        />
+        sessionStore.getToken() ? (
+          <DownloadPage
+            currentUser={currentUser}
+            releases={releases}
+            onDownload={handleDownload}
+          />
+        ) : (
+          <AuthRequiredPage
+            title="请先登录后下载"
+            onNavigateLogin={() => navigate("/login")}
+          />
+        )
       ) : (
-        <AdminPage currentUser={currentUser} adminLists={adminLists} />
+        sessionStore.getToken() ? (
+          <AdminPage currentUser={currentUser} adminLists={adminLists} />
+        ) : (
+          <AuthRequiredPage
+            title="请先登录管理员账号"
+            onNavigateLogin={() => navigate("/login")}
+          />
+        )
       )}
     </main>
   );
@@ -455,6 +476,23 @@ function AdminPage({
       <AdminTable title="设备" rows={adminLists.devices} />
       <AdminTable title="版本" rows={adminLists.releases} />
       <AdminTable title="下载记录" rows={adminLists.downloads} />
+    </section>
+  );
+}
+
+function AuthRequiredPage({
+  title,
+  onNavigateLogin,
+}: {
+  title: string;
+  onNavigateLogin(): void;
+}) {
+  return (
+    <section className="platform-panel">
+      <h1>{title}</h1>
+      <button type="button" onClick={onNavigateLogin}>
+        去登录
+      </button>
     </section>
   );
 }

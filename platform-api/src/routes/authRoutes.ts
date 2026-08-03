@@ -21,6 +21,7 @@ import {
 export interface RouteContext {
   repository: PlatformRepository;
   jwtSecret: string;
+  releaseStoragePath: string;
 }
 
 export async function registerAuthRoutes(
@@ -157,6 +158,9 @@ export function readBody(request: FastifyRequest): Record<string, unknown> {
 export function mapRepositoryError(error: unknown): PlatformApiError {
   if (error instanceof PlatformRepositoryError) {
     if (error.code === "email_exists") {
+      return new PlatformApiError(409, "conflict", error.message);
+    }
+    if (error.code === "invitation_exists") {
       return new PlatformApiError(409, "conflict", error.message);
     }
     if (

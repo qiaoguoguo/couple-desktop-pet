@@ -22,4 +22,19 @@ describe("couple pet platform compose config", () => {
     expect(compose.services.postgres.ports ?? []).toEqual([]);
     expect(source).not.toContain("/opt/qherp");
   });
+
+  it("does not expose release storage through the web container", () => {
+    const composeSource = readFileSync(
+      "deploy/couple-pet-platform/compose.yaml",
+      "utf8",
+    );
+    const nginxSource = readFileSync("platform-web/nginx.conf", "utf8");
+    const compose = parse(composeSource) as {
+      services: Record<string, { volumes?: string[] }>;
+    };
+
+    expect(compose.services["platform-web"].volumes ?? []).toEqual([]);
+    expect(nginxSource).not.toContain("location /releases/");
+    expect(nginxSource).not.toContain("alias /usr/share/nginx/html/releases/");
+  });
 });

@@ -5,6 +5,7 @@ import {
   type PlatformReleaseChannel,
 } from "../../../shared/platformProtocol.js";
 import { PlatformApiError } from "../errors.js";
+import { readReleaseFileMetadata } from "../releases/releaseFiles.js";
 import type {
   PlatformDownloadEvent,
   PlatformInvitation,
@@ -73,14 +74,34 @@ export async function registerAdminRoutes(
     const body = readBody(request);
 
     try {
+      const fileName =
+        typeof body.fileName === "string" && body.fileName.trim()
+          ? body.fileName
+          : null;
+      const fileReference =
+        typeof body.filePath === "string" && body.filePath.trim()
+          ? body.filePath
+          : fileName;
+      if (!fileReference) {
+        throw new PlatformApiError(400, "invalid_request", "文件路径不能为空");
+      }
+      const fileMetadata = await readReleaseFileMetadata({
+        releaseStoragePath: context.releaseStoragePath,
+        fileReference,
+        fileName,
+        expectedSha256:
+          typeof body.sha256 === "string" && body.sha256.trim()
+            ? body.sha256
+            : null,
+      });
       const release = await context.repository.createRelease({
         version: readText(body.version, "版本号不能为空"),
         platform: readPlatform(body.platform),
         channel: readChannel(body.channel),
-        fileName: readText(body.fileName, "文件名不能为空"),
-        filePath: readText(body.filePath, "文件路径不能为空"),
-        fileSize: readPositiveInteger(body.fileSize, 0),
-        sha256: readText(body.sha256, "sha256 不能为空"),
+        fileName: fileMetadata.fileName,
+        filePath: fileMetadata.filePath,
+        fileSize: fileMetadata.fileSize,
+        sha256: fileMetadata.sha256,
         releaseNotes:
           typeof body.releaseNotes === "string" ? body.releaseNotes : "",
         publishedAt: readOptionalDate(body.publishedAt),
@@ -164,7 +185,7 @@ function readPositiveInteger(input: unknown, fallback: number): number {
   }
 
   const value = Number(input);
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isInteger(value) || value < 1) {
     throw new PlatformApiError(400, "invalid_request", "数字参数不正确");
   }
 

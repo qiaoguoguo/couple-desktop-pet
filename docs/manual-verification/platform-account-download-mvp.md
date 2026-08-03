@@ -13,25 +13,28 @@
 9. 使用 Bearer token 调用 `POST /devices`，确认返回 `devicePublicId` 和一次性 `deviceSecret`。
 10. 添加或 bootstrap Windows release。
 11. 下载页显示 Windows release。
-12. 点击下载后，管理后台能看到 download event。
+12. 点击下载后文件由 `GET /releases/:id/download` 返回，管理后台能看到 download event。
 13. 普通用户访问 `/admin` 时显示需要管理员权限。
+14. 未登录访问 `/download` 或 `/admin` 时显示登录入口，不显示空列表或加载中。
 
 ## Compose 验证
 
 1. 复制 `.env.example` 为 `.env` 并替换强密码/密钥。
-2. 执行：
+2. 确认 `PLATFORM_CORS_ORIGINS` 包含实际 Web 访问源，例如 `http://159.75.175.47:19080`。
+3. 执行：
 
 ```bash
 docker compose -p couple-pet-platform -f deploy/couple-pet-platform/compose.yaml up -d --build
 ```
 
-3. 检查：
+4. 检查：
 
 ```bash
 curl http://127.0.0.1:19081/health
 ```
 
-4. Web 访问：`http://127.0.0.1:19080`。
+5. Web 访问：`http://127.0.0.1:19080`。
+6. 确认 nginx 不提供公开 `/releases/<fileName>` 静态下载。
 
 ## 未覆盖
 

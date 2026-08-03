@@ -23,6 +23,7 @@ cp deploy/couple-pet-platform/.env.example .env
 ```bash
 POSTGRES_PASSWORD=...
 PLATFORM_JWT_SECRET=...
+PLATFORM_CORS_ORIGINS=http://159.75.175.47:19080
 PLATFORM_ADMIN_EMAIL=...
 PLATFORM_ADMIN_PASSWORD=...
 ```
@@ -52,6 +53,10 @@ Web 入口：
 ```text
 http://159.75.175.47:19080
 ```
+
+Release 文件只挂载给 `platform-api`，由登录态保护的
+`GET /releases/:id/download` 记录下载后返回文件；不要通过 nginx
+静态 `/releases/` 暴露安装包。
 
 ## 停止与回滚
 

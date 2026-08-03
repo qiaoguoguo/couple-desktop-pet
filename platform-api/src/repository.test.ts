@@ -40,6 +40,34 @@ describe("PlatformRepository", () => {
     );
   });
 
+  it("rejects duplicate invitation codes without overwriting the existing invitation", async () => {
+    const repository = createRepository();
+    await repository.createInvitation({
+      code: "BETA-001",
+      maxUses: 1,
+      createdBy: null,
+      expiresAt: null,
+    });
+
+    await expect(
+      repository.createInvitation({
+        code: " beta-001 ",
+        maxUses: 2,
+        createdBy: null,
+        expiresAt: null,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "invitation_exists",
+      }),
+    );
+    expect(await repository.findInvitationByCode("BETA-001")).toEqual(
+      expect.objectContaining({
+        maxUses: 1,
+      }),
+    );
+  });
+
   it("registers a user and consumes a one-use invitation", async () => {
     const repository = createRepository();
     await repository.createInvitation({

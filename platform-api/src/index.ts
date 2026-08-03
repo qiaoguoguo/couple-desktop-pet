@@ -20,6 +20,8 @@ async function main() {
   const server = await createPlatformServer({
     jwtSecret: config.jwtSecret,
     repository,
+    releaseStoragePath: config.releaseStoragePath,
+    corsOrigins: config.corsOrigins,
   });
 
   await server.listen({ host: config.host, port: config.port });

@@ -14,6 +14,8 @@ describe("platform health", () => {
     const server = await createPlatformServer({
       jwtSecret: "test-secret",
       repository: createMemoryPlatformRepository(),
+      releaseStoragePath: "storage/releases",
+      corsOrigins: ["http://127.0.0.1:19080"],
     });
     servers.push(server);
 

@@ -14,6 +14,7 @@ describe("platform web app", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows the internal test entry and download/login path", () => {
@@ -95,8 +96,18 @@ describe("platform web app", () => {
     expect(screen.getByText("下载桌宠")).toBeTruthy();
   });
 
-  it("lists Windows releases and records download before opening URL", async () => {
+  it("lists Windows releases and downloads with an authenticated API blob", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectUrl = vi.fn().mockReturnValue("blob:download-url");
+    const revokeObjectUrl = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: createObjectUrl,
+      revokeObjectURL: revokeObjectUrl,
+    });
     const apiClient = createApiClient();
     render(
       <App
@@ -110,9 +121,32 @@ describe("platform web app", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载 Windows 内测包" }));
 
     await waitFor(() =>
-      expect(apiClient.recordDownload).toHaveBeenCalledWith("rel_1"),
+      expect(apiClient.downloadRelease).toHaveBeenCalledWith("rel_1"),
     );
-    expect(openSpy).toHaveBeenCalledWith("/releases/couple-pet.exe", "_blank");
+    expect(apiClient.recordDownload).not.toHaveBeenCalled();
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickSpy).toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalledWith(
+      "/releases/couple-pet.exe",
+      "_blank",
+    );
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:download-url");
+  });
+
+  it("shows a login entry instead of an empty download page when unauthenticated", () => {
+    const apiClient = createApiClient();
+
+    render(
+      <App
+        apiClient={apiClient}
+        sessionStore={createSessionStore()}
+        initialRoute="/download"
+      />,
+    );
+
+    expect(screen.getByText("请先登录后下载")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "去登录" })).toBeTruthy();
+    expect(apiClient.listReleases).not.toHaveBeenCalled();
   });
 
   it("shows admin lists for an admin token", async () => {
@@ -142,6 +176,23 @@ describe("platform web app", () => {
     );
 
     expect(await screen.findByText("需要管理员权限")).toBeTruthy();
+    expect(screen.getByText("请使用管理员账号登录")).toBeTruthy();
+  });
+
+  it("shows a login entry instead of loading admin lists when unauthenticated", () => {
+    const apiClient = createApiClient({ admin: true });
+
+    render(
+      <App
+        apiClient={apiClient}
+        sessionStore={createSessionStore()}
+        initialRoute="/admin"
+      />,
+    );
+
+    expect(screen.getByText("请先登录管理员账号")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "去登录" })).toBeTruthy();
+    expect(apiClient.listAdminUsers).not.toHaveBeenCalled();
   });
 });
 
@@ -217,11 +268,12 @@ function createApiClient(options: { admin?: boolean } = {}): PlatformApiClient {
           sha256: "hash-win",
           releaseNotes: "Windows 内测包",
           publishedAt: "2026-08-03T12:00:00.000Z",
-          downloadUrl: "/releases/couple-pet.exe",
+          downloadUrl: "/releases/rel_1/download",
         },
       ],
     }),
     recordDownload: vi.fn().mockResolvedValue({ ok: true }),
+    downloadRelease: vi.fn().mockResolvedValue(new Blob(["windows-build"])),
     listAdminUsers: vi.fn().mockResolvedValue({
       users: [{ id: "usr_admin", email: "admin@example.com", role: "admin" }],
     }),

@@ -41,6 +41,7 @@ export interface PlatformApiClient {
     releases: PlatformRelease[];
   }>;
   recordDownload(releaseId: string): Promise<unknown>;
+  downloadRelease(releaseId: string): Promise<Blob>;
   listAdminUsers(): Promise<{ users: unknown[] }>;
   listAdminInvitations(): Promise<{ invitations: unknown[] }>;
   listAdminDevices(): Promise<{ devices: unknown[] }>;
@@ -85,6 +86,27 @@ export function createPlatformApiClient(
     return payload as T;
   }
 
+  async function requestBlob(path: string): Promise<Blob> {
+    const headers = new Headers();
+    const token = options.getToken();
+    if (token) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
+
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: "GET",
+      headers,
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      throw new Error(payload.error?.message ?? "请求失败");
+    }
+
+    return response.blob();
+  }
+
   return {
     verifyInvitation(code) {
       return request("/auth/invitations/verify", {
@@ -115,6 +137,11 @@ export function createPlatformApiClient(
         method: "POST",
         body: JSON.stringify({ releaseId }),
       });
+    },
+    downloadRelease(releaseId) {
+      return requestBlob(
+        `/releases/${encodeURIComponent(releaseId)}/download`,
+      );
     },
     listAdminUsers() {
       return request("/admin/users");

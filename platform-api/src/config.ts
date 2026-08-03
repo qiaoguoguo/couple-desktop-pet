@@ -5,6 +5,7 @@ export interface PlatformConfig {
   port: number;
   databaseUrl: string;
   jwtSecret: string;
+  corsOrigins: string[];
   releaseStoragePath: string;
   publicBaseUrl: string;
   apiBaseUrl: string;
@@ -31,6 +32,7 @@ export function readPlatformConfig(
       env.PLATFORM_DATABASE_URL ??
       "postgres://couple_pet:couple_pet@127.0.0.1:5432/couple_pet_platform",
     jwtSecret: jwtSecret ?? "dev-insecure-platform-secret",
+    corsOrigins: readCorsOrigins(env.PLATFORM_CORS_ORIGINS),
     releaseStoragePath: resolve(
       env.PLATFORM_RELEASE_STORAGE_PATH ?? "storage/releases",
     ),
@@ -58,4 +60,15 @@ function readPort(value: string | undefined): number {
 
 function readOptionalText(value: string | undefined): string | null {
   return value?.trim() ? value.trim() : null;
+}
+
+function readCorsOrigins(value: string | undefined): string[] {
+  const origins = value
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return origins?.length
+    ? origins
+    : ["http://127.0.0.1:19080", "http://localhost:19080"];
 }

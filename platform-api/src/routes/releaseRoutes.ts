@@ -1,6 +1,8 @@
+import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import type { PlatformDevicePlatform } from "../../../shared/platformProtocol.js";
 import { PlatformApiError } from "../errors.js";
+import { resolveDownloadFilePath } from "../releases/releaseFiles.js";
 import type { PlatformRelease } from "../repository.js";
 import {
   mapRepositoryError,
@@ -57,6 +59,41 @@ export async function registerReleaseRoutes(
       throw mapRepositoryError(error);
     }
   });
+
+  server.get("/releases/:releaseId/download", async (request, reply) => {
+    const user = await requireUser(request, context);
+    const releaseId = readReleaseId(
+      (request.params as Record<string, unknown>).releaseId,
+    );
+
+    try {
+      const release = await context.repository.findReleaseById(releaseId);
+      if (!release || !release.publishedAt) {
+        throw new PlatformApiError(404, "not_found", "版本不存在");
+      }
+
+      const filePath = await resolveDownloadFilePath(
+        context.releaseStoragePath,
+        release.filePath,
+      );
+      await context.repository.recordDownloadEvent({
+        userId: user.id,
+        releaseId: release.id,
+        ip: request.ip ?? null,
+        userAgent: request.headers["user-agent"] ?? null,
+      });
+
+      return reply
+        .header("content-type", "application/octet-stream")
+        .header(
+          "content-disposition",
+          `attachment; filename="${release.fileName}"`,
+        )
+        .send(createReadStream(filePath));
+    } catch (error) {
+      throw mapRepositoryError(error);
+    }
+  });
 }
 
 export function toPublicRelease(release: PlatformRelease) {
@@ -70,8 +107,16 @@ export function toPublicRelease(release: PlatformRelease) {
     sha256: release.sha256,
     releaseNotes: release.releaseNotes,
     publishedAt: release.publishedAt?.toISOString() ?? null,
-    downloadUrl: `/releases/${encodeURIComponent(release.fileName)}`,
+    downloadUrl: `/releases/${encodeURIComponent(release.id)}/download`,
   };
+}
+
+function readReleaseId(input: unknown): string {
+  if (typeof input !== "string" || !input.trim()) {
+    throw new PlatformApiError(400, "invalid_request", "版本 ID 不能为空");
+  }
+
+  return input.trim();
 }
 
 function readPlatform(input: unknown): PlatformDevicePlatform {

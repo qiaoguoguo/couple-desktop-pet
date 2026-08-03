@@ -24,6 +24,7 @@ services:
       PLATFORM_RELEASE_STORAGE_PATH: /app/storage/releases
       PLATFORM_PUBLIC_BASE_URL: ${PLATFORM_PUBLIC_BASE_URL}
       PLATFORM_API_BASE_URL: ${PLATFORM_API_BASE_URL}
+      PLATFORM_CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS}
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
       PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
       PLATFORM_DEMO_WINDOWS_EXE_PATH: ${PLATFORM_DEMO_WINDOWS_EXE_PATH:-}
@@ -40,8 +41,6 @@ services:
     restart: unless-stopped
     depends_on:
       - platform-api
-    volumes:
-      - release_storage:/usr/share/nginx/html/releases:ro
     ports:
       - "19080:80"
 

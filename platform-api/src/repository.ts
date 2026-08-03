@@ -149,6 +149,7 @@ export interface PlatformRepository {
 
 export type PlatformRepositoryErrorCode =
   | "email_exists"
+  | "invitation_exists"
   | "invitation_not_found"
   | "invitation_unavailable"
   | "user_not_found"
@@ -226,9 +227,16 @@ export function createMemoryPlatformRepository(
         .length;
     },
     async createInvitation(input) {
+      const code = normalizeInvitationCode(input.code);
+      if (invitations.has(code)) {
+        throw new PlatformRepositoryError(
+          "invitation_exists",
+          "邀请码已经存在",
+        );
+      }
       const invitation: PlatformInvitation = {
         id: createId("inv"),
-        code: normalizeInvitationCode(input.code),
+        code,
         status: "unused",
         maxUses: input.maxUses,
         usedCount: 0,
@@ -409,21 +417,31 @@ export function createPgPlatformRepository(
       return Number(result.rows[0]?.count ?? 0);
     },
     async createInvitation(input) {
-      const result = await pool.query(
-        `INSERT INTO invitations
-          (id, code, status, max_uses, used_count, created_by, created_at, expires_at)
-         VALUES ($1, $2, 'unused', $3, 0, $4, $5, $6)
-         RETURNING *`,
-        [
-          createId("inv"),
-          normalizeInvitationCode(input.code),
-          input.maxUses,
-          input.createdBy,
-          now(),
-          input.expiresAt,
-        ],
-      );
-      return mapInvitation(result.rows[0]);
+      try {
+        const result = await pool.query(
+          `INSERT INTO invitations
+            (id, code, status, max_uses, used_count, created_by, created_at, expires_at)
+           VALUES ($1, $2, 'unused', $3, 0, $4, $5, $6)
+           RETURNING *`,
+          [
+            createId("inv"),
+            normalizeInvitationCode(input.code),
+            input.maxUses,
+            input.createdBy,
+            now(),
+            input.expiresAt,
+          ],
+        );
+        return mapInvitation(result.rows[0]);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new PlatformRepositoryError(
+            "invitation_exists",
+            "邀请码已经存在",
+          );
+        }
+        throw error;
+      }
     },
     async findInvitationByCode(code) {
       const result = await pool.query(

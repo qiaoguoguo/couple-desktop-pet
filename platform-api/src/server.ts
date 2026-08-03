@@ -10,6 +10,8 @@ import { registerReleaseRoutes } from "./routes/releaseRoutes.js";
 export interface PlatformServerOptions {
   jwtSecret: string;
   repository: PlatformRepository;
+  releaseStoragePath: string;
+  corsOrigins: readonly string[];
 }
 
 export async function createPlatformServer(
@@ -19,8 +21,11 @@ export async function createPlatformServer(
     logger: false,
   });
 
+  const corsOrigins = new Set(options.corsOrigins);
   await server.register(cors, {
-    origin: true,
+    origin(origin, callback) {
+      callback(null, !origin || corsOrigins.has(origin));
+    },
     credentials: true,
   });
 

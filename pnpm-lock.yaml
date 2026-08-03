@@ -63,9 +63,6 @@ importers:
       fastify:
         specifier: ^5.0.0
         version: 5.11.0
-      jose:
-        specifier: ^6.0.0
-        version: 6.2.7
       nanoid:
         specifier: ^5.0.0
         version: 5.1.16
@@ -1126,9 +1123,6 @@ packages:
 
   is-potential-custom-element-name@1.0.1:
     resolution: {integrity: sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==}
-
-  jose@6.2.7:
-    resolution: {integrity: sha512-hq1OB1bALKfydZNoViyg6hPVGV4i93ny9Op+n4zP5RSf7SCZEXa/TsG2O3IEr7+WlHRTPnpqDmHfMH6qXAD60w==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -2470,8 +2464,6 @@ snapshots:
   ipaddr.js@2.4.0: {}
 
   is-potential-custom-element-name@1.0.1: {}
-
-  jose@6.2.7: {}
 
   js-tokens@4.0.0: {}
 
