@@ -120,6 +120,7 @@ export function App() {
   } | null>(null);
   const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const remoteMessageClickThroughOverrideRef = useRef(false);
 
   const realtimeCallbacks = useMemo(
     () => ({
@@ -239,6 +240,31 @@ export function App() {
   useEffect(() => {
     runDesktopCommand(() => setClickThrough(settings.clickThrough));
   }, [settings.clickThrough]);
+
+  useEffect(() => {
+    const shouldDisableClickThroughForRemoteMessage =
+      Boolean(remoteMessages.active) && settings.clickThrough;
+
+    if (
+      shouldDisableClickThroughForRemoteMessage &&
+      !remoteMessageClickThroughOverrideRef.current
+    ) {
+      remoteMessageClickThroughOverrideRef.current = true;
+      runDesktopCommand(() => setClickThrough(false));
+      return;
+    }
+
+    if (
+      !shouldDisableClickThroughForRemoteMessage &&
+      remoteMessageClickThroughOverrideRef.current
+    ) {
+      remoteMessageClickThroughOverrideRef.current = false;
+
+      if (settings.clickThrough) {
+        runDesktopCommand(() => setClickThrough(true));
+      }
+    }
+  }, [remoteMessages.active, settings.clickThrough]);
 
   useEffect(() => {
     settingsRef.current = settings;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
 
@@ -12,15 +13,23 @@ export function RemoteMessageLayer({
   peerPackage,
   onAcknowledge,
 }: RemoteMessageLayerProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const imageUrl =
+    peerPackage?.previewUrl ??
+    peerPackage?.actions["idle-breathe"].frames[0] ??
+    null;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl, message?.id]);
+
   if (!message) {
     return null;
   }
 
   const peerName = peerPackage?.name ?? "对方桌宠";
-  const imageUrl =
-    peerPackage?.previewUrl ??
-    peerPackage?.actions["idle-breathe"].frames[0] ??
-    null;
+  const shouldShowImage = Boolean(imageUrl) && !imageFailed;
 
   return (
     <div
@@ -31,12 +40,13 @@ export function RemoteMessageLayer({
       onPointerEnter={() => onAcknowledge(message.id)}
     >
       <figure className="remote-visitor">
-        {imageUrl ? (
+        {shouldShowImage ? (
           <img
             className="remote-visitor-image"
-            src={imageUrl}
+            src={imageUrl ?? undefined}
             alt={`${peerName}来访`}
             draggable={false}
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <div

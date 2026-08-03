@@ -80,6 +80,24 @@ describe("RemoteMessageLayer", () => {
     expect(screen.getByText("对方桌宠")).toBeTruthy();
   });
 
+  it("uses the readable fallback when the peer image fails to load", () => {
+    render(
+      <RemoteMessageLayer
+        message={remoteMessage()}
+        peerPackage={resolvedPackage()}
+        onAcknowledge={vi.fn()}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "月亮伙伴来访" }));
+
+    expect(
+      screen.queryByRole("img", { name: "月亮伙伴来访" }),
+    ).toBeNull();
+    expect(screen.getByRole("img", { name: "对方桌宠来访占位" })).toBeTruthy();
+    expect(screen.getByText("月亮伙伴")).toBeTruthy();
+  });
+
   it("acknowledges the message on mouse hover", () => {
     const onAcknowledge = vi.fn();
     render(
