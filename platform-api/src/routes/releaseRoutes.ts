@@ -2,7 +2,10 @@ import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import type { PlatformDevicePlatform } from "../../../shared/platformProtocol.js";
 import { PlatformApiError } from "../errors.js";
-import { resolveDownloadFilePath } from "../releases/releaseFiles.js";
+import {
+  buildContentDisposition,
+  resolveDownloadFilePath,
+} from "../releases/releaseFiles.js";
 import type { PlatformRelease } from "../repository.js";
 import {
   mapRepositoryError,
@@ -87,7 +90,7 @@ export async function registerReleaseRoutes(
         .header("content-type", "application/octet-stream")
         .header(
           "content-disposition",
-          `attachment; filename="${release.fileName}"`,
+          buildContentDisposition(release.fileName),
         )
         .send(createReadStream(filePath));
     } catch (error) {

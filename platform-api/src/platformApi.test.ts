@@ -315,6 +315,40 @@ describe("platform api routes", () => {
     expect(await repository.listDownloadEvents()).toHaveLength(0);
   });
 
+  it("sanitizes content-disposition for legacy release file names", async () => {
+    const storagePath = await createTempDir();
+    const filePath = join(storagePath, "legacy.exe");
+    await writeFile(filePath, "windows-build");
+    const { server, repository, accessToken } = await createTestServerWithUser({
+      releaseStoragePath: storagePath,
+    });
+    const release = await repository.createRelease({
+      version: "0.1.0",
+      platform: "windows",
+      channel: "internal",
+      fileName: 'bad"\r\nx-evil: yes.exe',
+      filePath,
+      fileSize: 13,
+      sha256: sha256("windows-build"),
+      releaseNotes: "旧数据",
+      publishedAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    const response = await server.inject({
+      method: "GET",
+      url: `/releases/${release.id}/download`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const contentDisposition = String(response.headers["content-disposition"]);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-evil"]).toBeUndefined();
+    expect(contentDisposition).toBe(
+      "attachment; filename=\"bad___x-evil__yes.exe\"; filename*=UTF-8''bad%22%0D%0Ax-evil%3A%20yes.exe",
+    );
+    expect(contentDisposition).not.toMatch(/[\r\n]/);
+  });
+
   it("rejects admin endpoints for normal users", async () => {
     const { server, accessToken } = await createTestServerWithUser();
 
@@ -437,11 +471,16 @@ describe("platform api routes", () => {
       releaseStoragePath: storagePath,
     });
 
-    for (const payload of [
-      { fileName: "../evil.exe" },
-      { fileName: "folder/app.exe" },
-      { fileName: "bad\\app.exe" },
-      { fileName: "couple-pet.exe", filePath: "../outside.exe" },
+    for (const { payload, message } of [
+      { payload: { fileName: "../evil.exe" }, message: "文件名不正确" },
+      { payload: { fileName: "folder/app.exe" }, message: "文件名不正确" },
+      { payload: { fileName: "bad\\app.exe" }, message: "文件名不正确" },
+      { payload: { fileName: 'bad"name.exe' }, message: "文件名不正确" },
+      { payload: { fileName: "bad\r\nname.exe" }, message: "文件名不正确" },
+      {
+        payload: { fileName: "couple-pet.exe", filePath: "../outside.exe" },
+        message: "文件路径不正确",
+      },
     ]) {
       const response = await server.inject({
         method: "POST",
@@ -458,6 +497,9 @@ describe("platform api routes", () => {
       });
 
       expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        error: { code: "invalid_request", message },
+      });
     }
   });
 

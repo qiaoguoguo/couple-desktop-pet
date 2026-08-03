@@ -21,11 +21,13 @@ export async function readReleaseFileMetadata({
   fileName?: string | null;
   expectedSha256?: string | null;
 }): Promise<ReleaseFileMetadata> {
+  const requestedFileName = fileName ? validateReleaseFileName(fileName) : null;
   const filePath = resolveReleaseStorageReference(
     releaseStoragePath,
     fileReference,
   );
-  const safeFileName = validateReleaseFileName(fileName ?? basename(filePath));
+  const safeFileName =
+    requestedFileName ?? validateReleaseFileName(basename(filePath));
   let fileStat;
   try {
     fileStat = await stat(filePath);
@@ -80,12 +82,33 @@ export function validateReleaseFileName(input: string): string {
     fileName === ".." ||
     fileName.includes("..") ||
     fileName.includes("/") ||
-    fileName.includes("\\")
+    fileName.includes("\\") ||
+    /[\u0000-\u001f\u007f";]/.test(fileName)
   ) {
     throw new PlatformApiError(400, "invalid_request", "文件名不正确");
   }
 
   return fileName;
+}
+
+export function buildContentDisposition(fileName: string): string {
+  return [
+    `attachment; filename="${toAsciiHeaderFileName(fileName)}"`,
+    `filename*=UTF-8''${encodeRfc5987Value(fileName)}`,
+  ].join("; ");
+}
+
+function toAsciiHeaderFileName(fileName: string): string {
+  const fallback = fileName.replace(/[^A-Za-z0-9._-]/g, "_");
+  return fallback.replace(/^[._-]+$/, "") ? fallback : "download";
+}
+
+function encodeRfc5987Value(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (character) =>
+      `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function resolveReleaseStorageReference(
