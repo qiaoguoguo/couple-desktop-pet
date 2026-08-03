@@ -83,6 +83,13 @@ const relayHttpClientMock = vi.hoisted(() => {
   return mock;
 });
 
+const petPackageCommandsMock = vi.hoisted(() => ({
+  listPetPackages: vi.fn().mockResolvedValue([]),
+  importPetPackage: vi.fn(),
+  deletePetPackage: vi.fn(),
+  convertFileSrc: vi.fn((path: string) => `asset://${path}`),
+}));
+
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
   writeSettings: windowCommandsMock.writeSettings,
@@ -105,6 +112,10 @@ vi.mock("../sync/useRealtimeSync", () => ({
 
 vi.mock("../sync/relayHttpClient", () => ({
   RelayHttpClient: relayHttpClientMock.constructor,
+}));
+
+vi.mock("../assets/petPackageCommands", () => ({
+  createPetPackageCommands: vi.fn(() => petPackageCommandsMock),
 }));
 
 describe("App", () => {
@@ -131,6 +142,14 @@ describe("App", () => {
     relayHttpClientMock.getPairCodeStatus.mockReset();
     relayHttpClientMock.unpair.mockReset();
     relayHttpClientMock.constructor.mockClear();
+    petPackageCommandsMock.listPetPackages.mockReset();
+    petPackageCommandsMock.listPetPackages.mockResolvedValue([]);
+    petPackageCommandsMock.importPetPackage.mockReset();
+    petPackageCommandsMock.deletePetPackage.mockReset();
+    petPackageCommandsMock.convertFileSrc.mockReset();
+    petPackageCommandsMock.convertFileSrc.mockImplementation(
+      (path: string) => `asset://${path}`,
+    );
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -143,6 +162,18 @@ describe("App", () => {
     ).toBeTruthy();
     expect(screen.getByRole("img", { name: "星星睡衣小星人" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+  });
+
+  it("falls back to the built-in pet package when selected imported package is missing", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "imported:missing",
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("img", { name: "星星睡衣小星人" })).toBeTruthy();
   });
 
   it("keeps the settings button visually hidden by default", async () => {

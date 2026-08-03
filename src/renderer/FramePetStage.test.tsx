@@ -1,12 +1,51 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { REQUIRED_PET_ACTIONS } from "../assets/petPackageContract";
+import {
+  buildPetPackageRegistry,
+  type ResolvedPetPackage,
+} from "../assets/petPackageRegistry";
 import { FramePetStage } from "./FramePetStage";
 import framePetStageSource from "./FramePetStage.tsx?raw";
 
-function renderStage() {
+const builtInPackage = buildPetPackageRegistry([], (path) => `asset://${path}`)[0];
+
+const importedPackage: ResolvedPetPackage = {
+  id: "imported:moon-buddy",
+  name: "月亮伙伴",
+  baseSize: { width: 256, height: 320 },
+  previewUrl: "asset://moon/preview.png",
+  source: "imported",
+  actions: Object.fromEntries(
+    REQUIRED_PET_ACTIONS.map((action) => [
+      action,
+      {
+        fps: 3,
+        loop:
+          action.startsWith("idle") ||
+          action === "walk" ||
+          action === "drag" ||
+          action === "sleep",
+        durationMs: 6000,
+        category: action.startsWith("idle")
+          ? "idle"
+          : action.startsWith("act-")
+            ? "interaction"
+            : "movement",
+        frames: Array.from(
+          { length: 18 },
+          (_, index) => `asset://moon/${action}-${String(index + 1).padStart(2, "0")}.png`,
+        ),
+      },
+    ]),
+  ) as ResolvedPetPackage["actions"],
+};
+
+function renderStage(petPackage = builtInPackage) {
   const props = {
     action: "idle-breathe" as const,
     scale: 1,
+    petPackage,
     onPetClick: vi.fn(),
     onDragStart: vi.fn(),
     onDragEnd: vi.fn(),
@@ -33,6 +72,16 @@ describe("FramePetStage DOM frame rendering", () => {
     const frameImage = screen.getByRole("img", { name: "星星睡衣小星人" });
 
     expect(frameImage.getAttribute("src")).toContain("idle-breathe-01");
+    expect(document.querySelector(".pet-fallback-card")).toBeNull();
+  });
+
+  it("renders frames from the selected imported pet package", () => {
+    const { stage } = renderStage(importedPackage);
+
+    const frameImage = screen.getByRole("img", { name: "月亮伙伴" });
+
+    expect(stage.getAttribute("data-pet-package-id")).toBe("imported:moon-buddy");
+    expect(frameImage.getAttribute("src")).toBe("asset://moon/idle-breathe-01.png");
     expect(document.querySelector(".pet-fallback-card")).toBeNull();
   });
 

@@ -53,6 +53,12 @@ import {
 } from "../assets/builtInPetManifest";
 import { selectNextIdleAction } from "../pet-core/idleActionSelector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
+import type { ImportedPetPackageSummary } from "../assets/petPackageContract";
+import { createPetPackageCommands } from "../assets/petPackageCommands";
+import {
+  buildPetPackageRegistry,
+  resolveSelectedPetPackage,
+} from "../assets/petPackageRegistry";
 
 const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
@@ -70,11 +76,15 @@ export function App() {
     }),
     [],
   );
+  const petPackageApi = useMemo(() => createPetPackageCommands(), []);
   const [petState, setPetState] = useState<PetState>(() =>
     createInitialPetState(Date.now()),
   );
   const [settings, setSettings] = useState<PetSettings>(() => mergeSettings({}));
   const settingsRef = useRef(settings);
+  const [importedPetPackages, setImportedPetPackages] = useState<
+    ImportedPetPackageSummary[]
+  >([]);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
@@ -125,6 +135,22 @@ export function App() {
     }),
     [realtime.state, syncError],
   );
+  const petPackages = useMemo(
+    () =>
+      buildPetPackageRegistry(
+        importedPetPackages,
+        petPackageApi.convertFileSrc,
+      ),
+    [importedPetPackages, petPackageApi],
+  );
+  const selectedPetPackage = useMemo(
+    () =>
+      resolveSelectedPetPackage(
+        petPackages,
+        settings.appearance.selectedPetPackageId,
+      ),
+    [petPackages, settings.appearance.selectedPetPackageId],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -143,6 +169,27 @@ export function App() {
       disposed = true;
     };
   }, [settingsApi]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void petPackageApi
+      .listPetPackages()
+      .then((packages) => {
+        if (!disposed) {
+          setImportedPetPackages(packages);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setImportedPetPackages([]);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [petPackageApi]);
 
   useEffect(() => {
     runDesktopCommand(() => setAlwaysOnTop(settings.alwaysOnTop));
@@ -669,6 +716,7 @@ export function App() {
         <FramePetStage
           action={petState.action}
           scale={settings.scale}
+          petPackage={selectedPetPackage}
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}

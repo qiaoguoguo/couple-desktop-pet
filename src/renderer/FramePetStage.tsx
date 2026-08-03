@@ -9,12 +9,13 @@ import {
   type PointerEvent,
 } from "react";
 import type { PetActionName } from "../assets/builtInPetManifest";
+import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 import { getFrameIndex } from "./animationPlayer";
-import { getActionDefinition, getFrameAssetUrl } from "./frameAtlas";
 
 interface FramePetStageProps {
   action: PetActionName;
   scale: number;
+  petPackage: ResolvedPetPackage;
   onPetClick(): void;
   onDragStart(): void;
   onDragEnd(): void;
@@ -39,6 +40,7 @@ const dragClickThresholdPx = 4;
 export function FramePetStage({
   action,
   scale,
+  petPackage,
   onPetClick,
   onDragStart,
   onDragEnd,
@@ -49,9 +51,13 @@ export function FramePetStage({
   const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
-  const actionDefinition = getActionDefinition(action);
+  const actionDefinition = petPackage.actions[action];
 
   const currentFrameUrl = useMemo(() => {
+    if (!actionDefinition.frames.length) {
+      return null;
+    }
+
     const frameIndex = getFrameIndex(
       elapsedMs,
       actionDefinition.frames.length,
@@ -59,12 +65,12 @@ export function FramePetStage({
       actionDefinition.loop,
     );
 
-    return getFrameAssetUrl(actionDefinition.frames[frameIndex] ?? "");
+    return actionDefinition.frames[frameIndex] ?? null;
   }, [actionDefinition, elapsedMs]);
 
   useEffect(() => {
     setElapsedMs(0);
-  }, [action]);
+  }, [action, petPackage.id]);
 
   useEffect(() => {
     const frameTimer = window.setInterval(() => {
@@ -150,6 +156,7 @@ export function FramePetStage({
     <div
       className="pet-frame-stage"
       data-action={action}
+      data-pet-package-id={petPackage.id}
       style={stageStyle}
       onClick={handleClick}
       onPointerDown={handlePointerDown}
@@ -162,13 +169,13 @@ export function FramePetStage({
         <img
           className="pet-frame-image"
           src={currentFrameUrl}
-          alt="星星睡衣小星人"
+          alt={petPackage.name}
           draggable={false}
           onError={() => setImageFailed(true)}
         />
       ) : null}
       {showFallback ? (
-        <div className="pet-dev-card pet-fallback-card" aria-label="星星睡衣小星人开发占位">
+        <div className="pet-dev-card pet-fallback-card" aria-label={`${petPackage.name}开发占位`}>
           <div className="pet-dev-face">
             <span>星</span>
           </div>
