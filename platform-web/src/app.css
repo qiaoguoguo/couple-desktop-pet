@@ -1,0 +1,135 @@
+:root {
+  color: #1f2933;
+  background: #eef2f6;
+  font-family:
+    Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 34px;
+  border: 1px solid #b8c2cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2933;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #697888;
+}
+
+.platform-shell {
+  width: min(1120px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+
+.platform-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.platform-panel {
+  border: 1px solid #d7dee6;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
+  box-shadow: 0 8px 18px rgb(27 39 51 / 8%);
+}
+
+.platform-panel h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.platform-panel h2 {
+  margin: 16px 0 8px;
+  font-size: 16px;
+}
+
+.platform-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.platform-form {
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.platform-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.platform-form input {
+  min-height: 36px;
+  border: 1px solid #b8c2cc;
+  border-radius: 6px;
+  padding: 0 10px;
+}
+
+.platform-error,
+.platform-notice {
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.platform-error {
+  border: 1px solid #f0aaa5;
+  background: #fff1f0;
+  color: #9f2f28;
+}
+
+.platform-notice {
+  border: 1px solid #9ed2b3;
+  background: #effaf3;
+  color: #1f6f3d;
+}
+
+.platform-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e3e9ef;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #f6f8fa;
+  font-weight: 700;
+}
+
+.admin-section {
+  margin-top: 14px;
+}
