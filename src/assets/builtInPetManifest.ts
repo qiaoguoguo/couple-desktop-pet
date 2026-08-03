@@ -1,3 +1,5 @@
+import { BUILT_IN_PET_PACKAGE_ID } from "./petPackageContract";
+
 export type IdleActionName = "idle-breathe" | "idle-look" | "idle-stretch";
 
 export type MovementActionName = "walk" | "drag" | "sleep";
@@ -74,7 +76,7 @@ const longAction = (
 });
 
 export const builtInPetManifest = {
-  id: "star-sleeper",
+  id: BUILT_IN_PET_PACKAGE_ID,
   name: "星星睡衣小星人",
   baseSize: { width: 256, height: 320 },
   actions: {

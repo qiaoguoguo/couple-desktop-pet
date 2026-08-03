@@ -1,3 +1,4 @@
+import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
 import type { PetSettings } from "./settingsTypes";
 
 export const defaultSettings: PetSettings = {
@@ -7,6 +8,10 @@ export const defaultSettings: PetSettings = {
   bubblesEnabled: true,
   alwaysOnTop: true,
   clickThrough: false,
+  appearance: {
+    selectedPetPackageId: BUILT_IN_PET_PACKAGE_ID,
+    peerPetPackageByDeviceId: {},
+  },
   sync: {
     enabled: false,
     relayUrl: "http://127.0.0.1:8787",

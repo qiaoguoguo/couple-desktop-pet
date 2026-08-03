@@ -15,6 +15,10 @@ describe("settings defaults", () => {
     expect(defaultSettings.alwaysOnTop).toBe(true);
     expect(defaultSettings.clickThrough).toBe(false);
     expect(defaultSettings.movementRange).toBe("bottom");
+    expect(defaultSettings.appearance).toEqual({
+      selectedPetPackageId: "builtin:star-sleeper",
+      peerPetPackageByDeviceId: {},
+    });
   });
 
   it("uses disabled sync defaults", () => {
@@ -30,6 +34,34 @@ describe("settings defaults", () => {
 });
 
 describe("mergeSettings", () => {
+  it("defaults appearance settings to the built-in package", () => {
+    expect(mergeSettings({}).appearance).toEqual({
+      selectedPetPackageId: "builtin:star-sleeper",
+      peerPetPackageByDeviceId: {},
+    });
+  });
+
+  it("reads valid appearance settings and drops invalid peer mappings", () => {
+    expect(
+      mergeSettings({
+        appearance: {
+          selectedPetPackageId: "imported:moon-buddy",
+          peerPetPackageByDeviceId: {
+            dev_a: "imported:moon-buddy",
+            dev_b: 3,
+          },
+        },
+      } as never),
+    ).toMatchObject({
+      appearance: {
+        selectedPetPackageId: "imported:moon-buddy",
+        peerPetPackageByDeviceId: {
+          dev_a: "imported:moon-buddy",
+        },
+      },
+    });
+  });
+
   it("clamps scale to the supported range", () => {
     expect(mergeSettings({ scale: 3 }).scale).toBe(2);
     expect(mergeSettings({ scale: 0.2 }).scale).toBe(0.5);
@@ -50,6 +82,12 @@ describe("mergeSettings", () => {
         bubblesEnabled: false,
         alwaysOnTop: false,
         clickThrough: true,
+        appearance: {
+          selectedPetPackageId: "imported:moon-buddy",
+          peerPetPackageByDeviceId: {
+            dev_a: "imported:moon-buddy",
+          },
+        },
         sync: {
           enabled: true,
           relayUrl: "https://relay.example.com",
@@ -66,6 +104,12 @@ describe("mergeSettings", () => {
       bubblesEnabled: false,
       alwaysOnTop: false,
       clickThrough: true,
+      appearance: {
+        selectedPetPackageId: "imported:moon-buddy",
+        peerPetPackageByDeviceId: {
+          dev_a: "imported:moon-buddy",
+        },
+      },
       sync: {
         enabled: true,
         relayUrl: "https://relay.example.com",
@@ -129,6 +173,12 @@ describe("settings persistence", () => {
         bubblesEnabled: false,
         alwaysOnTop: false,
         clickThrough: true,
+        appearance: {
+          selectedPetPackageId: "imported:moon-buddy",
+          peerPetPackageByDeviceId: {
+            dev_a: "imported:moon-buddy",
+          },
+        },
         sync: {
           enabled: true,
           relayUrl: "https://relay.example.com",
@@ -148,6 +198,12 @@ describe("settings persistence", () => {
       bubblesEnabled: false,
       alwaysOnTop: false,
       clickThrough: true,
+      appearance: {
+        selectedPetPackageId: "imported:moon-buddy",
+        peerPetPackageByDeviceId: {
+          dev_a: "imported:moon-buddy",
+        },
+      },
       sync: {
         enabled: true,
         relayUrl: "https://relay.example.com",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BUILT_IN_PET_PACKAGE_ID } from "./petPackageContract";
 import {
   builtInPetManifest,
   idleActionNames,
@@ -29,6 +30,10 @@ const bundledFrameUrls = import.meta.glob<string>("./pets/star-sleeper/*.png", {
 });
 
 describe("builtInPetManifest", () => {
+  it("uses the built-in runtime package id", () => {
+    expect(builtInPetManifest.id).toBe(BUILT_IN_PET_PACKAGE_ID);
+  });
+
   it("defines the expected long animation action set", () => {
     expect(Object.keys(builtInPetManifest.actions)).toEqual([
       ...expectedActionNames,

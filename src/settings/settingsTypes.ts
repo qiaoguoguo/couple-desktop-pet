@@ -9,6 +9,11 @@ export interface SyncSettings {
   peerDeviceId: string | null;
 }
 
+export interface AppearanceSettings {
+  selectedPetPackageId: string;
+  peerPetPackageByDeviceId: Record<string, string>;
+}
+
 export interface PetSettings {
   scale: number;
   autoMoveEnabled: boolean;
@@ -16,5 +21,6 @@ export interface PetSettings {
   bubblesEnabled: boolean;
   alwaysOnTop: boolean;
   clickThrough: boolean;
+  appearance: AppearanceSettings;
   sync: SyncSettings;
 }

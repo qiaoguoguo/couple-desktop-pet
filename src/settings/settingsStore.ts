@@ -18,6 +18,7 @@ export function mergeSettings(input: Partial<PetSettings>): PetSettings {
     bubblesEnabled: readBoolean(settings.bubblesEnabled, defaultSettings.bubblesEnabled),
     alwaysOnTop: readBoolean(settings.alwaysOnTop, defaultSettings.alwaysOnTop),
     clickThrough: readBoolean(settings.clickThrough, defaultSettings.clickThrough),
+    appearance: readAppearanceSettings(settings.appearance),
     sync: readSyncSettings(settings.sync),
   };
 }
@@ -78,6 +79,41 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
     pairId: readNullableString(value.pairId),
     peerDeviceId: readNullableString(value.peerDeviceId),
   };
+}
+
+function readAppearanceSettings(value: unknown): PetSettings["appearance"] {
+  if (!isRecord(value)) {
+    return {
+      selectedPetPackageId: defaultSettings.appearance.selectedPetPackageId,
+      peerPetPackageByDeviceId: {
+        ...defaultSettings.appearance.peerPetPackageByDeviceId,
+      },
+    };
+  }
+
+  return {
+    selectedPetPackageId: readNonEmptyString(
+      value.selectedPetPackageId,
+      defaultSettings.appearance.selectedPetPackageId,
+    ),
+    peerPetPackageByDeviceId: readStringRecord(value.peerPetPackageByDeviceId),
+  };
+}
+
+function readStringRecord(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const entries: Record<string, string> = {};
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (key.trim() && typeof entry === "string" && entry.trim()) {
+      entries[key] = entry.trim();
+    }
+  }
+
+  return entries;
 }
 
 function readNonEmptyString(value: unknown, fallback: string): string {
