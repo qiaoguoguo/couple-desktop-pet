@@ -1,6 +1,8 @@
 packages:
   - "."
   - "server"
+  - "platform-api"
+  - "platform-web"
 
 onlyBuiltDependencies:
   - better-sqlite3

@@ -14,6 +14,14 @@
     "server:test": "pnpm --dir server test",
     "server:typecheck": "pnpm --dir server typecheck",
     "server:build": "pnpm --dir server build",
+    "platform-api:dev": "pnpm --dir platform-api dev",
+    "platform-api:test": "pnpm --dir platform-api test",
+    "platform-api:typecheck": "pnpm --dir platform-api typecheck",
+    "platform-api:build": "pnpm --dir platform-api build",
+    "platform-web:dev": "pnpm --dir platform-web dev",
+    "platform-web:test": "pnpm --dir platform-web test",
+    "platform-web:typecheck": "pnpm --dir platform-web typecheck",
+    "platform-web:build": "pnpm --dir platform-web build",
     "tauri": "tauri"
   },
   "dependencies": {
