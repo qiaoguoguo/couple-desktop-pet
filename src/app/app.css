@@ -195,6 +195,96 @@ body {
   color: #2c1f18;
 }
 
+.sync-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(255 255 255 / 0.18);
+  background: rgb(255 255 255 / 0.92);
+  font-size: 13px;
+}
+
+.sync-panel-header,
+.sync-pair-actions,
+.sync-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-panel-header {
+  justify-content: space-between;
+}
+
+.sync-panel h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.sync-field {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sync-panel input,
+.sync-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgb(75 43 26 / 0.22);
+  border-radius: 6px;
+  padding: 6px 7px;
+  color: #2c1f18;
+  font: inherit;
+}
+
+.sync-panel button {
+  min-height: 30px;
+  border: 1px solid rgb(75 43 26 / 0.24);
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #2c1f18;
+  font: inherit;
+}
+
+.sync-panel button:disabled,
+.sync-panel input:disabled,
+.sync-panel textarea:disabled {
+  opacity: 0.56;
+}
+
+.sync-pair-code {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #fff1d8;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.sync-message-list {
+  display: grid;
+  gap: 4px;
+  max-height: 88px;
+  overflow: auto;
+}
+
+.sync-message {
+  margin: 0;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgb(255 241 216 / 0.82);
+}
+
+.sync-message.is-sent {
+  justify-self: end;
+}
+
+.sync-error {
+  margin: 0;
+  color: #8c1d18;
+}
+
 .pet-context-menu {
   position: absolute;
   z-index: 10;

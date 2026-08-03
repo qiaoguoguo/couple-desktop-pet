@@ -25,6 +25,11 @@ import {
   startWindowDrag,
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
+import { ensureDeviceIdentity } from "../sync/deviceIdentity";
+import { RelayHttpClient } from "../sync/relayHttpClient";
+import { SyncPanel } from "../sync/SyncPanel";
+import { useRealtimeSync } from "../sync/useRealtimeSync";
+import type { SessionMessage } from "../sync/syncTypes";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
 import {
   createInitialPetState,
@@ -39,7 +44,7 @@ import {
   saveSettings,
   type SettingsPersistenceApi,
 } from "../settings/settingsStore";
-import type { PetSettings } from "../settings/settingsTypes";
+import type { PetSettings, SyncSettings } from "../settings/settingsTypes";
 import {
   getActionDefinition,
   idleActionNames,
@@ -79,6 +84,46 @@ export function App() {
     x: number;
     y: number;
   } | null>(null);
+  const [pairCode, setPairCode] = useState<{
+    code: string;
+    expiresAt: string;
+  } | null>(null);
+  const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const realtimeCallbacks = useMemo(
+    () => ({
+      onMessage: (message: {
+        id: string;
+        fromDeviceId: string;
+        text: string;
+        at: string;
+      }) => {
+        setSessionMessages((current) => [
+          ...current,
+          {
+            id: message.id,
+            direction: "received",
+            text: message.text,
+            at: message.at,
+          },
+        ]);
+
+        if (settingsRef.current.bubblesEnabled) {
+          setBubble(showBubble(message.text));
+        }
+      },
+    }),
+    [],
+  );
+  const realtime = useRealtimeSync(settings.sync, realtimeCallbacks);
+  const syncStatus = useMemo(
+    () => ({
+      ...realtime.state,
+      lastError: syncError ?? realtime.state.lastError,
+    }),
+    [realtime.state, syncError],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -263,6 +308,98 @@ export function App() {
     [persistSettings, settings, settingsOpen],
   );
 
+  const handleSyncChange = useCallback(
+    (patch: Partial<SyncSettings>) => {
+      handleSettingsChange({
+        sync: {
+          ...settingsRef.current.sync,
+          ...patch,
+        },
+      });
+    },
+    [handleSettingsChange],
+  );
+
+  const handleCreatePairCode = useCallback(async () => {
+    const identity = ensureDeviceIdentity({
+      ...settingsRef.current.sync,
+      enabled: true,
+    });
+    handleSyncChange(identity);
+    setSyncError(null);
+
+    const result = await new RelayHttpClient(identity.relayUrl).createPairCode({
+      deviceId: identity.deviceId ?? "",
+      deviceSecret: identity.deviceSecret ?? "",
+      displayName: "星星桌宠",
+    });
+
+    if (result.ok) {
+      setPairCode({ code: result.code, expiresAt: result.expiresAt });
+      return;
+    }
+
+    setSyncError(result.message);
+  }, [handleSyncChange]);
+
+  const handleAcceptPairCode = useCallback(
+    async (code: string) => {
+      const identity = ensureDeviceIdentity({
+        ...settingsRef.current.sync,
+        enabled: true,
+      });
+      handleSyncChange(identity);
+      setSyncError(null);
+
+      const result = await new RelayHttpClient(identity.relayUrl).acceptPairCode({
+        deviceId: identity.deviceId ?? "",
+        deviceSecret: identity.deviceSecret ?? "",
+        displayName: "星星桌宠",
+        code,
+      });
+
+      if (result.ok) {
+        handleSyncChange({
+          ...identity,
+          pairId: result.pairId,
+          peerDeviceId: result.peerDeviceId,
+        });
+        setPairCode(null);
+        setSessionMessages([]);
+        return;
+      }
+
+      setSyncError(result.message);
+    },
+    [handleSyncChange],
+  );
+
+  const handleSendMessage = useCallback(
+    (text: string) => {
+      const result = realtime.client?.sendMessage(text) ?? {
+        ok: false as const,
+        message: "Relay is not connected",
+      };
+
+      if (!result.ok) {
+        setSyncError(result.message);
+        return;
+      }
+
+      setSyncError(null);
+      setSessionMessages((current) => [
+        ...current,
+        {
+          id: result.clientMessageId,
+          direction: "sent",
+          text: text.trim(),
+          at: new Date().toISOString(),
+        },
+      ]);
+    },
+    [realtime.client],
+  );
+
   const handlePetClick = useCallback(() => {
     if (settingsOpen) {
       return;
@@ -383,6 +520,16 @@ export function App() {
           settings={settings}
           onChange={handleSettingsChange}
           onResetPosition={handleResetPosition}
+        />
+        <SyncPanel
+          sync={settings.sync}
+          status={syncStatus}
+          messages={sessionMessages}
+          pairCode={pairCode}
+          onSyncChange={handleSyncChange}
+          onCreatePairCode={handleCreatePairCode}
+          onAcceptPairCode={handleAcceptPairCode}
+          onSendMessage={handleSendMessage}
         />
       </div>
 

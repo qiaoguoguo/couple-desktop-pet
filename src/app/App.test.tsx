@@ -15,6 +15,50 @@ const windowCommandsMock = vi.hoisted(() => ({
   writeSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
+const realtimeSyncMock = vi.hoisted(() => {
+  const mock = {
+    callbacks: undefined as
+      | {
+          onMessage(message: {
+            id: string;
+            fromDeviceId: string;
+            text: string;
+            at: string;
+          }): void;
+        }
+      | undefined,
+    client: {
+      sendMessage: vi.fn(() => ({
+        ok: true as const,
+        clientMessageId: "local_test",
+      })),
+    },
+    state: {
+      status: "disabled" as const,
+      peerPresence: "unknown" as const,
+      lastError: null as string | null,
+    },
+    useRealtimeSync: vi.fn(
+      (
+        _sync: unknown,
+        callbacks: {
+          onMessage(message: {
+            id: string;
+            fromDeviceId: string;
+            text: string;
+            at: string;
+          }): void;
+        },
+      ) => {
+        mock.callbacks = callbacks;
+        return { state: mock.state, client: mock.client };
+      },
+    ),
+  };
+
+  return mock;
+});
+
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
   writeSettings: windowCommandsMock.writeSettings,
@@ -31,6 +75,10 @@ vi.mock("../desktop/windowCommands", () => ({
   }),
 }));
 
+vi.mock("../sync/useRealtimeSync", () => ({
+  useRealtimeSync: realtimeSyncMock.useRealtimeSync,
+}));
+
 describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
@@ -44,6 +92,12 @@ describe("App", () => {
     windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.startWindowDrag.mockClear();
     windowCommandsMock.writeSettings.mockClear();
+    realtimeSyncMock.callbacks = undefined;
+    realtimeSyncMock.client.sendMessage.mockClear();
+    realtimeSyncMock.state.status = "disabled";
+    realtimeSyncMock.state.peerPresence = "unknown";
+    realtimeSyncMock.state.lastError = null;
+    realtimeSyncMock.useRealtimeSync.mockClear();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -180,6 +234,33 @@ describe("App", () => {
     await waitFor(() =>
       expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true),
     );
+  });
+
+  it("shows received realtime messages in the pet bubble", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() => expect(realtimeSyncMock.callbacks).toBeTruthy());
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "想你啦",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+
+    expect((await screen.findAllByText("想你啦")).length).toBeGreaterThan(0);
   });
 
   it("passes the current movement range to desktop auto movement", () => {
