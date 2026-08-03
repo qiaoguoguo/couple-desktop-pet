@@ -181,6 +181,10 @@ export function App() {
     setSettingsOpen(true);
   }, [persistSettings]);
 
+  const closeSettingsPanel = useCallback(() => {
+    setSettingsOpen(false);
+  }, []);
+
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -320,6 +324,16 @@ export function App() {
     },
     [handleSettingsChange],
   );
+
+  const handleUnpair = useCallback(() => {
+    handleSyncChange({
+      pairId: null,
+      peerDeviceId: null,
+    });
+    setPairCode(null);
+    setSessionMessages([]);
+    setSyncError(null);
+  }, [handleSyncChange]);
 
   useEffect(() => {
     if (!pairCode) {
@@ -651,21 +665,30 @@ export function App() {
       </button>
 
       <div id="settings-panel" className={settingsOpen ? "settings-dock" : "settings-dock is-hidden"}>
-        <SettingsPanel
-          settings={settings}
-          onChange={handleSettingsChange}
-          onResetPosition={handleResetPosition}
-        />
-        <SyncPanel
-          sync={settings.sync}
-          status={syncStatus}
-          messages={sessionMessages}
-          pairCode={pairCode}
-          onSyncChange={handleSyncChange}
-          onCreatePairCode={handleCreatePairCode}
-          onAcceptPairCode={handleAcceptPairCode}
-          onSendMessage={handleSendMessage}
-        />
+        <div className="settings-dock-header">
+          <h2>设置</h2>
+          <button type="button" aria-label="关闭设置" onClick={closeSettingsPanel}>
+            关闭
+          </button>
+        </div>
+        <div className="settings-dock-body">
+          <SettingsPanel
+            settings={settings}
+            onChange={handleSettingsChange}
+            onResetPosition={handleResetPosition}
+          />
+          <SyncPanel
+            sync={settings.sync}
+            status={syncStatus}
+            messages={sessionMessages}
+            pairCode={pairCode}
+            onSyncChange={handleSyncChange}
+            onCreatePairCode={handleCreatePairCode}
+            onAcceptPairCode={handleAcceptPairCode}
+            onSendMessage={handleSendMessage}
+            onUnpair={handleUnpair}
+          />
+        </div>
       </div>
 
       {contextMenuPosition ? (

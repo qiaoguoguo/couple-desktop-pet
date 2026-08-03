@@ -18,6 +18,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={onCreatePairCode}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
 
@@ -32,6 +33,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={onCreatePairCode}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
@@ -53,6 +55,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={onCreatePairCode}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
 
@@ -77,6 +80,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
 
@@ -98,10 +102,38 @@ describe("SyncPanel", () => {
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
 
     expect(screen.getByText("已绑定")).toBeTruthy();
+  });
+
+  it("shows an unpair action when already paired", () => {
+    const onUnpair = vi.fn();
+
+    render(
+      <SyncPanel
+        sync={{
+          ...defaultSettings.sync,
+          enabled: true,
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }}
+        status={{ status: "connected", peerPresence: "online", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={vi.fn()}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={vi.fn()}
+        onUnpair={onUnpair}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    expect(onUnpair).toHaveBeenCalledTimes(1);
   });
 
   it("disables sending while the peer is offline", () => {
@@ -122,6 +154,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
         onSendMessage={onSendMessage}
+        onUnpair={vi.fn()}
       />,
     );
 
@@ -155,6 +188,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
         onSendMessage={onSendMessage}
+        onUnpair={vi.fn()}
       />,
     );
 
@@ -194,6 +228,7 @@ describe("SyncPanel", () => {
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
         onSendMessage={vi.fn()}
+        onUnpair={vi.fn()}
       />,
     );
 

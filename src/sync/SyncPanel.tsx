@@ -11,6 +11,7 @@ export interface SyncPanelProps {
   onCreatePairCode(): void;
   onAcceptPairCode(code: string): void;
   onSendMessage(text: string): void;
+  onUnpair(): void;
 }
 
 export function SyncPanel({
@@ -22,6 +23,7 @@ export function SyncPanel({
   onCreatePairCode,
   onAcceptPairCode,
   onSendMessage,
+  onUnpair,
 }: SyncPanelProps) {
   const [acceptCode, setAcceptCode] = useState("");
   const [messageText, setMessageText] = useState("");
@@ -87,7 +89,11 @@ export function SyncPanel({
       </label>
 
       <div className="sync-pair-actions">
-        <button type="button" disabled={controlsDisabled} onClick={onCreatePairCode}>
+        <button
+          type="button"
+          disabled={controlsDisabled || Boolean(sync.pairId)}
+          onClick={onCreatePairCode}
+        >
           生成绑定码
         </button>
         {pairCode ? (
@@ -96,6 +102,11 @@ export function SyncPanel({
           </output>
         ) : null}
         {pairStatusText ? <span className="sync-pair-status">{pairStatusText}</span> : null}
+        {sync.pairId ? (
+          <button type="button" className="sync-unpair" onClick={onUnpair}>
+            取消绑定
+          </button>
+        ) : null}
       </div>
 
       <form className="sync-inline-form" onSubmit={handleAccept}>

@@ -203,6 +203,24 @@ describe("App", () => {
     expect(settingsButton.classList.contains("is-visible")).toBe(true);
   });
 
+  it("closes the settings panel from the panel header", async () => {
+    render(<App />);
+
+    const settingsButton = screen.getByRole("button", { name: "设置" });
+    fireEvent.click(settingsButton);
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+
+    expect(settingsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+  });
+
   it("starts desktop window dragging when pet drag begins", () => {
     const { container } = render(<App />);
     const petStage = container.querySelector(".pet-frame-stage");
@@ -418,6 +436,38 @@ describe("App", () => {
     );
     expect(screen.queryByLabelText("当前绑定码")).toBeNull();
     expect(screen.getByText("已绑定")).toBeTruthy();
+  });
+
+  it("clears local pair settings when unpairing from the sync panel", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
+    windowCommandsMock.writeSettings.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sync: expect.objectContaining({
+            pairId: null,
+            peerDeviceId: null,
+          }),
+        }),
+      ),
+    );
+    expect(screen.queryByText("已绑定")).toBeNull();
   });
 
   it("passes the current movement range to desktop auto movement", () => {
