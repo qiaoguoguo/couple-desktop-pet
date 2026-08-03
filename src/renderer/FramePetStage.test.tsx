@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PetActionDefinition, PetActionName } from "../assets/builtInPetManifest";
 import { REQUIRED_PET_ACTIONS } from "../assets/petPackageContract";
 import {
   buildPetPackageRegistry,
@@ -16,30 +17,35 @@ const importedPackage: ResolvedPetPackage = {
   baseSize: { width: 256, height: 320 },
   previewUrl: "asset://moon/preview.png",
   source: "imported",
-  actions: Object.fromEntries(
-    REQUIRED_PET_ACTIONS.map((action) => [
-      action,
-      {
-        fps: 3,
-        loop:
-          action.startsWith("idle") ||
-          action === "walk" ||
-          action === "drag" ||
-          action === "sleep",
-        durationMs: 6000,
-        category: action.startsWith("idle")
-          ? "idle"
-          : action.startsWith("act-")
-            ? "interaction"
-            : "movement",
-        frames: Array.from(
-          { length: 18 },
-          (_, index) => `asset://moon/${action}-${String(index + 1).padStart(2, "0")}.png`,
-        ),
-      },
-    ]),
-  ) as ResolvedPetPackage["actions"],
+  actions: createImportedActions(),
 };
+
+function createImportedActions(): Record<PetActionName, PetActionDefinition> {
+  const actions = {} as Record<PetActionName, PetActionDefinition>;
+
+  for (const action of REQUIRED_PET_ACTIONS) {
+    actions[action] = {
+      fps: 3,
+      loop:
+        action.startsWith("idle") ||
+        action === "walk" ||
+        action === "drag" ||
+        action === "sleep",
+      durationMs: 6000,
+      category: action.startsWith("idle")
+        ? "idle"
+        : action.startsWith("act-")
+          ? "interaction"
+          : "movement",
+      frames: Array.from(
+        { length: 18 },
+        (_, index) => `asset://moon/${action}-${String(index + 1).padStart(2, "0")}.png`,
+      ),
+    };
+  }
+
+  return actions;
+}
 
 function renderStage(petPackage = builtInPackage) {
   const props = {

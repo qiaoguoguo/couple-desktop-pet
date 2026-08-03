@@ -17,16 +17,7 @@ describe("pet package registry", () => {
     baseSize: { width: 256, height: 320 },
     frameSize: { width: 512, height: 512 },
     previewPath: "C:/app/pet-packages/moon-buddy/preview.png",
-    framePaths: Object.fromEntries(
-      REQUIRED_PET_ACTIONS.map((action) => [
-        action,
-        Array.from(
-          { length: 18 },
-          (_, index) =>
-            `C:/app/pet-packages/moon-buddy/frames/${action}-${String(index + 1).padStart(2, "0")}.png`,
-        ),
-      ]),
-    ) as ImportedPetPackageSummary["framePaths"],
+    framePaths: createFramePaths(),
   };
 
   it("combines the built-in package with imported packages", () => {
@@ -52,3 +43,17 @@ describe("pet package registry", () => {
     );
   });
 });
+
+function createFramePaths(): ImportedPetPackageSummary["framePaths"] {
+  const framePaths = {} as ImportedPetPackageSummary["framePaths"];
+
+  for (const action of REQUIRED_PET_ACTIONS) {
+    framePaths[action] = Array.from(
+      { length: 18 },
+      (_, index) =>
+        `C:/app/pet-packages/moon-buddy/frames/${action}-${String(index + 1).padStart(2, "0")}.png`,
+    );
+  }
+
+  return framePaths;
+}

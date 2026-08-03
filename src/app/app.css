@@ -188,6 +188,75 @@ body {
   overflow-y: auto;
 }
 
+.appearance-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid rgb(75 43 26 / 0.14);
+  font-size: 13px;
+}
+
+.appearance-panel-header,
+.appearance-actions,
+.appearance-package-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.appearance-panel-header,
+.appearance-actions {
+  justify-content: space-between;
+}
+
+.appearance-panel h2,
+.appearance-panel p {
+  margin: 0;
+}
+
+.appearance-panel h2 {
+  font-size: 14px;
+}
+
+.appearance-panel p {
+  color: #6d4c36;
+  font-size: 12px;
+}
+
+.appearance-panel img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.appearance-field {
+  display: grid;
+  gap: 4px;
+}
+
+.appearance-panel select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.appearance-actions button,
+.appearance-package-list button {
+  min-height: 30px;
+  border: 1px solid rgb(75 43 26 / 0.24);
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #2c1f18;
+  font: inherit;
+}
+
+.appearance-actions button:disabled {
+  opacity: 0.56;
+}
+
+.appearance-package-list {
+  flex-wrap: wrap;
+}
+
 .settings-panel {
   display: grid;
   gap: 10px;

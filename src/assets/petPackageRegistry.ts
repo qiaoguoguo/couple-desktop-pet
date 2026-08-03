@@ -53,19 +53,18 @@ function buildBuiltInPackage(): ResolvedPetPackage {
     baseSize: builtInPetManifest.baseSize,
     previewUrl: null,
     source: "built-in",
-    actions: Object.fromEntries(
-      REQUIRED_PET_ACTIONS.map((action) => [
-        action,
-        {
-          ...getActionDefinition(action),
-          frames: getActionDefinition(action).frames.flatMap((framePath) => {
-            const url = getBuiltInFrameAssetUrl(framePath);
+    actions: buildActionRecord((action) => {
+      const actionDefinition = getActionDefinition(action);
 
-            return url ? [url] : [];
-          }),
-        },
-      ]),
-    ) as Record<PetActionName, PetActionDefinition>,
+      return {
+        ...actionDefinition,
+        frames: actionDefinition.frames.flatMap((framePath) => {
+          const url = getBuiltInFrameAssetUrl(framePath);
+
+          return url ? [url] : [];
+        }),
+      };
+    }),
   };
 }
 
@@ -73,26 +72,21 @@ function buildImportedPackage(
   pkg: ImportedPetPackageSummary,
   convertFileSrc: (path: string) => string,
 ): ResolvedPetPackage | null {
-  const actionEntries = REQUIRED_PET_ACTIONS.map((action) => {
+  const actions: Partial<Record<PetActionName, PetActionDefinition>> = {};
+
+  for (const action of REQUIRED_PET_ACTIONS) {
     const frames = pkg.framePaths[action];
     if (!frames || frames.length !== PET_FRAMES_PER_ACTION) {
       return null;
     }
 
-    return [
-      action,
-      {
-        fps: 3,
-        loop: isLoopingImportedAction(action),
-        durationMs: 6000,
-        category: readActionCategory(action),
-        frames: frames.map(convertFileSrc),
-      },
-    ] as const;
-  });
-
-  if (actionEntries.some((entry) => entry === null)) {
-    return null;
+    actions[action] = {
+      fps: 3,
+      loop: isLoopingImportedAction(action),
+      durationMs: 6000,
+      category: readActionCategory(action),
+      frames: frames.map(convertFileSrc),
+    };
   }
 
   return {
@@ -101,11 +95,20 @@ function buildImportedPackage(
     baseSize: pkg.baseSize,
     previewUrl: pkg.previewPath ? convertFileSrc(pkg.previewPath) : null,
     source: "imported",
-    actions: Object.fromEntries(actionEntries) as Record<
-      PetActionName,
-      PetActionDefinition
-    >,
+    actions: actions as Record<PetActionName, PetActionDefinition>,
   };
+}
+
+function buildActionRecord(
+  createAction: (action: PetActionName) => PetActionDefinition,
+): Record<PetActionName, PetActionDefinition> {
+  const actions = {} as Record<PetActionName, PetActionDefinition>;
+
+  for (const action of REQUIRED_PET_ACTIONS) {
+    actions[action] = createAction(action);
+  }
+
+  return actions;
 }
 
 function isLoopingImportedAction(action: PetActionName): boolean {

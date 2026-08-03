@@ -6,6 +6,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { BubbleLayer } from "../bubble/BubbleLayer";
 import {
   createHiddenBubble,
@@ -53,12 +54,16 @@ import {
 } from "../assets/builtInPetManifest";
 import { selectNextIdleAction } from "../pet-core/idleActionSelector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
-import type { ImportedPetPackageSummary } from "../assets/petPackageContract";
+import {
+  BUILT_IN_PET_PACKAGE_ID,
+  type ImportedPetPackageSummary,
+} from "../assets/petPackageContract";
 import { createPetPackageCommands } from "../assets/petPackageCommands";
 import {
   buildPetPackageRegistry,
   resolveSelectedPetPackage,
 } from "../assets/petPackageRegistry";
+import { AppearancePanel } from "../settings/AppearancePanel";
 
 const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
@@ -85,6 +90,7 @@ export function App() {
   const [importedPetPackages, setImportedPetPackages] = useState<
     ImportedPetPackageSummary[]
   >([]);
+  const [petPackageError, setPetPackageError] = useState<string | null>(null);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
@@ -151,6 +157,11 @@ export function App() {
       ),
     [petPackages, settings.appearance.selectedPetPackageId],
   );
+  const refreshPetPackages = useCallback(async () => {
+    const packages = await petPackageApi.listPetPackages();
+    setImportedPetPackages(packages);
+    return packages;
+  }, [petPackageApi]);
 
   useEffect(() => {
     let disposed = false;
@@ -358,6 +369,73 @@ export function App() {
       );
     },
     [persistSettings, settings, settingsOpen],
+  );
+
+  const handleImportPetPackage = useCallback(async () => {
+    setPetPackageError(null);
+
+    const selectedPath = await open({
+      multiple: false,
+      filters: [{ name: "桌宠资源包", extensions: ["cdpet", "zip"] }],
+    });
+
+    if (typeof selectedPath !== "string") {
+      return;
+    }
+
+    try {
+      const imported = await petPackageApi.importPetPackage(selectedPath);
+      await refreshPetPackages();
+      handleSettingsChange({
+        appearance: {
+          ...settingsRef.current.appearance,
+          selectedPetPackageId: imported.id,
+        },
+      });
+    } catch (error) {
+      setPetPackageError(
+        error instanceof Error ? error.message : "导入形象资源包失败",
+      );
+    }
+  }, [handleSettingsChange, petPackageApi, refreshPetPackages]);
+
+  const handleSelectPetPackage = useCallback(
+    (packageId: string) => {
+      setPetPackageError(null);
+      handleSettingsChange({
+        appearance: {
+          ...settingsRef.current.appearance,
+          selectedPetPackageId: packageId,
+        },
+      });
+    },
+    [handleSettingsChange],
+  );
+
+  const handleDeletePetPackage = useCallback(
+    async (packageId: string) => {
+      setPetPackageError(null);
+
+      if (packageId === BUILT_IN_PET_PACKAGE_ID) {
+        setPetPackageError("内置形象不能删除");
+        return;
+      }
+
+      if (settingsRef.current.appearance.selectedPetPackageId === packageId) {
+        setPetPackageError("当前正在使用的形象不能删除");
+        return;
+      }
+
+      try {
+        await petPackageApi.deletePetPackage(packageId);
+        await refreshPetPackages();
+      } catch (error) {
+        setPetPackageError(
+          error instanceof Error ? error.message : "删除形象资源包失败",
+        );
+      }
+    },
+    [petPackageApi, refreshPetPackages],
   );
 
   const handleSyncChange = useCallback(
@@ -741,6 +819,14 @@ export function App() {
           </button>
         </div>
         <div className="settings-dock-body">
+          <AppearancePanel
+            packages={petPackages}
+            selectedPackageId={selectedPetPackage.id}
+            error={petPackageError}
+            onImportPackage={handleImportPetPackage}
+            onSelectPackage={handleSelectPetPackage}
+            onDeletePackage={handleDeletePetPackage}
+          />
           <SettingsPanel
             settings={settings}
             onChange={handleSettingsChange}

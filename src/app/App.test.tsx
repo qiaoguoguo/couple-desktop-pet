@@ -1,5 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  REQUIRED_PET_ACTIONS,
+  type ImportedPetPackageSummary,
+} from "../assets/petPackageContract";
 import { App } from "./App";
 
 const windowCommandsMock = vi.hoisted(() => ({
@@ -90,6 +94,8 @@ const petPackageCommandsMock = vi.hoisted(() => ({
   convertFileSrc: vi.fn((path: string) => `asset://${path}`),
 }));
 
+const dialogOpenMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
   writeSettings: windowCommandsMock.writeSettings,
@@ -117,6 +123,41 @@ vi.mock("../sync/relayHttpClient", () => ({
 vi.mock("../assets/petPackageCommands", () => ({
   createPetPackageCommands: vi.fn(() => petPackageCommandsMock),
 }));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: dialogOpenMock,
+}));
+
+function importedPackageSummary(
+  manifestId = "moon-buddy",
+  name = "月亮伙伴",
+): ImportedPetPackageSummary {
+  return {
+    id: `imported:${manifestId}`,
+    manifestId,
+    name,
+    baseSize: { width: 256, height: 320 },
+    frameSize: { width: 512, height: 512 },
+    previewPath: `C:/app/pet-packages/${manifestId}/preview.png`,
+    framePaths: importedFramePaths(manifestId),
+  };
+}
+
+function importedFramePaths(
+  manifestId: string,
+): ImportedPetPackageSummary["framePaths"] {
+  const framePaths = {} as ImportedPetPackageSummary["framePaths"];
+
+  for (const action of REQUIRED_PET_ACTIONS) {
+    framePaths[action] = Array.from(
+      { length: 18 },
+      (_, index) =>
+        `C:/app/pet-packages/${manifestId}/frames/${action}-${String(index + 1).padStart(2, "0")}.png`,
+    );
+  }
+
+  return framePaths;
+}
 
 describe("App", () => {
   afterEach(() => {
@@ -150,6 +191,7 @@ describe("App", () => {
     petPackageCommandsMock.convertFileSrc.mockImplementation(
       (path: string) => `asset://${path}`,
     );
+    dialogOpenMock.mockReset();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -252,6 +294,76 @@ describe("App", () => {
     expect(settingsButton.getAttribute("aria-expanded")).toBe("false");
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock is-hidden",
+    );
+  });
+
+  it("imports a pet package and selects it", async () => {
+    const moonPackage = importedPackageSummary();
+    petPackageCommandsMock.listPetPackages
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([moonPackage]);
+    petPackageCommandsMock.importPetPackage.mockResolvedValueOnce(moonPackage);
+    dialogOpenMock.mockResolvedValueOnce("C:/Users/me/moon.cdpet");
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "导入形象资源包" }));
+
+    await waitFor(() =>
+      expect(petPackageCommandsMock.importPetPackage).toHaveBeenCalledWith(
+        "C:/Users/me/moon.cdpet",
+      ),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearance: expect.objectContaining({
+            selectedPetPackageId: "imported:moon-buddy",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("switches to an imported pet package from settings", async () => {
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([
+      importedPackageSummary(),
+    ]);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: "月亮伙伴" })).toBeTruthy(),
+    );
+    fireEvent.change(screen.getByLabelText("当前形象"), {
+      target: { value: "imported:moon-buddy" },
+    });
+
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appearance: expect.objectContaining({
+          selectedPetPackageId: "imported:moon-buddy",
+        }),
+      }),
+    );
+  });
+
+  it("deletes a non-selected imported pet package", async () => {
+    petPackageCommandsMock.listPetPackages
+      .mockResolvedValueOnce([importedPackageSummary()])
+      .mockResolvedValueOnce([]);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "删除月亮伙伴" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "删除月亮伙伴" }));
+
+    await waitFor(() =>
+      expect(petPackageCommandsMock.deletePetPackage).toHaveBeenCalledWith(
+        "imported:moon-buddy",
+      ),
     );
   });
 
