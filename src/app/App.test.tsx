@@ -374,6 +374,30 @@ describe("App", () => {
     );
   });
 
+  it("refuses to delete an imported pet package used as a peer package", async () => {
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([
+      importedPackageSummary(),
+    ]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:star-sleeper",
+        peerPetPackageByDeviceId: {
+          dev_b: "imported:moon-buddy",
+        },
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "删除月亮伙伴" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "删除月亮伙伴" }));
+
+    expect(petPackageCommandsMock.deletePetPackage).not.toHaveBeenCalled();
+    expect(await screen.findByText("对方形象正在使用，不能删除")).toBeTruthy();
+  });
+
   it("renders a received message with the selected peer pet package", async () => {
     const moonPackage = importedPackageSummary();
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);

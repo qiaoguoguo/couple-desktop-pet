@@ -101,6 +101,27 @@ describe("AppearancePanel", () => {
     expect(onDeletePackage).toHaveBeenCalledWith("imported:sun-buddy");
   });
 
+  it("does not show a delete button for the selected peer package", () => {
+    render(
+      <AppearancePanel
+        packages={packages}
+        selectedPackageId="builtin:star-sleeper"
+        peerDeviceId="dev_b"
+        selectedPeerPackageId="imported:moon-buddy"
+        error={null}
+        onImportPackage={vi.fn()}
+        onSelectPackage={vi.fn()}
+        onSelectPeerPackage={vi.fn()}
+        onDeletePackage={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "删除月亮伙伴" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "删除太阳伙伴" })).toBeTruthy();
+  });
+
   it("selects a peer pet package when a paired device exists", () => {
     const onSelectPeerPackage = vi.fn();
 

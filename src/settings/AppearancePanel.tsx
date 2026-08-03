@@ -27,7 +27,10 @@ export function AppearancePanel({
     packages.find((pkg) => pkg.id === selectedPackageId) ?? packages[0];
   const selectedValue = selectedPackage?.id ?? "builtin:star-sleeper";
   const deletablePackages = packages.filter(
-    (pkg) => pkg.source === "imported" && pkg.id !== selectedValue,
+    (pkg) =>
+      pkg.source === "imported" &&
+      pkg.id !== selectedValue &&
+      pkg.id !== selectedPeerPackageId,
   );
 
   return (

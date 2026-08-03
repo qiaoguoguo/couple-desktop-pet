@@ -513,6 +513,15 @@ export function App() {
         return;
       }
 
+      if (
+        Object.values(
+          settingsRef.current.appearance.peerPetPackageByDeviceId,
+        ).includes(packageId)
+      ) {
+        setPetPackageError("对方形象正在使用，不能删除");
+        return;
+      }
+
       try {
         await petPackageApi.deletePetPackage(packageId);
         await refreshPetPackages();
