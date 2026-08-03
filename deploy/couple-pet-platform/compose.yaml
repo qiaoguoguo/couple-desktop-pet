@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  platform-api:
+    build:
+      context: ../..
+      dockerfile: platform-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      PLATFORM_API_HOST: 0.0.0.0
+      PLATFORM_API_PORT: 3000
+      PLATFORM_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PLATFORM_JWT_SECRET: ${PLATFORM_JWT_SECRET}
+      PLATFORM_RELEASE_STORAGE_PATH: /app/storage/releases
+      PLATFORM_PUBLIC_BASE_URL: ${PLATFORM_PUBLIC_BASE_URL}
+      PLATFORM_API_BASE_URL: ${PLATFORM_API_BASE_URL}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      PLATFORM_DEMO_WINDOWS_EXE_PATH: ${PLATFORM_DEMO_WINDOWS_EXE_PATH:-}
+      PLATFORM_DEMO_WINDOWS_VERSION: ${PLATFORM_DEMO_WINDOWS_VERSION:-}
+    volumes:
+      - release_storage:/app/storage/releases
+    ports:
+      - "19081:3000"
+
+  platform-web:
+    build:
+      context: ../..
+      dockerfile: platform-web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - platform-api
+    volumes:
+      - release_storage:/usr/share/nginx/html/releases:ro
+    ports:
+      - "19080:80"
+
+volumes:
+  postgres_data:
+  release_storage:
