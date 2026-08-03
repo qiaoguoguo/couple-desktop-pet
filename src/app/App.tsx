@@ -325,15 +325,36 @@ export function App() {
     [handleSettingsChange],
   );
 
-  const handleUnpair = useCallback(() => {
-    handleSyncChange({
-      pairId: null,
-      peerDeviceId: null,
-    });
+  const clearLocalPair = useCallback(() => {
+    handleSyncChange({ pairId: null, peerDeviceId: null });
     setPairCode(null);
     setSessionMessages([]);
     setSyncError(null);
   }, [handleSyncChange]);
+
+  const handleUnpair = useCallback(async () => {
+    const currentSync = settingsRef.current.sync;
+
+    if (
+      currentSync.pairId &&
+      currentSync.relayUrl &&
+      currentSync.deviceId &&
+      currentSync.deviceSecret
+    ) {
+      const result = await new RelayHttpClient(currentSync.relayUrl).unpair({
+        deviceId: currentSync.deviceId,
+        deviceSecret: currentSync.deviceSecret,
+        pairId: currentSync.pairId,
+      });
+
+      if (!result.ok && result.code !== "pair_not_found") {
+        setSyncError(readUnpairUserMessage(result.code, result.message));
+        return;
+      }
+    }
+
+    clearLocalPair();
+  }, [clearLocalPair]);
 
   useEffect(() => {
     if (!pairCode) {
@@ -764,6 +785,18 @@ function getInteractionMenuPosition() {
 function readRelayUserMessage(code: string, fallback: string) {
   if (code === "device_already_paired") {
     return "这台设备已在中继服务中完成绑定，请稍等自动同步或重新打开设置查看。";
+  }
+
+  return fallback;
+}
+
+function readUnpairUserMessage(code: string, fallback: string) {
+  if (code === "relay_unavailable") {
+    return "无法连接中继，取消绑定失败，请稍后重试。";
+  }
+
+  if (code === "auth_failed") {
+    return "设备认证失败，取消绑定失败，请检查本机绑定信息。";
   }
 
   return fallback;

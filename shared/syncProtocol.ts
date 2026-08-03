@@ -74,6 +74,15 @@ export type PairCodeStatusResponse =
   | { status: "expired" }
   | { status: "consumed" };
 
+export interface UnpairRequest extends DeviceAuthPayload {
+  pairId: string;
+}
+
+export interface UnpairResponse {
+  pairId: string;
+  unpairedAt: string;
+}
+
 export interface AuthClientMessage {
   type: "auth";
   requestId: string;

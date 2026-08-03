@@ -95,6 +95,70 @@ describe("RelayRepository pair codes", () => {
     ).toThrowError("Device is already paired");
   });
 
+  it("unpairs an active pair and lets the same device create another pair code", () => {
+    const code = repository.createPairCode({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    const pair = repository.acceptPairCode({
+      deviceId: "dev_b",
+      deviceSecret: "secret_b",
+      displayName: "星星桌宠",
+      code: code.code,
+    });
+
+    expect(
+      repository.unpair({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: pair.pairId,
+      }),
+    ).toMatchObject({ pairId: pair.pairId });
+    expect(repository.getPeerDeviceId(pair.pairId, "dev_a")).toBeNull();
+
+    const nextCode = repository.createPairCode({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    expect(nextCode.code).toHaveLength(6);
+  });
+
+  it("rejects unpair from a valid device that is not a pair member", () => {
+    const code = repository.createPairCode({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    const pair = repository.acceptPairCode({
+      deviceId: "dev_b",
+      deviceSecret: "secret_b",
+      displayName: "星星桌宠",
+      code: code.code,
+    });
+    repository.ensureDevice({
+      deviceId: "dev_c",
+      deviceSecret: "secret_c",
+      displayName: "星星桌宠",
+    });
+
+    expect(() =>
+      repository.unpair({
+        deviceId: "dev_c",
+        deviceSecret: "secret_c",
+        pairId: pair.pairId,
+      }),
+    ).toThrowError("Device is not part of this pair");
+    expect(() =>
+      repository.createPairCode({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        displayName: "星星桌宠",
+      }),
+    ).toThrowError("Device is already paired");
+  });
+
   it("lets the pair-code creator observe pending and paired status", () => {
     const code = repository.createPairCode({
       deviceId: "dev_a",

@@ -70,6 +70,76 @@ describe("pairing HTTP API", () => {
     });
   });
 
+  it("unpairs an active pair and lets the same creator bind again", async () => {
+    const codeResponse = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    const codeBody = await codeResponse.json();
+    const acceptResponse = await postJson(`${baseUrl}/pairs/accept`, {
+      deviceId: "dev_b",
+      deviceSecret: "secret_b",
+      displayName: "星星桌宠",
+      code: codeBody.code,
+    });
+    const acceptBody = await acceptResponse.json();
+
+    const unpairResponse = await postJson(`${baseUrl}/pairs/unpair`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: acceptBody.pairId,
+    });
+    expect(unpairResponse.status).toBe(200);
+    await expect(unpairResponse.json()).resolves.toMatchObject({
+      pairId: acceptBody.pairId,
+    });
+
+    const nextCodeResponse = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    expect(nextCodeResponse.status).toBe(200);
+    const nextCodeBody = await nextCodeResponse.json();
+    expect(nextCodeBody.code).toMatch(/^\d{6}$/);
+  });
+
+  it("rejects unpair requests from non-pair members", async () => {
+    const codeResponse = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+    const codeBody = await codeResponse.json();
+    const acceptResponse = await postJson(`${baseUrl}/pairs/accept`, {
+      deviceId: "dev_b",
+      deviceSecret: "secret_b",
+      displayName: "星星桌宠",
+      code: codeBody.code,
+    });
+    const acceptBody = await acceptResponse.json();
+    await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_c",
+      deviceSecret: "secret_c",
+      displayName: "星星桌宠",
+    });
+
+    const unpairResponse = await postJson(`${baseUrl}/pairs/unpair`, {
+      deviceId: "dev_c",
+      deviceSecret: "secret_c",
+      pairId: acceptBody.pairId,
+    });
+
+    expect(unpairResponse.status).toBe(401);
+    await expect(unpairResponse.json()).resolves.toEqual({
+      error: {
+        code: "auth_failed",
+        message: "Device is not part of this pair",
+      },
+    });
+  });
+
   it("returns typed errors", async () => {
     const response = await postJson(`${baseUrl}/pairs/accept`, {
       deviceId: "dev_b",

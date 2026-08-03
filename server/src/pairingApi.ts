@@ -3,6 +3,7 @@ import type {
   AcceptPairCodeRequest,
   CreatePairCodeRequest,
   PairCodeStatusRequest,
+  UnpairRequest,
 } from "../../shared/syncProtocol.js";
 import { RelayError } from "./errors.js";
 import { readJsonBody, writeEmpty, writeError, writeJson } from "./httpJson.js";
@@ -49,6 +50,12 @@ async function handleRequest(
     if (request.method === "POST" && url.pathname === "/pairs/accept") {
       const body = readAcceptPairCodeRequest(await readBodyOrThrow(request));
       writeJson(response, 200, repository.acceptPairCode(body));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/pairs/unpair") {
+      const body = readUnpairRequest(await readBodyOrThrow(request));
+      writeJson(response, 200, repository.unpair(body));
       return;
     }
 
@@ -100,6 +107,18 @@ function readPairCodeStatusRequest(input: unknown): PairCodeStatusRequest {
     deviceId: readRequiredString(input.deviceId, "deviceId"),
     deviceSecret: readRequiredString(input.deviceSecret, "deviceSecret"),
     code: readRequiredString(input.code, "code"),
+  };
+}
+
+function readUnpairRequest(input: unknown): UnpairRequest {
+  if (!isRecord(input)) {
+    throw new RelayError("invalid_request", 400, "Request body must be an object");
+  }
+
+  return {
+    deviceId: readRequiredString(input.deviceId, "deviceId"),
+    deviceSecret: readRequiredString(input.deviceSecret, "deviceSecret"),
+    pairId: readRequiredString(input.pairId, "pairId"),
   };
 }
 

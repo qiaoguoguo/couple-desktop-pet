@@ -7,6 +7,8 @@ import {
   type PairCodeStatusRequest,
   type PairCodeStatusResponse,
   type SyncErrorCode,
+  type UnpairRequest,
+  type UnpairResponse,
 } from "../../shared/syncProtocol";
 
 export type RelayResult<T> =
@@ -42,6 +44,10 @@ export class RelayHttpClient {
     request: PairCodeStatusRequest,
   ): Promise<RelayResult<PairCodeStatusResponse>> {
     return this.post("/pair-codes/status", request);
+  }
+
+  unpair(request: UnpairRequest): Promise<RelayResult<UnpairResponse>> {
+    return this.post("/pairs/unpair", request);
   }
 
   private async post<T>(path: string, body: unknown): Promise<RelayResult<T>> {

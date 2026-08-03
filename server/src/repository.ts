@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import {
   PAIR_CODE_TTL_MS,
   type PairCodeStatusResponse,
+  type UnpairResponse,
 } from "../../shared/syncProtocol.js";
 import { RelayError } from "./errors.js";
 import { createPairCode, createPairId, hashDeviceSecret } from "./ids.js";
@@ -32,6 +33,12 @@ export interface PairCodeStatusInput {
   deviceId: string;
   deviceSecret: string;
   code: string;
+}
+
+export interface UnpairInput {
+  deviceId: string;
+  deviceSecret: string;
+  pairId: string;
 }
 
 export interface AuthenticateInput {
@@ -231,6 +238,33 @@ export class RelayRepository {
     }
 
     return { pairId: input.pairId, deviceId: input.deviceId, peerDeviceId };
+  }
+
+  unpair(input: UnpairInput): UnpairResponse {
+    return this.db.transaction(() => {
+      this.verifyDeviceCredentials(input.deviceId, input.deviceSecret);
+
+      const row = this.findPair(input.pairId);
+      if (!row) {
+        throw new RelayError("pair_not_found", 404, "Pair not found");
+      }
+
+      const peerDeviceId = getPeerFromPair(row, input.deviceId);
+      if (!peerDeviceId) {
+        throw new RelayError("auth_failed", 401, "Device is not part of this pair");
+      }
+
+      const unpairedAt = this.nowIso();
+      const result = this.db
+        .prepare("UPDATE pairs SET disabled_at = ? WHERE pair_id = ? AND disabled_at IS NULL")
+        .run(unpairedAt, input.pairId);
+
+      if (result.changes !== 1) {
+        throw new RelayError("pair_not_found", 404, "Pair not found");
+      }
+
+      return { pairId: input.pairId, unpairedAt };
+    })();
   }
 
   getPeerDeviceId(pairId: string, deviceId: string): string | null {

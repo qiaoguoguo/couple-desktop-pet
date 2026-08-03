@@ -69,11 +69,13 @@ const relayHttpClientMock = vi.hoisted(() => {
     acceptPairCode: vi.fn(),
     createPairCode: vi.fn(),
     getPairCodeStatus: vi.fn(),
+    unpair: vi.fn(),
     constructor: vi.fn(function RelayHttpClientMock() {
       return {
         acceptPairCode: mock.acceptPairCode,
         createPairCode: mock.createPairCode,
         getPairCodeStatus: mock.getPairCodeStatus,
+        unpair: mock.unpair,
       };
     }),
   };
@@ -127,6 +129,7 @@ describe("App", () => {
     relayHttpClientMock.acceptPairCode.mockReset();
     relayHttpClientMock.createPairCode.mockReset();
     relayHttpClientMock.getPairCodeStatus.mockReset();
+    relayHttpClientMock.unpair.mockReset();
     relayHttpClientMock.constructor.mockClear();
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -438,7 +441,56 @@ describe("App", () => {
     expect(screen.getByText("已绑定")).toBeTruthy();
   });
 
-  it("clears local pair settings when unpairing from the sync panel", async () => {
+  it("unpairs through the relay before clearing local pair settings", async () => {
+    relayHttpClientMock.unpair.mockResolvedValueOnce({
+      ok: true,
+      pairId: "pair_1",
+      unpairedAt: "2026-08-03T12:05:00.000Z",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
+    windowCommandsMock.writeSettings.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    await waitFor(() =>
+      expect(relayHttpClientMock.unpair).toHaveBeenCalledWith({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+      }),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sync: expect.objectContaining({
+            pairId: null,
+            peerDeviceId: null,
+          }),
+        }),
+      ),
+    );
+    expect(screen.queryByText("已绑定")).toBeNull();
+  });
+
+  it("clears local pair settings when relay reports the pair is already missing", async () => {
+    relayHttpClientMock.unpair.mockResolvedValueOnce({
+      ok: false,
+      code: "pair_not_found",
+      message: "Pair not found",
+    });
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
@@ -468,6 +520,68 @@ describe("App", () => {
       ),
     );
     expect(screen.queryByText("已绑定")).toBeNull();
+  });
+
+  it("keeps local pair settings when relay unpair is unavailable", async () => {
+    relayHttpClientMock.unpair.mockResolvedValueOnce({
+      ok: false,
+      code: "relay_unavailable",
+      message: "Relay unavailable",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
+    windowCommandsMock.writeSettings.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    await waitFor(() => expect(relayHttpClientMock.unpair).toHaveBeenCalledTimes(1));
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect(screen.getByText("已绑定")).toBeTruthy();
+    expect(screen.getByText("无法连接中继，取消绑定失败，请稍后重试。")).toBeTruthy();
+  });
+
+  it("clears local pair settings without relay when local identity is incomplete", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: null,
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
+    windowCommandsMock.writeSettings.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    expect(relayHttpClientMock.unpair).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sync: expect.objectContaining({
+            pairId: null,
+            peerDeviceId: null,
+          }),
+        }),
+      ),
+    );
   });
 
   it("passes the current movement range to desktop auto movement", () => {
