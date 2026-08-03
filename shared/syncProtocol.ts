@@ -266,7 +266,7 @@ function readError(input: Record<string, unknown>): ErrorServerMessage | null {
   };
 }
 
-function isSyncErrorCode(code: string): code is SyncErrorCode {
+export function isSyncErrorCode(code: string): code is SyncErrorCode {
   return SYNC_ERROR_CODES.has(code);
 }
 

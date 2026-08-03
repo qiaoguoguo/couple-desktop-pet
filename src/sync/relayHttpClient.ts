@@ -1,0 +1,74 @@
+import {
+  isSyncErrorCode,
+  type AcceptPairCodeRequest,
+  type AcceptPairCodeResponse,
+  type CreatePairCodeRequest,
+  type CreatePairCodeResponse,
+  type SyncErrorCode,
+} from "../../shared/syncProtocol";
+
+export type RelayResult<T> =
+  | ({ ok: true } & T)
+  | { ok: false; code: SyncErrorCode; message: string };
+
+export class RelayHttpClient {
+  constructor(
+    private readonly relayUrl: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  createPairCode(
+    request: CreatePairCodeRequest,
+  ): Promise<RelayResult<CreatePairCodeResponse>> {
+    return this.post("/pair-codes", request);
+  }
+
+  acceptPairCode(
+    request: AcceptPairCodeRequest,
+  ): Promise<RelayResult<AcceptPairCodeResponse>> {
+    return this.post("/pairs/accept", request);
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<RelayResult<T>> {
+    try {
+      const response = await this.fetchImpl(new URL(path, this.relayUrl).toString(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await response.json()) as unknown;
+
+      if (!response.ok) {
+        return readRelayError(json);
+      }
+
+      return { ok: true, ...(json as T) };
+    } catch {
+      return { ok: false, code: "relay_unavailable", message: "Relay unavailable" };
+    }
+  }
+}
+
+function readRelayError(
+  input: unknown,
+): { ok: false; code: SyncErrorCode; message: string } {
+  if (
+    isRecord(input) &&
+    isRecord(input.error) &&
+    typeof input.error.code === "string" &&
+    isSyncErrorCode(input.error.code) &&
+    typeof input.error.message === "string"
+  ) {
+    return {
+      ok: false,
+      code: input.error.code as SyncErrorCode,
+      message: input.error.message,
+    };
+  }
+
+  return { ok: false, code: "relay_unavailable", message: "Relay unavailable" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
