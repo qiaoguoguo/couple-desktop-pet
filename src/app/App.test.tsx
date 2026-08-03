@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   REQUIRED_PET_ACTIONS,
@@ -367,6 +374,75 @@ describe("App", () => {
     );
   });
 
+  it("renders a received message with the selected peer pet package", async () => {
+    const moonPackage = importedPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:star-sleeper",
+        peerPetPackageByDeviceId: {
+          dev_b: "imported:moon-buddy",
+        },
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() => expect(realtimeSyncMock.callbacks).toBeTruthy());
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "我来串门啦",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+
+    expect(await screen.findByRole("img", { name: "月亮伙伴来访" })).toBeTruthy();
+  });
+
+  it("persists the selected peer pet package for the paired device", async () => {
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([
+      importedPackageSummary(),
+    ]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() => expect(screen.getByLabelText("对方形象")).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("对方形象"), {
+      target: { value: "imported:moon-buddy" },
+    });
+
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appearance: expect.objectContaining({
+          peerPetPackageByDeviceId: {
+            dev_b: "imported:moon-buddy",
+          },
+        }),
+      }),
+    );
+  });
+
   it("starts desktop window dragging when pet drag begins", () => {
     const { container } = render(<App />);
     const petStage = container.querySelector(".pet-frame-stage");
@@ -430,7 +506,7 @@ describe("App", () => {
     );
   });
 
-  it("shows received realtime messages in the pet bubble", async () => {
+  it("shows received realtime messages as a persistent remote pet visit", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
@@ -444,6 +520,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => expect(realtimeSyncMock.callbacks).toBeTruthy());
+    vi.useFakeTimers();
 
     act(() => {
       realtimeSyncMock.callbacks?.onMessage({
@@ -454,7 +531,93 @@ describe("App", () => {
       });
     });
 
-    expect((await screen.findAllByText("想你啦")).length).toBeGreaterThan(0);
+    const remoteLayer = screen.getByLabelText("对方桌宠消息");
+    expect(remoteLayer).toBeTruthy();
+    expect(screen.getByRole("img", { name: "对方桌宠来访占位" })).toBeTruthy();
+    expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
+
+    act(() => vi.advanceTimersByTime(5000));
+
+    expect(within(screen.getByLabelText("对方桌宠消息")).getByText("想你啦")).toBeTruthy();
+    expect(screen.queryByText("我在这里。")).toBeNull();
+  });
+
+  it("dismisses a received remote message only after hover acknowledgement", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() => expect(realtimeSyncMock.callbacks).toBeTruthy());
+    vi.useFakeTimers();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "摸摸头",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+
+    fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
+    act(() => vi.advanceTimersByTime(799));
+    expect(
+      within(screen.getByLabelText("对方桌宠消息")).getByText("摸摸头"),
+    ).toBeTruthy();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+  });
+
+  it("shows queued remote messages one at a time", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() => expect(realtimeSyncMock.callbacks).toBeTruthy());
+    vi.useFakeTimers();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "第一条",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_2",
+        fromDeviceId: "dev_b",
+        text: "第二条",
+        at: "2026-08-03T12:00:01.000Z",
+      });
+    });
+
+    const firstRemoteLayer = screen.getByLabelText("对方桌宠消息");
+    expect(within(firstRemoteLayer).getByText("第一条")).toBeTruthy();
+    expect(within(firstRemoteLayer).queryByText("第二条")).toBeNull();
+
+    fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
+    act(() => vi.advanceTimersByTime(800));
+
+    const secondRemoteLayer = screen.getByLabelText("对方桌宠消息");
+    expect(within(secondRemoteLayer).queryByText("第一条")).toBeNull();
+    expect(within(secondRemoteLayer).getByText("第二条")).toBeTruthy();
   });
 
   it("does not send messages while the peer is offline", async () => {

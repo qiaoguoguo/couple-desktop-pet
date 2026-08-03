@@ -3,18 +3,24 @@ import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 interface AppearancePanelProps {
   packages: readonly ResolvedPetPackage[];
   selectedPackageId: string;
+  peerDeviceId: string | null;
+  selectedPeerPackageId: string | null;
   error: string | null;
   onImportPackage(): void;
   onSelectPackage(packageId: string): void;
+  onSelectPeerPackage(packageId: string): void;
   onDeletePackage(packageId: string): void;
 }
 
 export function AppearancePanel({
   packages,
   selectedPackageId,
+  peerDeviceId,
+  selectedPeerPackageId,
   error,
   onImportPackage,
   onSelectPackage,
+  onSelectPeerPackage,
   onDeletePackage,
 }: AppearancePanelProps) {
   const selectedPackage =
@@ -49,6 +55,23 @@ export function AppearancePanel({
           ))}
         </select>
       </label>
+
+      {peerDeviceId ? (
+        <label className="appearance-field">
+          <span>对方形象</span>
+          <select
+            value={selectedPeerPackageId ?? ""}
+            onChange={(event) => onSelectPeerPackage(event.currentTarget.value)}
+          >
+            <option value="">未指定</option>
+            {packages.map((pkg) => (
+              <option key={pkg.id} value={pkg.id}>
+                {pkg.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <div className="appearance-actions">
         <button type="button" onClick={onImportPackage}>

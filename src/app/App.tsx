@@ -28,6 +28,14 @@ import {
 } from "../desktop/windowCommands";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
+import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
+import {
+  completeRemoteMessageDismissal,
+  createEmptyRemoteMessageQueue,
+  enqueueRemoteMessage,
+  markRemoteMessageDismissing,
+  markRemoteMessageHovered,
+} from "../sync/remoteMessageQueue";
 import { SyncPanel } from "../sync/SyncPanel";
 import { useRealtimeSync } from "../sync/useRealtimeSync";
 import type { SessionMessage } from "../sync/syncTypes";
@@ -72,6 +80,8 @@ const contextMenuMargin = 8;
 const interactionMenuWidth = 164;
 const interactionMenuHeight = 112;
 const pairCodePollIntervalMs = 2000;
+const remoteMessageDismissDelayMs = 800;
+const sentMessageBubbleDurationMs = 5000;
 
 export function App() {
   const settingsApi = useMemo<SettingsPersistenceApi>(
@@ -92,6 +102,9 @@ export function App() {
   >([]);
   const [petPackageError, setPetPackageError] = useState<string | null>(null);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
+  const [remoteMessages, setRemoteMessages] = useState(() =>
+    createEmptyRemoteMessageQueue(),
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number;
@@ -126,9 +139,7 @@ export function App() {
           },
         ]);
 
-        if (settingsRef.current.bubblesEnabled) {
-          setBubble(showBubble(message.text));
-        }
+        setRemoteMessages((current) => enqueueRemoteMessage(current, message));
       },
     }),
     [],
@@ -157,6 +168,25 @@ export function App() {
       ),
     [petPackages, settings.appearance.selectedPetPackageId],
   );
+  const activeRemoteMessage = remoteMessages.active;
+  const activePeerPetPackage = useMemo(() => {
+    if (!activeRemoteMessage) {
+      return null;
+    }
+
+    const peerPackageId =
+      settings.appearance.peerPetPackageByDeviceId[
+        activeRemoteMessage.fromDeviceId
+      ];
+
+    return peerPackageId
+      ? petPackages.find((pkg) => pkg.id === peerPackageId) ?? null
+      : null;
+  }, [
+    activeRemoteMessage,
+    petPackages,
+    settings.appearance.peerPetPackageByDeviceId,
+  ]);
   const refreshPetPackages = useCallback(async () => {
     const packages = await petPackageApi.listPetPackages();
     setImportedPetPackages(packages);
@@ -273,10 +303,38 @@ export function App() {
 
     const hideTimer = window.setTimeout(() => {
       setBubble((current) => hideBubble(current));
-    }, 1800);
+    }, bubble.durationMs);
 
     return () => window.clearTimeout(hideTimer);
-  }, [bubble.id, bubble.visible]);
+  }, [bubble.durationMs, bubble.id, bubble.visible]);
+
+  useEffect(() => {
+    const activeMessage = remoteMessages.active;
+
+    if (!activeMessage || activeMessage.stage !== "hovered") {
+      return;
+    }
+
+    setRemoteMessages((current) =>
+      markRemoteMessageDismissing(current, activeMessage.id),
+    );
+  }, [remoteMessages.active]);
+
+  useEffect(() => {
+    const activeMessage = remoteMessages.active;
+
+    if (!activeMessage || activeMessage.stage !== "dismissing") {
+      return;
+    }
+
+    const dismissTimer = window.setTimeout(() => {
+      setRemoteMessages((current) =>
+        completeRemoteMessageDismissal(current, activeMessage.id),
+      );
+    }, remoteMessageDismissDelayMs);
+
+    return () => window.clearTimeout(dismissTimer);
+  }, [remoteMessages.active]);
 
   useEffect(() => {
     if (!contextMenuPosition && !interactionMenuPosition) {
@@ -406,6 +464,35 @@ export function App() {
         appearance: {
           ...settingsRef.current.appearance,
           selectedPetPackageId: packageId,
+        },
+      });
+    },
+    [handleSettingsChange],
+  );
+
+  const handleSelectPeerPetPackage = useCallback(
+    (packageId: string) => {
+      const peerDeviceId = settingsRef.current.sync.peerDeviceId;
+
+      if (!peerDeviceId) {
+        return;
+      }
+
+      const nextPeerPackageByDeviceId = {
+        ...settingsRef.current.appearance.peerPetPackageByDeviceId,
+      };
+
+      if (packageId) {
+        nextPeerPackageByDeviceId[peerDeviceId] = packageId;
+      } else {
+        delete nextPeerPackageByDeviceId[peerDeviceId];
+      }
+
+      setPetPackageError(null);
+      handleSettingsChange({
+        appearance: {
+          ...settingsRef.current.appearance,
+          peerPetPackageByDeviceId: nextPeerPackageByDeviceId,
         },
       });
     },
@@ -691,9 +778,21 @@ export function App() {
           at: new Date().toISOString(),
         },
       ]);
+
+      if (settingsRef.current.bubblesEnabled) {
+        setBubble(
+          showBubble("消息已送出", { durationMs: sentMessageBubbleDurationMs }),
+        );
+      }
     },
     [realtime.client, realtime.state.peerPresence, realtime.state.status],
   );
+
+  const handleRemoteMessageAcknowledge = useCallback((messageId: string) => {
+    setRemoteMessages((current) =>
+      markRemoteMessageHovered(current, messageId),
+    );
+  }, []);
 
   const handlePetClick = useCallback(() => {
     if (settingsOpen) {
@@ -799,6 +898,11 @@ export function App() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         />
+        <RemoteMessageLayer
+          message={activeRemoteMessage}
+          peerPackage={activePeerPetPackage}
+          onAcknowledge={handleRemoteMessageAcknowledge}
+        />
       </section>
 
       <button
@@ -822,9 +926,18 @@ export function App() {
           <AppearancePanel
             packages={petPackages}
             selectedPackageId={selectedPetPackage.id}
+            peerDeviceId={settings.sync.peerDeviceId}
+            selectedPeerPackageId={
+              settings.sync.peerDeviceId
+                ? settings.appearance.peerPetPackageByDeviceId[
+                    settings.sync.peerDeviceId
+                  ] ?? null
+                : null
+            }
             error={petPackageError}
             onImportPackage={handleImportPetPackage}
             onSelectPackage={handleSelectPetPackage}
+            onSelectPeerPackage={handleSelectPeerPetPackage}
             onDeletePackage={handleDeletePetPackage}
           />
           <SettingsPanel

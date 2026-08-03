@@ -2,6 +2,7 @@ export interface BubbleState {
   id: number;
   message: string;
   visible: boolean;
+  durationMs: number;
 }
 
 let nextBubbleId = 1;
@@ -11,14 +12,19 @@ export function createHiddenBubble(): BubbleState {
     id: 0,
     message: "",
     visible: false,
+    durationMs: 0,
   };
 }
 
-export function showBubble(message: string): BubbleState {
+export function showBubble(
+  message: string,
+  options: { durationMs?: number } = {},
+): BubbleState {
   return {
     id: nextBubbleId++,
     message,
     visible: true,
+    durationMs: options.durationMs ?? 1800,
   };
 }
 

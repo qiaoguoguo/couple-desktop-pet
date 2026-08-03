@@ -39,9 +39,12 @@ describe("AppearancePanel", () => {
       <AppearancePanel
         packages={packages}
         selectedPackageId="builtin:star-sleeper"
+        peerDeviceId={null}
+        selectedPeerPackageId={null}
         error={null}
         onImportPackage={onImportPackage}
         onSelectPackage={onSelectPackage}
+        onSelectPeerPackage={vi.fn()}
         onDeletePackage={vi.fn()}
       />,
     );
@@ -60,9 +63,12 @@ describe("AppearancePanel", () => {
       <AppearancePanel
         packages={packages}
         selectedPackageId="imported:moon-buddy"
+        peerDeviceId={null}
+        selectedPeerPackageId={null}
         error={null}
         onImportPackage={vi.fn()}
         onSelectPackage={vi.fn()}
+        onSelectPeerPackage={vi.fn()}
         onDeletePackage={vi.fn()}
       />,
     );
@@ -80,9 +86,12 @@ describe("AppearancePanel", () => {
       <AppearancePanel
         packages={packages}
         selectedPackageId="imported:moon-buddy"
+        peerDeviceId={null}
+        selectedPeerPackageId={null}
         error={null}
         onImportPackage={vi.fn()}
         onSelectPackage={vi.fn()}
+        onSelectPeerPackage={vi.fn()}
         onDeletePackage={onDeletePackage}
       />,
     );
@@ -90,5 +99,29 @@ describe("AppearancePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除太阳伙伴" }));
 
     expect(onDeletePackage).toHaveBeenCalledWith("imported:sun-buddy");
+  });
+
+  it("selects a peer pet package when a paired device exists", () => {
+    const onSelectPeerPackage = vi.fn();
+
+    render(
+      <AppearancePanel
+        packages={packages}
+        selectedPackageId="builtin:star-sleeper"
+        peerDeviceId="dev_b"
+        selectedPeerPackageId={null}
+        error={null}
+        onImportPackage={vi.fn()}
+        onSelectPackage={vi.fn()}
+        onSelectPeerPackage={onSelectPeerPackage}
+        onDeletePackage={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("对方形象"), {
+      target: { value: "imported:moon-buddy" },
+    });
+
+    expect(onSelectPeerPackage).toHaveBeenCalledWith("imported:moon-buddy");
   });
 });
