@@ -1,4 +1,5 @@
 import { readPlatformConfig } from "./config.js";
+import { bootstrapPlatform } from "./bootstrap.js";
 import {
   createPlatformPool,
   initializePlatformDatabase,
@@ -10,10 +11,15 @@ async function main() {
   const config = readPlatformConfig();
   const pool = createPlatformPool(config.databaseUrl);
   await initializePlatformDatabase(pool);
+  const repository = createPgPlatformRepository(pool);
+  await bootstrapPlatform({
+    repository,
+    config,
+  });
 
   const server = await createPlatformServer({
     jwtSecret: config.jwtSecret,
-    repository: createPgPlatformRepository(pool),
+    repository,
   });
 
   await server.listen({ host: config.host, port: config.port });

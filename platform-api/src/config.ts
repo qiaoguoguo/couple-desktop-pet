@@ -8,6 +8,10 @@ export interface PlatformConfig {
   releaseStoragePath: string;
   publicBaseUrl: string;
   apiBaseUrl: string;
+  adminEmail: string | null;
+  adminPassword: string | null;
+  demoWindowsExePath: string | null;
+  demoWindowsVersion: string | null;
 }
 
 export function readPlatformConfig(
@@ -32,6 +36,10 @@ export function readPlatformConfig(
     ),
     publicBaseUrl: env.PLATFORM_PUBLIC_BASE_URL ?? "http://127.0.0.1:19080",
     apiBaseUrl: env.PLATFORM_API_BASE_URL ?? "http://127.0.0.1:19081",
+    adminEmail: readOptionalText(env.PLATFORM_ADMIN_EMAIL),
+    adminPassword: readOptionalText(env.PLATFORM_ADMIN_PASSWORD),
+    demoWindowsExePath: readOptionalText(env.PLATFORM_DEMO_WINDOWS_EXE_PATH),
+    demoWindowsVersion: readOptionalText(env.PLATFORM_DEMO_WINDOWS_VERSION),
   };
 }
 
@@ -46,4 +54,8 @@ function readPort(value: string | undefined): number {
   }
 
   return port;
+}
+
+function readOptionalText(value: string | undefined): string | null {
+  return value?.trim() ? value.trim() : null;
 }

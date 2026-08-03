@@ -130,6 +130,10 @@ export interface PlatformRepository {
   listDevicesForUser(userId: string): Promise<PlatformDevice[]>;
   createRelease(input: CreateReleaseInput): Promise<PlatformRelease>;
   findReleaseById(releaseId: string): Promise<PlatformRelease | null>;
+  findReleaseByVersionPlatform(
+    version: string,
+    platform: PlatformDevicePlatform,
+  ): Promise<PlatformRelease | null>;
   listPublishedReleases(
     platform: PlatformDevicePlatform,
   ): Promise<PlatformRelease[]>;
@@ -299,6 +303,13 @@ export function createMemoryPlatformRepository(
     },
     async findReleaseById(releaseId) {
       const release = releases.get(releaseId);
+      return release ? cloneRelease(release) : null;
+    },
+    async findReleaseByVersionPlatform(version, platform) {
+      const release =
+        Array.from(releases.values()).find(
+          (item) => item.version === version && item.platform === platform,
+        ) ?? null;
       return release ? cloneRelease(release) : null;
     },
     async listPublishedReleases(platform) {
@@ -506,6 +517,13 @@ export function createPgPlatformRepository(
       const result = await pool.query("SELECT * FROM releases WHERE id = $1", [
         releaseId,
       ]);
+      return result.rows[0] ? mapRelease(result.rows[0]) : null;
+    },
+    async findReleaseByVersionPlatform(version, platform) {
+      const result = await pool.query(
+        "SELECT * FROM releases WHERE version = $1 AND platform = $2 LIMIT 1",
+        [version, platform],
+      );
       return result.rows[0] ? mapRelease(result.rows[0]) : null;
     },
     async listPublishedReleases(platform) {
