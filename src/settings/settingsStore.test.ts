@@ -16,6 +16,17 @@ describe("settings defaults", () => {
     expect(defaultSettings.clickThrough).toBe(false);
     expect(defaultSettings.movementRange).toBe("bottom");
   });
+
+  it("uses disabled sync defaults", () => {
+    expect(defaultSettings.sync).toEqual({
+      enabled: false,
+      relayUrl: "http://127.0.0.1:8787",
+      deviceId: null,
+      deviceSecret: null,
+      pairId: null,
+      peerDeviceId: null,
+    });
+  });
 });
 
 describe("mergeSettings", () => {
@@ -39,6 +50,14 @@ describe("mergeSettings", () => {
         bubblesEnabled: false,
         alwaysOnTop: false,
         clickThrough: true,
+        sync: {
+          enabled: true,
+          relayUrl: "https://relay.example.com",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: "pair_a",
+          peerDeviceId: "dev_b",
+        },
       }),
     ).toEqual({
       scale: 1.4,
@@ -47,6 +66,55 @@ describe("mergeSettings", () => {
       bubblesEnabled: false,
       alwaysOnTop: false,
       clickThrough: true,
+      sync: {
+        enabled: true,
+        relayUrl: "https://relay.example.com",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_a",
+        peerDeviceId: "dev_b",
+      },
+    });
+  });
+
+  it("keeps valid sync settings", () => {
+    expect(
+      mergeSettings({
+        sync: {
+          enabled: true,
+          relayUrl: "https://relay.example.com",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: "pair_a",
+          peerDeviceId: "dev_b",
+        },
+      }),
+    ).toMatchObject({
+      sync: {
+        enabled: true,
+        relayUrl: "https://relay.example.com",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_a",
+        peerDeviceId: "dev_b",
+      },
+    });
+  });
+
+  it("sanitizes invalid sync settings", () => {
+    expect(
+      mergeSettings({
+        sync: {
+          enabled: "yes" as never,
+          relayUrl: "" as never,
+          deviceId: 1 as never,
+          deviceSecret: [] as never,
+          pairId: 2 as never,
+          peerDeviceId: false as never,
+        },
+      }),
+    ).toMatchObject({
+      sync: defaultSettings.sync,
     });
   });
 });
@@ -61,6 +129,14 @@ describe("settings persistence", () => {
         bubblesEnabled: false,
         alwaysOnTop: false,
         clickThrough: true,
+        sync: {
+          enabled: true,
+          relayUrl: "https://relay.example.com",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: "pair_a",
+          peerDeviceId: "dev_b",
+        },
       }),
       writeSettings: async () => undefined,
     };
@@ -72,6 +148,14 @@ describe("settings persistence", () => {
       bubblesEnabled: false,
       alwaysOnTop: false,
       clickThrough: true,
+      sync: {
+        enabled: true,
+        relayUrl: "https://relay.example.com",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_a",
+        peerDeviceId: "dev_b",
+      },
     });
   });
 

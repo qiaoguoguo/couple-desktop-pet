@@ -7,4 +7,12 @@ export const defaultSettings: PetSettings = {
   bubblesEnabled: true,
   alwaysOnTop: true,
   clickThrough: false,
+  sync: {
+    enabled: false,
+    relayUrl: "http://127.0.0.1:8787",
+    deviceId: null,
+    deviceSecret: null,
+    pairId: null,
+    peerDeviceId: null,
+  },
 };

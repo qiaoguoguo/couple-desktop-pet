@@ -18,6 +18,7 @@ export function mergeSettings(input: Partial<PetSettings>): PetSettings {
     bubblesEnabled: readBoolean(settings.bubblesEnabled, defaultSettings.bubblesEnabled),
     alwaysOnTop: readBoolean(settings.alwaysOnTop, defaultSettings.alwaysOnTop),
     clickThrough: readBoolean(settings.clickThrough, defaultSettings.clickThrough),
+    sync: readSyncSettings(settings.sync),
   };
 }
 
@@ -62,6 +63,29 @@ function readMovementRange(value: unknown): MovementRange {
   }
 
   return "bottom";
+}
+
+function readSyncSettings(value: unknown): PetSettings["sync"] {
+  if (!isRecord(value)) {
+    return { ...defaultSettings.sync };
+  }
+
+  return {
+    enabled: readBoolean(value.enabled, defaultSettings.sync.enabled),
+    relayUrl: readNonEmptyString(value.relayUrl, defaultSettings.sync.relayUrl),
+    deviceId: readNullableString(value.deviceId),
+    deviceSecret: readNullableString(value.deviceSecret),
+    pairId: readNullableString(value.pairId),
+    peerDeviceId: readNullableString(value.peerDeviceId),
+  };
+}
+
+function readNonEmptyString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
