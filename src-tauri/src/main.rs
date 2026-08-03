@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod commands;
+mod pet_packages;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,6 +27,9 @@ pub fn run() {
             commands::show_window,
             commands::hide_window,
             commands::quit_app,
+            pet_packages::list_pet_packages,
+            pet_packages::import_pet_package,
+            pet_packages::delete_pet_package,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
