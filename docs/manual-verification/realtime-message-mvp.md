@@ -14,6 +14,12 @@ This verifies one-to-one directed pairing and online text message forwarding thr
 pnpm server:dev
 ```
 
+For cross-host LAN testing, start the relay on the relay host instead:
+
+```bash
+pnpm server:dev:lan
+```
+
 2. Start desktop client A:
 
 ```bash
@@ -26,7 +32,9 @@ pnpm tauri dev
 
 1. Open settings on client A.
 2. Enable remote interaction.
-3. Keep relay URL as `http://127.0.0.1:8787`.
+3. Keep relay URL as `http://127.0.0.1:8787` for same-machine testing. For
+   cross-host LAN testing, enter the relay host LAN URL, for example
+   `http://192.168.1.47:8787`; `127.0.0.1` only points to the current machine.
 4. Click `生成绑定码`.
 5. Open settings on client B.
 6. Enable remote interaction.

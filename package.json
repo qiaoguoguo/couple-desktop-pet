@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "server:dev": "pnpm --dir server dev",
+    "server:dev:lan": "pnpm --dir server dev:lan",
     "server:test": "pnpm --dir server test",
     "server:typecheck": "pnpm --dir server typecheck",
     "server:build": "pnpm --dir server build",
