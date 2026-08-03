@@ -11,10 +11,17 @@ export type RelayResult<T> =
   | ({ ok: true } & T)
   | { ok: false; code: SyncErrorCode; message: string };
 
+type FetchFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+const defaultFetch: FetchFn = (input, init) => globalThis.fetch(input, init);
+
 export class RelayHttpClient {
   constructor(
     private readonly relayUrl: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly fetchImpl: FetchFn = defaultFetch,
   ) {}
 
   createPairCode(
@@ -31,7 +38,8 @@ export class RelayHttpClient {
 
   private async post<T>(path: string, body: unknown): Promise<RelayResult<T>> {
     try {
-      const response = await this.fetchImpl(new URL(path, this.relayUrl).toString(), {
+      const fetchImpl = this.fetchImpl;
+      const response = await fetchImpl(new URL(path, this.relayUrl).toString(), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

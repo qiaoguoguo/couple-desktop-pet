@@ -29,6 +29,32 @@ describe("RelayHttpClient", () => {
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8787/pair-codes", expect.any(Object));
   });
 
+  it("does not call injected fetch with the client instance as this", async () => {
+    let observedThis: unknown = null;
+    const fetchMock = vi.fn(function (this: unknown) {
+      observedThis = this;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ code: "123456", expiresAt: "2026-08-03T12:10:00.000Z" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    });
+    const client = new RelayHttpClient("http://127.0.0.1:8787", fetchMock as typeof fetch);
+
+    await client.createPairCode({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "星星桌宠",
+    });
+
+    expect(observedThis).toBeUndefined();
+    expect(observedThis).not.toBe(client);
+  });
+
   it("maps relay errors", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(
