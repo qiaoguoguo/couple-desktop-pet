@@ -1,7 +1,9 @@
 import { createServer, type Server } from "node:http";
+import type { WebSocketServer } from "ws";
 import { initializeRelayDatabase, openRelayDatabase } from "./database.js";
 import { createRelayRequestHandler } from "./pairingApi.js";
 import { RelayRepository } from "./repository.js";
+import { attachWebSocketRelay } from "./websocketRelay.js";
 
 export interface RelayServerOptions {
   host: string;
@@ -21,6 +23,7 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
   initializeRelayDatabase(db);
   const repository = new RelayRepository(db, options.now ?? (() => new Date()));
   const server = createServer(createRelayRequestHandler(repository));
+  const webSocketServer = attachWebSocketRelay(server, repository);
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, resolve);
@@ -34,15 +37,39 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
     port,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          db.close();
-          if (error) {
-            reject(error);
-            return;
-          }
+        closeWebSocketServer(webSocketServer)
+          .then(() => {
+            server.close((error) => {
+              db.close();
+              if (error) {
+                reject(error);
+                return;
+              }
 
-          resolve();
-        });
+              resolve();
+            });
+          })
+          .catch((error: unknown) => {
+            db.close();
+            reject(error);
+          });
       }),
   };
+}
+
+function closeWebSocketServer(webSocketServer: WebSocketServer): Promise<void> {
+  for (const client of webSocketServer.clients) {
+    client.close();
+  }
+
+  return new Promise((resolve, reject) => {
+    webSocketServer.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
 }

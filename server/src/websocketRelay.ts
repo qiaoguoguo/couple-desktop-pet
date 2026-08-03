@@ -1,0 +1,263 @@
+import type { Server } from "node:http";
+import WebSocket, { WebSocketServer, type RawData } from "ws";
+import type {
+  ClientToServerMessage,
+  ErrorServerMessage,
+  ServerToClientMessage,
+} from "../../shared/syncProtocol.js";
+import { validateMessageText } from "../../shared/syncProtocol.js";
+import {
+  ConnectionRegistry,
+  type AuthenticatedConnection,
+} from "./connectionRegistry.js";
+import { RelayError } from "./errors.js";
+import { createServerMessageId } from "./ids.js";
+import type { RelayRepository } from "./repository.js";
+
+export function attachWebSocketRelay(
+  server: Server,
+  repository: RelayRepository,
+): WebSocketServer {
+  const registry = new ConnectionRegistry();
+  const webSocketServer = new WebSocketServer({ server, path: "/ws" });
+
+  webSocketServer.on("connection", (socket) => {
+    let connection: AuthenticatedConnection | null = null;
+
+    socket.on("message", (data) => {
+      try {
+        const message = parseClientMessage(data);
+
+        if (!connection) {
+          connection = authenticateSocket(repository, registry, socket, message);
+          return;
+        }
+
+        handleAuthenticatedMessage(registry, connection, message);
+      } catch (error) {
+        sendError(socket, toErrorMessage(error, readRequestId(data)));
+      }
+    });
+
+    socket.on("close", () => {
+      if (!connection || !registry.remove(connection.deviceId, socket)) {
+        return;
+      }
+
+      const peer = registry.get(connection.peerDeviceId);
+      if (peer) {
+        sendJson(peer.socket, {
+          type: "peer.offline",
+          pairId: connection.pairId,
+          peerDeviceId: connection.deviceId,
+        });
+      }
+    });
+  });
+
+  return webSocketServer;
+}
+
+function authenticateSocket(
+  repository: RelayRepository,
+  registry: ConnectionRegistry,
+  socket: WebSocket,
+  message: ClientToServerMessage,
+): AuthenticatedConnection {
+  if (message.type !== "auth") {
+    throw new RelayError("auth_failed", 401, "Authentication is required");
+  }
+
+  const authenticated = repository.authenticateDeviceForPair(message);
+  const connection: AuthenticatedConnection = {
+    socket,
+    deviceId: authenticated.deviceId,
+    pairId: authenticated.pairId,
+    peerDeviceId: authenticated.peerDeviceId,
+  };
+  const previous = registry.replace(connection);
+  if (previous && previous.socket !== socket) {
+    previous.socket.close();
+  }
+
+  sendJson(socket, {
+    type: "auth.ok",
+    requestId: message.requestId,
+    pairId: authenticated.pairId,
+  });
+
+  const peer = registry.get(authenticated.peerDeviceId);
+  if (peer && peer.pairId === authenticated.pairId) {
+    sendJson(socket, {
+      type: "peer.online",
+      pairId: authenticated.pairId,
+      peerDeviceId: authenticated.peerDeviceId,
+    });
+    sendJson(peer.socket, {
+      type: "peer.online",
+      pairId: authenticated.pairId,
+      peerDeviceId: authenticated.deviceId,
+    });
+  }
+
+  return connection;
+}
+
+function handleAuthenticatedMessage(
+  registry: ConnectionRegistry,
+  connection: AuthenticatedConnection,
+  message: ClientToServerMessage,
+): void {
+  if (message.type === "ping") {
+    sendJson(connection.socket, { type: "pong" });
+    return;
+  }
+
+  if (message.type !== "message.send") {
+    sendError(connection.socket, {
+      type: "error",
+      requestId: message.requestId,
+      code: "malformed_message",
+      message: "Unsupported message type",
+    });
+    return;
+  }
+
+  if (message.pairId !== connection.pairId) {
+    sendError(connection.socket, {
+      type: "error",
+      requestId: message.requestId,
+      code: "auth_failed",
+      message: "Pair authentication failed",
+    });
+    return;
+  }
+
+  const text = validateMessageText(message.text);
+  if (!text.ok) {
+    sendError(connection.socket, {
+      type: "error",
+      requestId: message.requestId,
+      code: text.code,
+      message: text.message,
+    });
+    return;
+  }
+
+  const peer = registry.get(connection.peerDeviceId);
+  if (!peer || peer.pairId !== connection.pairId) {
+    sendError(connection.socket, {
+      type: "error",
+      requestId: message.requestId,
+      code: "peer_offline",
+      message: "Peer is offline",
+    });
+    return;
+  }
+
+  const sentAt = new Date().toISOString();
+  sendJson(peer.socket, {
+    type: "message.received",
+    pairId: connection.pairId,
+    serverMessageId: createServerMessageId(),
+    fromDeviceId: connection.deviceId,
+    text: text.text,
+    sentAt,
+  });
+  sendJson(connection.socket, {
+    type: "message.delivered",
+    requestId: message.requestId,
+    clientMessageId: message.clientMessageId,
+    deliveredAt: sentAt,
+  });
+}
+
+function parseClientMessage(data: RawData): ClientToServerMessage {
+  const parsed = JSON.parse(data.toString()) as unknown;
+  if (!isRecord(parsed) || typeof parsed.type !== "string") {
+    throw new RelayError("malformed_message", 400, "Malformed websocket message");
+  }
+
+  if (parsed.type === "ping") {
+    return { type: "ping" };
+  }
+
+  if (
+    parsed.type === "auth" &&
+    typeof parsed.requestId === "string" &&
+    typeof parsed.deviceId === "string" &&
+    typeof parsed.deviceSecret === "string" &&
+    typeof parsed.pairId === "string"
+  ) {
+    return {
+      type: "auth",
+      requestId: parsed.requestId,
+      deviceId: parsed.deviceId,
+      deviceSecret: parsed.deviceSecret,
+      pairId: parsed.pairId,
+    };
+  }
+
+  if (
+    parsed.type === "message.send" &&
+    typeof parsed.requestId === "string" &&
+    typeof parsed.pairId === "string" &&
+    typeof parsed.clientMessageId === "string" &&
+    typeof parsed.text === "string"
+  ) {
+    return {
+      type: "message.send",
+      requestId: parsed.requestId,
+      pairId: parsed.pairId,
+      clientMessageId: parsed.clientMessageId,
+      text: parsed.text,
+    };
+  }
+
+  throw new RelayError("malformed_message", 400, "Malformed websocket message");
+}
+
+function toErrorMessage(error: unknown, requestId: string | undefined): ErrorServerMessage {
+  if (error instanceof RelayError) {
+    return {
+      type: "error",
+      requestId,
+      code: error.code,
+      message: error.message,
+    };
+  }
+
+  return {
+    type: "error",
+    requestId,
+    code: "malformed_message",
+    message: "Malformed websocket message",
+  };
+}
+
+function readRequestId(data: RawData): string | undefined {
+  try {
+    const parsed = JSON.parse(data.toString()) as unknown;
+    return isRecord(parsed) && typeof parsed.requestId === "string"
+      ? parsed.requestId
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sendError(socket: WebSocket, message: ErrorServerMessage): void {
+  sendJson(socket, message);
+}
+
+function sendJson(socket: WebSocket, message: ServerToClientMessage): void {
+  if (socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  socket.send(JSON.stringify(message));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
