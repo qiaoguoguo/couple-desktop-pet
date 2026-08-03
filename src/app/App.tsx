@@ -321,10 +321,13 @@ export function App() {
   );
 
   const handleCreatePairCode = useCallback(async () => {
-    const identity = ensureDeviceIdentity({
-      ...settingsRef.current.sync,
-      enabled: true,
-    });
+    const currentSync = settingsRef.current.sync;
+    if (!currentSync.enabled) {
+      setSyncError("请先启用远程互动");
+      return;
+    }
+
+    const identity = ensureDeviceIdentity(currentSync);
     handleSyncChange(identity);
     setSyncError(null);
 
@@ -376,6 +379,11 @@ export function App() {
 
   const handleSendMessage = useCallback(
     (text: string) => {
+      if (realtime.state.peerPresence !== "online") {
+        setSyncError("对方当前不在线");
+        return;
+      }
+
       const result = realtime.client?.sendMessage(text) ?? {
         ok: false as const,
         message: "Relay is not connected",
@@ -397,7 +405,7 @@ export function App() {
         },
       ]);
     },
-    [realtime.client],
+    [realtime.client, realtime.state.peerPresence],
   );
 
   const handlePetClick = useCallback(() => {

@@ -26,6 +26,12 @@ export function SyncPanel({
   const [acceptCode, setAcceptCode] = useState("");
   const [messageText, setMessageText] = useState("");
   const controlsDisabled = !sync.enabled;
+  const sendDisabled =
+    controlsDisabled || !sync.pairId || status.peerPresence !== "online";
+  const peerUnavailableMessage =
+    sync.enabled && sync.pairId && status.peerPresence !== "online"
+      ? "对方当前不在线"
+      : null;
 
   function handleAccept(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,7 +78,7 @@ export function SyncPanel({
       </label>
 
       <div className="sync-pair-actions">
-        <button type="button" onClick={onCreatePairCode}>
+        <button type="button" disabled={controlsDisabled} onClick={onCreatePairCode}>
           生成绑定码
         </button>
         {pairCode ? (
@@ -112,15 +118,18 @@ export function SyncPanel({
           <textarea
             rows={2}
             value={messageText}
-            disabled={controlsDisabled || !sync.pairId}
+            disabled={sendDisabled}
             onChange={(event) => setMessageText(event.currentTarget.value)}
           />
         </label>
-        <button type="submit" disabled={controlsDisabled || !sync.pairId}>
+        <button type="submit" disabled={sendDisabled}>
           发送
         </button>
       </form>
 
+      {peerUnavailableMessage ? (
+        <p className="sync-error">{peerUnavailableMessage}</p>
+      ) : null}
       {status.lastError ? <p className="sync-error">{status.lastError}</p> : null}
     </section>
   );

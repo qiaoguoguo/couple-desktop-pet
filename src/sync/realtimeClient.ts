@@ -6,6 +6,8 @@ import {
 import { toWebSocketRelayUrl } from "./relayUrl";
 import type { PeerPresence, SyncConnectionStatus } from "./syncTypes";
 
+const reconnectDelaysMs = [1000, 2000, 5000, 10000, 30000] as const;
+
 export type RealtimeClientEvent =
   | { type: "status"; status: SyncConnectionStatus }
   | { type: "presence"; peerPresence: PeerPresence; peerDeviceId: string }
@@ -25,14 +27,23 @@ export interface RealtimeClientOptions {
 export class RealtimeClient {
   private socket: WebSocket | null = null;
   private closedByClient = false;
+  private authFailed = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: RealtimeClientOptions) {}
 
   connect(): void {
-    this.disconnect();
+    this.closeCurrentSocket();
+    this.clearReconnectTimer();
     this.closedByClient = false;
+    this.authFailed = false;
     this.options.onEvent({ type: "status", status: "connecting" });
 
+    this.openSocket();
+  }
+
+  private openSocket(): void {
     const socket = this.createWebSocket(toWebSocketRelayUrl(this.options.relayUrl));
     this.socket = socket;
     socket.addEventListener("open", () => this.handleOpen(socket));
@@ -44,13 +55,9 @@ export class RealtimeClient {
   }
 
   disconnect(): void {
-    if (!this.socket) {
-      return;
-    }
-
     this.closedByClient = true;
-    this.socket.close();
-    this.socket = null;
+    this.clearReconnectTimer();
+    this.closeCurrentSocket();
   }
 
   sendMessage(
@@ -100,6 +107,8 @@ export class RealtimeClient {
 
     switch (parsed.type) {
       case "auth.ok":
+        this.reconnectAttempt = 0;
+        this.authFailed = false;
         this.options.onEvent({ type: "status", status: "connected" });
         return;
       case "peer.online":
@@ -134,6 +143,8 @@ export class RealtimeClient {
         return;
       case "error":
         if (parsed.code === "auth_failed") {
+          this.authFailed = true;
+          this.clearReconnectTimer();
           this.options.onEvent({ type: "status", status: "authFailed" });
         }
         this.options.onEvent({ type: "error", message: parsed.message });
@@ -149,10 +160,19 @@ export class RealtimeClient {
     }
 
     this.socket = null;
-    this.options.onEvent({
-      type: "status",
-      status: this.closedByClient ? "disabled" : "disconnected",
-    });
+
+    if (this.closedByClient) {
+      this.options.onEvent({ type: "status", status: "disabled" });
+      return;
+    }
+
+    if (this.authFailed) {
+      this.options.onEvent({ type: "status", status: "authFailed" });
+      return;
+    }
+
+    this.options.onEvent({ type: "status", status: "disconnected" });
+    this.scheduleReconnect();
   }
 
   private send(message: ClientToServerMessage): void {
@@ -163,6 +183,45 @@ export class RealtimeClient {
     return this.options.webSocketFactory
       ? this.options.webSocketFactory(url)
       : new WebSocket(url);
+  }
+
+  private scheduleReconnect(): void {
+    if (this.closedByClient || this.authFailed || this.reconnectTimer) {
+      return;
+    }
+
+    const delay =
+      reconnectDelaysMs[Math.min(this.reconnectAttempt, reconnectDelaysMs.length - 1)];
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+
+      if (this.closedByClient || this.authFailed) {
+        return;
+      }
+
+      this.options.onEvent({ type: "status", status: "connecting" });
+      this.openSocket();
+    }, delay);
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) {
+      return;
+    }
+
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private closeCurrentSocket(): void {
+    if (!this.socket) {
+      return;
+    }
+
+    const socket = this.socket;
+    this.socket = null;
+    socket.close();
   }
 }
 

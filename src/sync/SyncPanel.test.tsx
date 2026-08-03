@@ -8,7 +8,7 @@ describe("SyncPanel", () => {
     const onSyncChange = vi.fn();
     const onCreatePairCode = vi.fn();
 
-    render(
+    const { rerender } = render(
       <SyncPanel
         sync={defaultSettings.sync}
         status={{ status: "disabled", peerPresence: "unknown", lastError: null }}
@@ -22,10 +22,81 @@ describe("SyncPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("checkbox", { name: "启用远程互动" }));
+    rerender(
+      <SyncPanel
+        sync={{ ...defaultSettings.sync, enabled: true }}
+        status={{ status: "disconnected", peerPresence: "unknown", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={onSyncChange}
+        onCreatePairCode={onCreatePairCode}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={vi.fn()}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
 
     expect(onSyncChange).toHaveBeenCalledWith({ enabled: true });
     expect(onCreatePairCode).toHaveBeenCalled();
+  });
+
+  it("keeps pair-code generation disabled until sync is enabled", () => {
+    const onCreatePairCode = vi.fn();
+
+    render(
+      <SyncPanel
+        sync={defaultSettings.sync}
+        status={{ status: "disabled", peerPresence: "unknown", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={onCreatePairCode}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    const button = screen.getByRole("button", {
+      name: "生成绑定码",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    fireEvent.click(button);
+
+    expect(onCreatePairCode).not.toHaveBeenCalled();
+  });
+
+  it("disables sending while the peer is offline", () => {
+    const onSendMessage = vi.fn();
+
+    render(
+      <SyncPanel
+        sync={{
+          ...defaultSettings.sync,
+          enabled: true,
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }}
+        status={{ status: "connected", peerPresence: "offline", lastError: null }}
+        messages={[]}
+        pairCode={null}
+        onSyncChange={vi.fn()}
+        onCreatePairCode={vi.fn()}
+        onAcceptPairCode={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    expect(screen.getByText("对方当前不在线")).toBeTruthy();
+    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+
+    const button = screen.getByRole("button", { name: "发送" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+
+    expect(onSendMessage).not.toHaveBeenCalled();
   });
 
   it("shows current-session received messages", () => {

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
 
 class FakeWebSocket extends EventTarget {
   static readonly OPEN = 1;
   static latest: FakeWebSocket | null = null;
+  static instances: FakeWebSocket[] = [];
 
   readonly sentJson: unknown[] = [];
   readyState = 0;
@@ -11,6 +12,7 @@ class FakeWebSocket extends EventTarget {
   constructor(readonly url: string) {
     super();
     FakeWebSocket.latest = this;
+    FakeWebSocket.instances.push(this);
   }
 
   send(data: string): void {
@@ -32,9 +34,23 @@ class FakeWebSocket extends EventTarget {
       new MessageEvent("message", { data: JSON.stringify(message) }),
     );
   }
+
+  emitClose(): void {
+    this.readyState = 3;
+    this.dispatchEvent(new Event("close"));
+  }
 }
 
 describe("RealtimeClient", () => {
+  beforeEach(() => {
+    FakeWebSocket.latest = null;
+    FakeWebSocket.instances = [];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("authenticates and sends messages over websocket", () => {
     const events: RealtimeClientEvent[] = [];
     const client = new RealtimeClient({
@@ -93,6 +109,83 @@ describe("RealtimeClient", () => {
       type: "error",
       message: "Malformed relay message",
     });
+  });
+
+  it("reconnects after an unexpected close with bounded backoff", () => {
+    vi.useFakeTimers();
+    const events: RealtimeClientEvent[] = [];
+    const client = new RealtimeClient({
+      relayUrl: "http://127.0.0.1:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+      webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+      onEvent: (event) => events.push(event),
+    });
+
+    client.connect();
+    const firstSocket = expectLatestSocket();
+    firstSocket.emitOpen();
+    firstSocket.emitClose();
+
+    expect(events).toContainEqual({ type: "status", status: "disconnected" });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    vi.advanceTimersByTime(999);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    vi.advanceTimersByTime(1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1]?.url).toBe("ws://127.0.0.1:8787/ws");
+  });
+
+  it("does not reconnect after an explicit disconnect", () => {
+    vi.useFakeTimers();
+    const client = new RealtimeClient({
+      relayUrl: "http://127.0.0.1:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+      webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+      onEvent: () => undefined,
+    });
+
+    client.connect();
+    expectLatestSocket().emitOpen();
+    client.disconnect();
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("stops reconnecting after auth failure", () => {
+    vi.useFakeTimers();
+    const events: RealtimeClientEvent[] = [];
+    const client = new RealtimeClient({
+      relayUrl: "http://127.0.0.1:8787",
+      deviceId: "dev_a",
+      deviceSecret: "wrong_secret",
+      pairId: "pair_1",
+      webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+      onEvent: (event) => events.push(event),
+    });
+
+    client.connect();
+    const socket = expectLatestSocket();
+    socket.emitOpen();
+    socket.emitMessage({
+      type: "error",
+      requestId: "auth_1",
+      code: "auth_failed",
+      message: "Device authentication failed",
+    });
+    socket.emitClose();
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(events).toContainEqual({ type: "status", status: "authFailed" });
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
 

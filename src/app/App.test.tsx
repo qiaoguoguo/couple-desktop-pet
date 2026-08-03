@@ -34,8 +34,13 @@ const realtimeSyncMock = vi.hoisted(() => {
       })),
     },
     state: {
-      status: "disabled" as const,
-      peerPresence: "unknown" as const,
+      status: "disabled" as
+        | "disabled"
+        | "connecting"
+        | "connected"
+        | "disconnected"
+        | "authFailed",
+      peerPresence: "unknown" as "unknown" | "online" | "offline",
       lastError: null as string | null,
     },
     useRealtimeSync: vi.fn(
@@ -261,6 +266,37 @@ describe("App", () => {
     });
 
     expect((await screen.findAllByText("想你啦")).length).toBeGreaterThan(0);
+  });
+
+  it("does not send messages while the peer is offline", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "offline";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
+        true,
+      ),
+    );
+
+    expect(screen.getByText("对方当前不在线")).toBeTruthy();
+    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
   });
 
   it("passes the current movement range to desktop auto movement", () => {
