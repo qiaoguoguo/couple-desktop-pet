@@ -85,7 +85,9 @@ function buildImportedPackage(
       loop: isLoopingImportedAction(action),
       durationMs: 6000,
       category: readActionCategory(action),
-      frames: frames.map(convertFileSrc),
+      frames: frames.map((framePath) =>
+        convertFileSrc(normalizeImportedAssetPath(framePath)),
+      ),
     };
   }
 
@@ -93,7 +95,9 @@ function buildImportedPackage(
     id: pkg.id,
     name: pkg.name,
     baseSize: pkg.baseSize,
-    previewUrl: pkg.previewPath ? convertFileSrc(pkg.previewPath) : null,
+    previewUrl: pkg.previewPath
+      ? convertFileSrc(normalizeImportedAssetPath(pkg.previewPath))
+      : null,
     source: "imported",
     actions: actions as Record<PetActionName, PetActionDefinition>,
   };
@@ -132,4 +136,8 @@ function readActionCategory(
   }
 
   return "movement";
+}
+
+function normalizeImportedAssetPath(path: string): string {
+  return path.replaceAll("\\", "/");
 }
