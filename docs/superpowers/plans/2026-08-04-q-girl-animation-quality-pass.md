@@ -184,9 +184,13 @@ def load_action_keyframes(action: str, input_dir: Path) -> list[Image.Image]:
     sheets = sorted(input_dir.glob(f"{action}-sheet-*.png"))
     if len(sheets) < 2:
         raise ValueError(f"{action} requires at least two keyframe sheets")
-    keyframes: list[Image.Image] = []
+    sheet_cells: list[list[Image.Image]] = []
     for sheet_path in sheets:
-        keyframes.extend(crop_sheet_cells(Image.open(sheet_path).convert("RGBA")))
+        sheet_cells.append(crop_sheet_cells(Image.open(sheet_path).convert("RGBA")))
+    keyframes: list[Image.Image] = []
+    for cell_index in range(CELL_COLUMNS * CELL_ROWS):
+        for cells in sheet_cells:
+            keyframes.append(cells[cell_index])
     if len(keyframes) < MIN_KEYFRAME_COUNT:
         raise ValueError(f"{action} has only {len(keyframes)} keyframes")
     return keyframes
