@@ -521,7 +521,7 @@ th {
   margin-top: 14px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1040px) {
   .landing-copy h1 {
     font-size: 56px;
   }

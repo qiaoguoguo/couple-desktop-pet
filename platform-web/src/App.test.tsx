@@ -15,6 +15,7 @@ describe("platform web app", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.history.replaceState(null, "", "/");
   });
 
   it("shows the social desktop pet landing page", () => {
@@ -33,6 +34,12 @@ describe("platform web app", () => {
     expect(screen.getByText("互发消息")).toBeTruthy();
     expect(screen.getByText("桌宠串门")).toBeTruthy();
     expect(screen.getByText("互动天数")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "对方的小人会来你的屏幕边打招呼，把问候变成可见的小动作。",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/看着 TA/)).toBeNull();
     expect(screen.getByText("上传参考图")).toBeTruthy();
     expect(screen.getByText("生成多版 Q 版形象")).toBeTruthy();
     expect(screen.getByText("导入桌面端")).toBeTruthy();
@@ -48,6 +55,53 @@ describe("platform web app", () => {
     fireEvent.click(screen.getByRole("button", { name: "首页" }));
     fireEvent.click(screen.getByRole("button", { name: "先下载体验" }));
     expect(screen.getByRole("heading", { name: "请先登录后下载" })).toBeTruthy();
+  });
+
+  it("keeps invitation in the top navigation", () => {
+    render(
+      <App
+        apiClient={createApiClient()}
+        sessionStore={createSessionStore()}
+        initialRoute="/"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "邀请码" }));
+
+    expect(screen.getByRole("heading", { name: "内测邀请码" })).toBeTruthy();
+  });
+
+  it("scrolls landing navigation buttons to matching homepage sections", () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    try {
+      render(<App apiClient={createApiClient()} sessionStore={createSessionStore()} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "形象工坊" }));
+
+      const workshopSection = screen
+        .getByRole("heading", { name: "自由捏造属于你们的小人" })
+        .closest("section");
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+      });
+      expect(scrollIntoView.mock.contexts[0]).toBe(workshopSection);
+    } finally {
+      if (originalScrollIntoView) {
+        Object.defineProperty(Element.prototype, "scrollIntoView", {
+          configurable: true,
+          value: originalScrollIntoView,
+        });
+      } else {
+        delete (Element.prototype as Partial<Element>).scrollIntoView;
+      }
+    }
   });
 
   it("verifies an invitation and moves to registration", async () => {

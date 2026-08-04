@@ -39,7 +39,7 @@ const ritualItems = [
   },
   {
     title: "桌宠串门",
-    description: "对方的小人会来到桌面，看着 TA 在做什么。",
+    description: "对方的小人会来你的屏幕边打招呼，把问候变成可见的小动作。",
   },
   {
     title: "互动天数",
@@ -62,6 +62,7 @@ export type PlatformRoute =
   | "/login"
   | "/download"
   | "/admin";
+type LandingSectionId = "interaction" | "streak" | "workshop";
 
 interface AppProps {
   apiClient?: PlatformApiClient;
@@ -110,6 +111,25 @@ export function App({
       window.history.replaceState(null, "", nextRoute);
     }
   }, []);
+  const scrollToLandingSection = useCallback(
+    (sectionId: LandingSectionId) => {
+      const scroll = () => {
+        document.getElementById(sectionId)?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      };
+
+      if (route !== "/") {
+        navigate("/");
+        window.setTimeout(scroll, 0);
+        return;
+      }
+
+      scroll();
+    },
+    [navigate, route],
+  );
 
   useEffect(() => {
     const token = sessionStore.getToken();
@@ -302,13 +322,25 @@ export function App({
           <button type="button" onClick={() => navigate("/")}>
             首页
           </button>
-          <button type="button" onClick={() => navigate("/")}>
+          <button type="button" onClick={() => navigate("/invite")}>
+            邀请码
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToLandingSection("interaction")}
+          >
             桌宠互动
           </button>
-          <button type="button" onClick={() => navigate("/")}>
+          <button
+            type="button"
+            onClick={() => scrollToLandingSection("workshop")}
+          >
             形象工坊
           </button>
-          <button type="button" onClick={() => navigate("/")}>
+          <button
+            type="button"
+            onClick={() => scrollToLandingSection("streak")}
+          >
             连续天数
           </button>
           <button type="button" onClick={() => navigate("/download")}>
@@ -381,7 +413,11 @@ function HomePage({
 }) {
   return (
     <>
-      <section className="landing-hero" aria-labelledby="landing-title">
+      <section
+        id="interaction"
+        className="landing-hero"
+        aria-labelledby="landing-title"
+      >
         <div className="landing-copy">
           <p className="landing-kicker">轻社交桌宠 · Windows 内测中</p>
           <h1 id="landing-title">每天见一面，屏幕也会变温柔</h1>
@@ -424,7 +460,7 @@ function HomePage({
               <span>对方来访</span>
             </div>
           </div>
-          <div className="streak-card">
+          <div id="streak" className="streak-card">
             <p>连续互动 27 天</p>
             <strong>27</strong>
             <span>天</span>
@@ -460,7 +496,11 @@ function HomePage({
         ))}
       </section>
 
-      <section className="workshop-preview" aria-labelledby="workshop-title">
+      <section
+        id="workshop"
+        className="workshop-preview"
+        aria-labelledby="workshop-title"
+      >
         <div>
           <p className="landing-kicker">形象工坊即将开放</p>
           <h2 id="workshop-title">自由捏造属于你们的小人</h2>
