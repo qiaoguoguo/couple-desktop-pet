@@ -66,7 +66,7 @@ import {
   type InteractionActionName,
   type PetActionName,
 } from "../assets/petActionNames";
-import { selectNextIdleAction } from "../pet-core/idleActionSelector";
+import { selectNextIdleBehavior } from "../pet-core/idleBehaviorSelector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
 import {
   BUILT_IN_PET_PACKAGE_ID,
@@ -438,9 +438,24 @@ export function App() {
         }
 
         if (event.type === "IDLE_ANIMATION_FINISHED") {
+          const nextBehavior = selectNextIdleBehavior({
+            history: currentState.idleHistory,
+            idleActions: idleActionNames,
+            ambientEnabled: true,
+          });
+
+          if (nextBehavior.source === "ambient-interaction") {
+            return transitionPetState(currentState, {
+              type: "AMBIENT_INTERACTION_SELECTED",
+              action: nextBehavior.action,
+              returnTo: "idle-breathe",
+              at: event.at,
+            });
+          }
+
           return transitionPetState(currentState, {
             ...event,
-            action: selectNextIdleAction(currentState.idleHistory, idleActionNames),
+            action: nextBehavior.action,
           });
         }
 

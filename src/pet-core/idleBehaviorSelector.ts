@@ -7,10 +7,15 @@ import { selectNextIdleAction } from "./idleActionSelector";
 
 export type IdleBehaviorSource = "idle" | "ambient-interaction";
 
-export interface IdleBehaviorSelection {
-  action: PetActionName;
-  source: IdleBehaviorSource;
-}
+export type IdleBehaviorSelection =
+  | {
+      action: IdleActionName;
+      source: "idle";
+    }
+  | {
+      action: InteractionActionName;
+      source: "ambient-interaction";
+    };
 
 export interface SelectNextIdleBehaviorOptions {
   history: readonly PetActionName[];

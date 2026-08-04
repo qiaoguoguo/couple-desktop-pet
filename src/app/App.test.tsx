@@ -369,6 +369,39 @@ describe("App", () => {
     ).toBe("idle-look");
   });
 
+  it("plays an ambient interaction during idle without showing a bubble", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const randomSpy = vi.spyOn(Math, "random");
+    randomSpy.mockReturnValueOnce(0.01).mockReturnValueOnce(0.01);
+    render(<App />);
+    await flushAppEffects();
+
+    act(() => {
+      vi.advanceTimersByTime(6250);
+    });
+
+    expect(
+      screen
+        .getByRole("img", { name: "Q 版小人" })
+        .closest("[data-action]")
+        ?.getAttribute("data-action"),
+    ).toBe("act-cute");
+    expect(screen.queryByText("陪我一会儿嘛。")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(6250);
+    });
+
+    expect(
+      screen
+        .getByRole("img", { name: "Q 版小人" })
+        .closest("[data-action]")
+        ?.getAttribute("data-action"),
+    ).toBe("idle-breathe");
+    randomSpy.mockRestore();
+  });
+
   it("refreshes the hide timer when the same bubble is shown again", async () => {
     vi.useFakeTimers();
     render(<App />);
@@ -1164,6 +1197,7 @@ describe("App", () => {
   it("passes the current movement range to desktop auto movement", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.95);
     render(<App />);
 
     act(() => {
@@ -1171,9 +1205,10 @@ describe("App", () => {
         target: { value: "free" },
       });
     });
-    act(() => vi.advanceTimersByTime(8000));
+    act(() => vi.advanceTimersByTime(14000));
 
     expect(windowCommandsMock.moveWindowForAutoStep).toHaveBeenCalledWith("free");
+    randomSpy.mockRestore();
   });
 
   it("opens the pet context menu with right-click and can open settings", async () => {
