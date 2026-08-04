@@ -522,7 +522,7 @@ input:focus-visible {
   border-top: 1px solid #f0ddc8;
   border-bottom: 1px solid #f0ddc8;
   background: linear-gradient(180deg, #fffaf3 0, #fff6eb 100%);
-  padding: 44px clamp(28px, 8vw, 140px);
+  padding: 30px clamp(28px, 8vw, 140px);
 }
 
 .ritual-item {
@@ -572,7 +572,7 @@ input:focus-visible {
   background:
     radial-gradient(circle at 80% 18%, rgb(255 216 194 / 62%), transparent 28%),
     linear-gradient(180deg, #fff2e3 0, #fffaf4 100%);
-  padding: 72px clamp(28px, 8vw, 142px) 84px;
+  padding: 16px clamp(28px, 8vw, 142px) 84px;
 }
 
 .landing-kicker {
