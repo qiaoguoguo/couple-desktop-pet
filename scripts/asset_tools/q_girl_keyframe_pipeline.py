@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,10 +116,15 @@ def load_action_keyframes(action: str, input_dir: Path) -> list[Image.Image]:
     if len(sheets) < 2:
         raise ValueError(f"{action} requires at least two keyframe sheets")
 
-    keyframes: list[Image.Image] = []
+    sheet_cells: list[list[Image.Image]] = []
     for sheet_path in sheets:
         with Image.open(sheet_path) as sheet:
-            keyframes.extend(crop_sheet_cells(sheet.convert("RGBA")))
+            sheet_cells.append(crop_sheet_cells(sheet.convert("RGBA")))
+
+    keyframes: list[Image.Image] = []
+    for cell_index in range(CELL_COLUMNS * CELL_ROWS):
+        for cells in sheet_cells:
+            keyframes.append(cells[cell_index])
 
     if len(keyframes) < MIN_KEYFRAME_COUNT:
         raise ValueError(f"{action} has only {len(keyframes)} keyframes")
@@ -232,6 +238,53 @@ def run_self_test() -> None:
     test_image = Image.new("RGBA", (120, 120), (0, 255, 0, 255))
     cleaned = contract_alpha(despill_green(remove_chroma_key(test_image)))
     assert cleaned.getchannel("A").getbbox() is None
+
+    with tempfile.TemporaryDirectory() as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        sheet_width = CELL_COLUMNS * 12
+        sheet_height = CELL_ROWS * 12
+        sheet_colors = [
+            [
+                (220, 20, 40, 255),
+                (220, 90, 40, 255),
+                (220, 160, 40, 255),
+                (90, 40, 220, 255),
+                (160, 40, 220, 255),
+                (220, 40, 160, 255),
+            ],
+            [
+                (40, 80, 220, 255),
+                (40, 140, 220, 255),
+                (40, 200, 220, 255),
+                (220, 40, 90, 255),
+                (220, 40, 140, 255),
+                (220, 40, 200, 255),
+            ],
+        ]
+
+        for sheet_index, colors in enumerate(sheet_colors, start=1):
+            sheet = Image.new("RGBA", (sheet_width, sheet_height), (0, 255, 0, 255))
+            draw = ImageDraw.Draw(sheet)
+            for cell_index, color in enumerate(colors):
+                col = cell_index % CELL_COLUMNS
+                row = cell_index // CELL_COLUMNS
+                draw.rectangle(
+                    (col * 12 + 2, row * 12 + 2, col * 12 + 9, row * 12 + 9),
+                    fill=color,
+                )
+            sheet.save(temp_dir / f"act-cute-sheet-{sheet_index:02}.png")
+
+        keyframes = load_action_keyframes("act-cute", temp_dir)
+        observed = [frame.getpixel((frame.width // 2, frame.height // 2)) for frame in keyframes[:4]]
+        expected = [
+            sheet_colors[0][0],
+            sheet_colors[1][0],
+            sheet_colors[0][1],
+            sheet_colors[1][1],
+        ]
+        for actual, target in zip(observed, expected, strict=True):
+            assert actual[3] >= 240, observed
+            assert all(abs(actual[channel] - target[channel]) <= 3 for channel in range(3)), observed
 
 
 def main() -> None:
