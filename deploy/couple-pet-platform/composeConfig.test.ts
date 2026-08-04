@@ -9,7 +9,7 @@ describe("couple pet platform compose config", () => {
       "utf8",
     );
     const compose = parse(source) as {
-      services: Record<string, { ports?: string[]; volumes?: string[] }>;
+      services: Record<string, { image?: string; ports?: string[]; volumes?: string[] }>;
     };
 
     expect(Object.keys(compose.services).sort()).toEqual([
@@ -20,6 +20,7 @@ describe("couple pet platform compose config", () => {
     expect(compose.services["platform-web"].ports).toEqual(["19080:80"]);
     expect(compose.services["platform-api"].ports).toEqual(["19081:3000"]);
     expect(compose.services.postgres.ports ?? []).toEqual([]);
+    expect(compose.services.postgres.image).toBe("postgres:17-alpine");
     expect(source).not.toContain("/opt/qherp");
   });
 
