@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PetActionDefinition, PetActionName } from "../assets/builtInPetManifest";
-import { REQUIRED_PET_ACTIONS } from "../assets/petPackageContract";
+import {
+  PET_FRAMES_PER_ACTION,
+  REQUIRED_PET_ACTIONS,
+} from "../assets/petPackageContract";
 import {
   buildPetPackageRegistry,
   type ResolvedPetPackage,
@@ -15,9 +18,11 @@ const importedPackage: ResolvedPetPackage = {
   id: "imported:moon-buddy",
   name: "月亮伙伴",
   baseSize: { width: 256, height: 320 },
+  frameSize: { width: 768, height: 960 },
   previewUrl: "asset://moon/preview.png",
   source: "imported",
   actions: createImportedActions(),
+  scenes: {},
 };
 
 function createImportedActions(): Record<PetActionName, PetActionDefinition> {
@@ -31,6 +36,7 @@ function createImportedActions(): Record<PetActionName, PetActionDefinition> {
         action === "walk" ||
         action === "drag" ||
         action === "sleep",
+      frameCount: PET_FRAMES_PER_ACTION,
       durationMs: 6000,
       category: action.startsWith("idle")
         ? "idle"
@@ -38,8 +44,9 @@ function createImportedActions(): Record<PetActionName, PetActionDefinition> {
           ? "interaction"
           : "movement",
       frames: Array.from(
-        { length: 18 },
-        (_, index) => `asset://moon/${action}-${String(index + 1).padStart(2, "0")}.png`,
+        { length: PET_FRAMES_PER_ACTION },
+        (_, index) =>
+          `asset://moon/${action}/${String(index + 1).padStart(4, "0")}.png`,
       ),
     };
   }
@@ -75,9 +82,11 @@ describe("FramePetStage DOM frame rendering", () => {
   it("renders the generated pet frame image instead of the fallback when a frame URL exists", () => {
     renderStage();
 
-    const frameImage = screen.getByRole("img", { name: "星星睡衣小星人" });
+    const frameImage = screen.getByRole("img", { name: "Q 版小人" });
 
-    expect(frameImage.getAttribute("src")).toContain("idle-breathe-01");
+    expect(frameImage.getAttribute("src")).toContain(
+      "pets/q-girl/frames/idle-breathe/0001.png",
+    );
     expect(document.querySelector(".pet-fallback-card")).toBeNull();
   });
 
@@ -87,30 +96,32 @@ describe("FramePetStage DOM frame rendering", () => {
     const frameImage = screen.getByRole("img", { name: "月亮伙伴" });
 
     expect(stage.getAttribute("data-pet-package-id")).toBe("imported:moon-buddy");
-    expect(frameImage.getAttribute("src")).toBe("asset://moon/idle-breathe-01.png");
+    expect(frameImage.getAttribute("src")).toBe(
+      "asset://moon/idle-breathe/0001.png",
+    );
     expect(document.querySelector(".pet-fallback-card")).toBeNull();
   });
 
   it("shows the fallback only after the generated frame image fails to load", () => {
     renderStage();
 
-    fireEvent.error(screen.getByRole("img", { name: "星星睡衣小星人" }));
+    fireEvent.error(screen.getByRole("img", { name: "Q 版小人" }));
 
-    expect(screen.getByLabelText("星星睡衣小星人开发占位")).toBeTruthy();
+    expect(screen.getByLabelText("Q 版小人开发占位")).toBeTruthy();
   });
 
   it("advances frame image URLs with the animation timer", () => {
     vi.useFakeTimers();
     renderStage();
 
-    expect(screen.getByRole("img", { name: "星星睡衣小星人" }).getAttribute("src")).toContain(
-      "idle-breathe-01",
+    expect(screen.getByRole("img", { name: "Q 版小人" }).getAttribute("src")).toContain(
+      "idle-breathe/0001",
     );
 
-    act(() => vi.advanceTimersByTime(400));
+    act(() => vi.advanceTimersByTime(200));
 
-    expect(screen.getByRole("img", { name: "星星睡衣小星人" }).getAttribute("src")).toContain(
-      "idle-breathe-02",
+    expect(screen.getByRole("img", { name: "Q 版小人" }).getAttribute("src")).toContain(
+      "idle-breathe/0002",
     );
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_PET_PACKAGE_ID } from "./petPackageContract";
+import {
+  BUILT_IN_PET_PACKAGE_ID,
+  PET_ACTION_FPS,
+  PET_FRAMES_PER_ACTION,
+} from "./petPackageContract";
 import {
   builtInPetManifest,
   idleActionNames,
@@ -23,11 +27,14 @@ const expectedActionNames = [
   "act-drowsy",
 ] as const satisfies readonly PetActionName[];
 
-const bundledFrameUrls = import.meta.glob<string>("./pets/star-sleeper/*.png", {
-  eager: true,
-  import: "default",
-  query: "?url",
-});
+const bundledFrameUrls = import.meta.glob<string>(
+  "./pets/q-girl/frames/**/*.png",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
 
 describe("builtInPetManifest", () => {
   it("uses the built-in runtime package id", () => {
@@ -80,18 +87,18 @@ describe("builtInPetManifest", () => {
     );
   });
 
-  it("uses eighteen generated PNG frames for every action", () => {
+  it("uses thirty v2 PNG frames for every action", () => {
     for (const actionId of expectedActionNames) {
       const action = builtInPetManifest.actions[actionId];
 
-      expect(action.frames).toHaveLength(18);
+      expect(action.frames).toHaveLength(PET_FRAMES_PER_ACTION);
       expect(action.durationMs).toBe(6000);
-      expect(action.fps).toBe(3);
+      expect(action.fps).toBe(PET_ACTION_FPS);
 
       action.frames.forEach((frame, index) => {
-        const frameNumber = String(index + 1).padStart(2, "0");
+        const frameNumber = String(index + 1).padStart(4, "0");
 
-        expect(frame).toBe(`pets/star-sleeper/${actionId}-${frameNumber}.png`);
+        expect(frame).toBe(`pets/q-girl/frames/${actionId}/${frameNumber}.png`);
       });
     }
   });

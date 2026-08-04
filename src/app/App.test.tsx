@@ -8,6 +8,9 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  PET_ACTION_DURATION_MS,
+  PET_ACTION_FPS,
+  PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
   type ImportedPetPackageSummary,
 } from "../assets/petPackageContract";
@@ -144,9 +147,46 @@ function importedPackageSummary(
     manifestId,
     name,
     baseSize: { width: 256, height: 320 },
-    frameSize: { width: 512, height: 512 },
+    frameSize: { width: 768, height: 960 },
     previewPath: `C:/app/pet-packages/${manifestId}/preview.png`,
+    actions: importedActions(),
+    scenes: importedScenes(),
     framePaths: importedFramePaths(manifestId),
+  };
+}
+
+function importedActions(): ImportedPetPackageSummary["actions"] {
+  return Object.fromEntries(
+    REQUIRED_PET_ACTIONS.map((action) => [
+      action,
+      {
+        fps: PET_ACTION_FPS,
+        loop:
+          action.startsWith("idle") ||
+          action === "walk" ||
+          action === "drag" ||
+          action === "sleep",
+        frameCount: PET_FRAMES_PER_ACTION,
+        durationMs: PET_ACTION_DURATION_MS,
+        frames: `frames/${action}/`,
+      },
+    ]),
+  ) as ImportedPetPackageSummary["actions"];
+}
+
+function importedScenes(): ImportedPetPackageSummary["scenes"] {
+  return {
+    "act-hug": {
+      action: "act-hug",
+      bubbleCues: [{ atMs: 2000, text: "可以抱一下吗？" }],
+      returnTo: "idle-breathe",
+    },
+    "remote-message": {
+      action: "act-wave",
+      bubbleCues: [{ atMs: 1000, source: "remoteMessage" }],
+      waitForAcknowledge: true,
+      returnTo: "idle-breathe",
+    },
   };
 }
 
@@ -157,9 +197,11 @@ function importedFramePaths(
 
   for (const action of REQUIRED_PET_ACTIONS) {
     framePaths[action] = Array.from(
-      { length: 18 },
+      { length: PET_FRAMES_PER_ACTION },
       (_, index) =>
-        `C:/app/pet-packages/${manifestId}/frames/${action}-${String(index + 1).padStart(2, "0")}.png`,
+        `C:/app/pet-packages/${manifestId}/frames/${action}/${String(
+          index + 1,
+        ).padStart(4, "0")}.png`,
     );
   }
 

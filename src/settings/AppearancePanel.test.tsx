@@ -5,28 +5,34 @@ import { AppearancePanel } from "./AppearancePanel";
 
 const packages: ResolvedPetPackage[] = [
   {
-    id: "builtin:star-sleeper",
-    name: "星星睡衣小星人",
+    id: "builtin:q-girl",
+    name: "Q 版小人",
     source: "built-in",
     baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
     previewUrl: null,
     actions: {} as ResolvedPetPackage["actions"],
+    scenes: {},
   },
   {
     id: "imported:moon-buddy",
     name: "月亮伙伴",
     source: "imported",
     baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
     previewUrl: "asset://moon/preview.png",
     actions: {} as ResolvedPetPackage["actions"],
+    scenes: {},
   },
   {
     id: "imported:sun-buddy",
     name: "太阳伙伴",
     source: "imported",
     baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
     previewUrl: null,
     actions: {} as ResolvedPetPackage["actions"],
+    scenes: {},
   },
 ];
 
@@ -38,7 +44,7 @@ describe("AppearancePanel", () => {
     render(
       <AppearancePanel
         packages={packages}
-        selectedPackageId="builtin:star-sleeper"
+        selectedPackageId="builtin:q-girl"
         peerDeviceId={null}
         selectedPeerPackageId={null}
         error={null}
@@ -105,7 +111,7 @@ describe("AppearancePanel", () => {
     render(
       <AppearancePanel
         packages={packages}
-        selectedPackageId="builtin:star-sleeper"
+        selectedPackageId="builtin:q-girl"
         peerDeviceId="dev_b"
         selectedPeerPackageId="imported:moon-buddy"
         error={null}
@@ -128,7 +134,7 @@ describe("AppearancePanel", () => {
     render(
       <AppearancePanel
         packages={packages}
-        selectedPackageId="builtin:star-sleeper"
+        selectedPackageId="builtin:q-girl"
         peerDeviceId="dev_b"
         selectedPeerPackageId={null}
         error={null}

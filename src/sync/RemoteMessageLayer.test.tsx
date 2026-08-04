@@ -4,7 +4,10 @@ import type {
   PetActionDefinition,
   PetActionName,
 } from "../assets/builtInPetManifest";
-import { REQUIRED_PET_ACTIONS } from "../assets/petPackageContract";
+import {
+  PET_FRAMES_PER_ACTION,
+  REQUIRED_PET_ACTIONS,
+} from "../assets/petPackageContract";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 import { RemoteMessageLayer } from "./RemoteMessageLayer";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
@@ -26,9 +29,11 @@ function resolvedPackage(): ResolvedPetPackage {
     id: "imported:moon-buddy",
     name: "月亮伙伴",
     baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
     previewUrl: "asset://moon/preview.png",
     source: "imported",
     actions: createActions(),
+    scenes: {},
   };
 }
 
@@ -39,6 +44,7 @@ function createActions(): Record<PetActionName, PetActionDefinition> {
     actions[action] = {
       fps: 3,
       loop: action.startsWith("idle"),
+      frameCount: PET_FRAMES_PER_ACTION,
       durationMs: 6000,
       category: action.startsWith("idle")
         ? "idle"

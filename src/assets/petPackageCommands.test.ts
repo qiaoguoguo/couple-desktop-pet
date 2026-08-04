@@ -9,8 +9,10 @@ describe("pet package commands", () => {
       manifestId: "moon-buddy",
       name: "月亮伙伴",
       baseSize: { width: 256, height: 320 },
-      frameSize: { width: 512, height: 512 },
+      frameSize: { width: 768, height: 960 },
       previewPath: "C:/app/pet-packages/moon-buddy/preview.png",
+      actions: {} as ImportedPetPackageSummary["actions"],
+      scenes: {} as ImportedPetPackageSummary["scenes"],
       framePaths: {} as ImportedPetPackageSummary["framePaths"],
     };
     const invoke = vi.fn(async () => importedPackage);

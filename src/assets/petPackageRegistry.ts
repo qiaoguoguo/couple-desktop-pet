@@ -5,20 +5,24 @@ import {
   type PetActionDefinition,
   type PetActionName,
 } from "./builtInPetManifest";
+import { readPetActionCategory } from "./petActionNames";
 import {
   BUILT_IN_PET_PACKAGE_ID,
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
   type ImportedPetPackageSummary,
+  type PetPackageSceneManifest,
 } from "./petPackageContract";
 
 export interface ResolvedPetPackage {
   id: string;
   name: string;
   baseSize: { width: number; height: number };
+  frameSize: { width: number; height: number };
   previewUrl: string | null;
   source: "built-in" | "imported";
   actions: Record<PetActionName, PetActionDefinition>;
+  scenes: Record<string, PetPackageSceneManifest>;
 }
 
 export function buildPetPackageRegistry(
@@ -51,8 +55,10 @@ function buildBuiltInPackage(): ResolvedPetPackage {
     id: BUILT_IN_PET_PACKAGE_ID,
     name: builtInPetManifest.name,
     baseSize: builtInPetManifest.baseSize,
+    frameSize: builtInPetManifest.frameSize,
     previewUrl: null,
     source: "built-in",
+    scenes: builtInPetManifest.scenes,
     actions: buildActionRecord((action) => {
       const actionDefinition = getActionDefinition(action);
 
@@ -80,11 +86,17 @@ function buildImportedPackage(
       return null;
     }
 
+    const actionManifest = pkg.actions[action];
+    if (!actionManifest) {
+      return null;
+    }
+
     actions[action] = {
-      fps: 3,
-      loop: isLoopingImportedAction(action),
-      durationMs: 6000,
-      category: readActionCategory(action),
+      fps: actionManifest.fps,
+      loop: actionManifest.loop,
+      frameCount: actionManifest.frameCount,
+      durationMs: actionManifest.durationMs,
+      category: readPetActionCategory(action),
       frames: frames.map((framePath) =>
         convertFileSrc(normalizeImportedAssetPath(framePath)),
       ),
@@ -95,11 +107,11 @@ function buildImportedPackage(
     id: pkg.id,
     name: pkg.name,
     baseSize: pkg.baseSize,
-    previewUrl: pkg.previewPath
-      ? convertFileSrc(normalizeImportedAssetPath(pkg.previewPath))
-      : null,
+    frameSize: pkg.frameSize,
+    previewUrl: convertFileSrc(normalizeImportedAssetPath(pkg.previewPath)),
     source: "imported",
     actions: actions as Record<PetActionName, PetActionDefinition>,
+    scenes: pkg.scenes,
   };
 }
 
@@ -113,29 +125,6 @@ function buildActionRecord(
   }
 
   return actions;
-}
-
-function isLoopingImportedAction(action: PetActionName): boolean {
-  return (
-    action.startsWith("idle") ||
-    action === "walk" ||
-    action === "drag" ||
-    action === "sleep"
-  );
-}
-
-function readActionCategory(
-  action: PetActionName,
-): PetActionDefinition["category"] {
-  if (action.startsWith("idle")) {
-    return "idle";
-  }
-
-  if (action.startsWith("act-")) {
-    return "interaction";
-  }
-
-  return "movement";
 }
 
 function normalizeImportedAssetPath(path: string): string {
