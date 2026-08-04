@@ -18,6 +18,7 @@ src-tauri/gen/
 .local-data/
 server/.data/
 tmp/
+output/
 __pycache__/
 *.pyc
 
