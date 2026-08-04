@@ -1,40 +1,66 @@
-import type { PetActionDefinition, PetActionName } from "./builtInPetManifest";
+import {
+  idleActionNames,
+  isPetActionName,
+  requiredPetActions,
+  type IdleActionName,
+  type PetActionName,
+} from "./petActionNames";
 
-export const BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper" as const;
+export const BUILT_IN_PET_PACKAGE_ID = "builtin:q-girl" as const;
 export const IMPORTED_PET_PACKAGE_PREFIX = "imported:" as const;
-export const PET_FRAMES_PER_ACTION = 18;
+export const PET_FRAMES_PER_ACTION = 30;
+export const PET_ACTION_FPS = 5;
+export const PET_ACTION_DURATION_MS = 6000;
+export const REQUIRED_PET_ACTIONS = requiredPetActions;
+export const UNSUPPORTED_LEGACY_PACKAGE_MESSAGE =
+  "旧版资源包动作标准过低，请使用新版生成器重新生成。";
 
-export const REQUIRED_PET_ACTIONS = [
-  "idle-breathe",
-  "idle-look",
-  "idle-stretch",
-  "walk",
-  "drag",
-  "sleep",
-  "act-cute",
-  "act-typing",
-  "act-wave",
-  "act-hug",
-  "act-pout",
-  "act-drowsy",
-] as const satisfies readonly PetActionName[];
+export interface PetPackageSize {
+  width: number;
+  height: number;
+}
+
+export interface PetPackageActionManifest {
+  fps: number;
+  loop: boolean;
+  frameCount: number;
+  durationMs: number;
+  frames: string;
+}
+
+export interface PetPackageBubbleCue {
+  atMs: number;
+  text?: string;
+  source?: "remoteMessage";
+}
+
+export interface PetPackageSceneManifest {
+  action: PetActionName;
+  bubbleCues: readonly PetPackageBubbleCue[];
+  returnTo: IdleActionName;
+  waitForAcknowledge?: boolean;
+}
 
 export interface PetPackageManifest {
-  formatVersion: 1;
+  formatVersion: 2;
+  renderer: "frame-sequence";
   id: string;
   name: string;
-  baseSize: { width: number; height: number };
-  frameSize: { width: number; height: number };
-  actions: Record<PetActionName, Pick<PetActionDefinition, "fps" | "loop">>;
+  baseSize: PetPackageSize;
+  frameSize: PetPackageSize;
+  actions: Record<PetActionName, PetPackageActionManifest>;
+  scenes: Record<string, PetPackageSceneManifest>;
 }
 
 export interface ImportedPetPackageSummary {
   id: string;
   manifestId: string;
   name: string;
-  baseSize: { width: number; height: number };
-  frameSize: { width: number; height: number };
-  previewPath: string | null;
+  baseSize: PetPackageSize;
+  frameSize: PetPackageSize;
+  previewPath: string;
+  actions: Record<PetActionName, PetPackageActionManifest>;
+  scenes: Record<string, PetPackageSceneManifest>;
   framePaths: Record<PetActionName, string[]>;
 }
 
@@ -52,17 +78,18 @@ export function stripImportedPetPackagePrefix(id: string): string {
     : id;
 }
 
-export function buildFrameFileName(
-  action: PetActionName,
-  index: number,
-): string {
-  return `${action}-${String(index).padStart(2, "0")}.png`;
+export function buildFrameFileName(index: number): string {
+  return `${String(index).padStart(4, "0")}.png`;
 }
 
 export function readPetPackageManifest(
   input: unknown,
 ): PetPackageManifest | null {
-  if (!isRecord(input) || input.formatVersion !== 1) {
+  if (
+    !isRecord(input) ||
+    input.formatVersion !== 2 ||
+    input.renderer !== "frame-sequence"
+  ) {
     return null;
   }
 
@@ -71,12 +98,22 @@ export function readPetPackageManifest(
   const baseSize = readSize(input.baseSize);
   const frameSize = readSize(input.frameSize);
   const actions = readActions(input.actions);
+  const scenes = readScenes(input.scenes);
 
-  if (!id || !name || !baseSize || !frameSize || !actions) {
+  if (!id || !name || !baseSize || !frameSize || !actions || !scenes) {
     return null;
   }
 
-  return { formatVersion: 1, id, name, baseSize, frameSize, actions };
+  return {
+    formatVersion: 2,
+    renderer: "frame-sequence",
+    id,
+    name,
+    baseSize,
+    frameSize,
+    actions,
+    scenes,
+  };
 }
 
 function readActions(input: unknown): PetPackageManifest["actions"] | null {
@@ -90,13 +127,26 @@ function readActions(input: unknown): PetPackageManifest["actions"] | null {
       return null;
     }
 
-    const fps =
-      typeof value.fps === "number" && value.fps > 0 && value.fps <= 24
-        ? value.fps
-        : null;
-    const loop = typeof value.loop === "boolean" ? value.loop : null;
+    if (
+      value.fps !== PET_ACTION_FPS ||
+      value.frameCount !== PET_FRAMES_PER_ACTION ||
+      value.durationMs !== PET_ACTION_DURATION_MS ||
+      value.frames !== `frames/${action}/` ||
+      typeof value.loop !== "boolean"
+    ) {
+      return null;
+    }
 
-    return fps && loop !== null ? [action, { fps, loop }] : null;
+    return [
+      action,
+      {
+        fps: PET_ACTION_FPS,
+        loop: value.loop,
+        frameCount: PET_FRAMES_PER_ACTION,
+        durationMs: PET_ACTION_DURATION_MS,
+        frames: `frames/${action}/`,
+      },
+    ] as const;
   });
 
   if (entries.some((entry) => entry === null)) {
@@ -104,13 +154,76 @@ function readActions(input: unknown): PetPackageManifest["actions"] | null {
   }
 
   return Object.fromEntries(
-    entries as Array<
-      [PetActionName, Pick<PetActionDefinition, "fps" | "loop">]
-    >,
+    entries as Array<[PetActionName, PetPackageActionManifest]>,
   ) as PetPackageManifest["actions"];
 }
 
-function readSize(input: unknown): { width: number; height: number } | null {
+function readScenes(input: unknown): PetPackageManifest["scenes"] | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const scenes: Record<string, PetPackageSceneManifest> = {};
+
+  for (const [sceneId, value] of Object.entries(input)) {
+    if (!sceneId.trim() || !isRecord(value)) {
+      return null;
+    }
+
+    const action = readPetActionName(value.action);
+    const bubbleCues = readBubbleCues(value.bubbleCues);
+    const returnTo = readIdleActionName(value.returnTo);
+    const waitForAcknowledge =
+      typeof value.waitForAcknowledge === "boolean"
+        ? value.waitForAcknowledge
+        : undefined;
+
+    if (!action || !bubbleCues || !returnTo) {
+      return null;
+    }
+
+    scenes[sceneId] = {
+      action,
+      bubbleCues,
+      returnTo,
+      ...(waitForAcknowledge === undefined ? {} : { waitForAcknowledge }),
+    };
+  }
+
+  return scenes;
+}
+
+function readBubbleCues(input: unknown): readonly PetPackageBubbleCue[] | null {
+  if (!Array.isArray(input)) {
+    return null;
+  }
+
+  const cues = input.map((value) => {
+    if (!isRecord(value) || typeof value.atMs !== "number" || value.atMs < 0) {
+      return null;
+    }
+
+    const text = typeof value.text === "string" ? value.text : undefined;
+    const source =
+      value.source === "remoteMessage" ? value.source : undefined;
+
+    if (!text && !source) {
+      return null;
+    }
+
+    return {
+      atMs: value.atMs,
+      ...(text === undefined ? {} : { text }),
+      ...(source === undefined ? {} : { source }),
+    };
+  });
+
+  return cues.some((cue) => cue === null)
+    ? null
+    : (cues as PetPackageBubbleCue[]);
+}
+
+function readSize(input: unknown): PetPackageSize | null {
   if (!isRecord(input)) {
     return null;
   }
@@ -129,6 +242,17 @@ function readSize(input: unknown): { width: number; height: number } | null {
   }
 
   return { width, height };
+}
+
+function readPetActionName(value: unknown): PetActionName | null {
+  return typeof value === "string" && isPetActionName(value) ? value : null;
+}
+
+function readIdleActionName(value: unknown): IdleActionName | null {
+  return typeof value === "string" &&
+    (idleActionNames as readonly string[]).includes(value)
+    ? (value as IdleActionName)
+    : null;
 }
 
 function readPackageId(value: unknown): string | null {

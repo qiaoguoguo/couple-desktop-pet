@@ -1,25 +1,25 @@
 import { BUILT_IN_PET_PACKAGE_ID } from "./petPackageContract";
+import {
+  isLoopingPetAction,
+  readPetActionCategory,
+  type IdleActionName,
+  type InteractionActionName,
+  type PetActionName,
+} from "./petActionNames";
 
-export type IdleActionName = "idle-breathe" | "idle-look" | "idle-stretch";
-
-export type MovementActionName = "walk" | "drag" | "sleep";
-
-export type InteractionActionName =
-  | "act-cute"
-  | "act-typing"
-  | "act-wave"
-  | "act-hug"
-  | "act-pout"
-  | "act-drowsy";
-
-export type PetActionName =
-  | IdleActionName
-  | MovementActionName
-  | InteractionActionName;
+export {
+  idleActionNames,
+  interactionActionNames,
+  type IdleActionName,
+  type InteractionActionName,
+  type MovementActionName,
+  type PetActionName,
+} from "./petActionNames";
 
 export interface PetActionDefinition {
   fps: number;
   loop: boolean;
+  frameCount: number;
   durationMs: number;
   category: "idle" | "movement" | "interaction";
   frames: readonly string[];
@@ -40,12 +40,6 @@ export interface BuiltInPetManifest {
   };
   actions: Record<PetActionName, PetActionDefinition>;
 }
-
-export const idleActionNames = [
-  "idle-breathe",
-  "idle-look",
-  "idle-stretch",
-] as const satisfies readonly IdleActionName[];
 
 export const interactionOptions = [
   { id: "act-cute", label: "撒娇卖萌", bubble: "陪我一会儿嘛。" },
@@ -70,6 +64,7 @@ const longAction = (
 ): PetActionDefinition => ({
   fps: 3,
   loop,
+  frameCount: 18,
   durationMs: 6000,
   category,
   frames: frameSequence(action),
@@ -80,18 +75,54 @@ export const builtInPetManifest = {
   name: "星星睡衣小星人",
   baseSize: { width: 256, height: 320 },
   actions: {
-    "idle-breathe": longAction("idle", "idle-breathe", true),
-    "idle-look": longAction("idle", "idle-look", true),
-    "idle-stretch": longAction("idle", "idle-stretch", true),
-    walk: longAction("movement", "walk", true),
-    drag: longAction("movement", "drag", true),
-    sleep: longAction("movement", "sleep", true),
-    "act-cute": longAction("interaction", "act-cute", false),
-    "act-typing": longAction("interaction", "act-typing", false),
-    "act-wave": longAction("interaction", "act-wave", false),
-    "act-hug": longAction("interaction", "act-hug", false),
-    "act-pout": longAction("interaction", "act-pout", false),
-    "act-drowsy": longAction("interaction", "act-drowsy", false),
+    "idle-breathe": longAction(
+      readPetActionCategory("idle-breathe"),
+      "idle-breathe",
+      isLoopingPetAction("idle-breathe"),
+    ),
+    "idle-look": longAction(
+      readPetActionCategory("idle-look"),
+      "idle-look",
+      isLoopingPetAction("idle-look"),
+    ),
+    "idle-stretch": longAction(
+      readPetActionCategory("idle-stretch"),
+      "idle-stretch",
+      isLoopingPetAction("idle-stretch"),
+    ),
+    walk: longAction(readPetActionCategory("walk"), "walk", isLoopingPetAction("walk")),
+    drag: longAction(readPetActionCategory("drag"), "drag", isLoopingPetAction("drag")),
+    sleep: longAction(readPetActionCategory("sleep"), "sleep", isLoopingPetAction("sleep")),
+    "act-cute": longAction(
+      readPetActionCategory("act-cute"),
+      "act-cute",
+      isLoopingPetAction("act-cute"),
+    ),
+    "act-typing": longAction(
+      readPetActionCategory("act-typing"),
+      "act-typing",
+      isLoopingPetAction("act-typing"),
+    ),
+    "act-wave": longAction(
+      readPetActionCategory("act-wave"),
+      "act-wave",
+      isLoopingPetAction("act-wave"),
+    ),
+    "act-hug": longAction(
+      readPetActionCategory("act-hug"),
+      "act-hug",
+      isLoopingPetAction("act-hug"),
+    ),
+    "act-pout": longAction(
+      readPetActionCategory("act-pout"),
+      "act-pout",
+      isLoopingPetAction("act-pout"),
+    ),
+    "act-drowsy": longAction(
+      readPetActionCategory("act-drowsy"),
+      "act-drowsy",
+      isLoopingPetAction("act-drowsy"),
+    ),
   },
 } as const satisfies BuiltInPetManifest;
 
