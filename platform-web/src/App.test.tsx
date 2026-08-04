@@ -104,6 +104,24 @@ describe("platform web app", () => {
     }
   });
 
+  it("keeps landing content reachable on a mobile viewport", () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    window.dispatchEvent(new Event("resize"));
+
+    render(<App apiClient={createApiClient()} sessionStore={createSessionStore()} />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "每天见一面，屏幕也会变温柔",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "桌宠互动" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "形象工坊" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "连续天数" })).toBeTruthy();
+    expect(screen.getByText("自由捏造属于你们的小人")).toBeTruthy();
+  });
+
   it("verifies an invitation and moves to registration", async () => {
     const apiClient = createApiClient();
     render(

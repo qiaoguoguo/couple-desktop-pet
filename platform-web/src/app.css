@@ -12,8 +12,13 @@
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: clip;
   background:
     linear-gradient(180deg, #fff5e7 0, #fffaf3 52%, #fff8ee 100%);
+}
+
+img {
+  max-width: 100%;
 }
 
 button,
@@ -50,6 +55,7 @@ input:focus-visible {
   width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 18px 0 44px;
+  overflow-x: clip;
 }
 
 .platform-nav {
@@ -58,6 +64,7 @@ input:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   margin-bottom: 18px;
   padding: 8px;
   border: 1px solid #edd2b6;
@@ -77,6 +84,7 @@ input:focus-visible {
   font-size: 18px;
   font-weight: 800;
   letter-spacing: 0;
+  min-width: 0;
 }
 
 .platform-nav-links,
@@ -85,6 +93,8 @@ input:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .platform-nav-links button {
@@ -161,6 +171,7 @@ input:focus-visible {
   font-weight: 900;
   line-height: 1.14;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .landing-subtitle {
@@ -206,6 +217,7 @@ input:focus-visible {
 
 .landing-stage {
   position: relative;
+  min-width: 0;
   min-height: 464px;
   overflow: hidden;
   border: 1px solid #e4c29f;
@@ -228,6 +240,7 @@ input:focus-visible {
 .pet-window {
   display: grid;
   place-items: center;
+  min-width: 0;
   min-height: 190px;
   border: 2px solid #8e5a38;
   border-radius: 8px;
@@ -386,6 +399,7 @@ input:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
   gap: 22px;
+  min-width: 0;
   margin-top: 28px;
   overflow: hidden;
   border: 1px solid #edd2b6;
@@ -416,6 +430,7 @@ input:focus-visible {
 }
 
 .workshop-step {
+  min-width: 0;
   min-height: 104px;
   border: 1px solid #e7c4a5;
   border-radius: 8px;
@@ -523,7 +538,7 @@ th {
 
 @media (max-width: 1040px) {
   .landing-copy h1 {
-    font-size: 56px;
+    font-size: clamp(44px, 6vw, 56px);
   }
 
   .landing-hero,
@@ -554,7 +569,7 @@ th {
 
 @media (max-width: 760px) {
   .platform-shell {
-    width: min(100% - 20px, 620px);
+    width: min(620px, calc(100vw - 20px));
     padding-top: 10px;
   }
 
@@ -570,11 +585,19 @@ th {
 
   .platform-nav-links,
   .platform-nav-account {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 6px;
   }
 
   .platform-nav button {
-    padding: 0 9px;
+    width: 100%;
+    min-width: 0;
+    padding: 0 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
   }
 
   .landing-hero {
@@ -583,7 +606,10 @@ th {
   }
 
   .landing-copy h1 {
-    font-size: 40px;
+    max-width: 100%;
+    font-size: clamp(30px, 9vw, 40px);
+    line-height: 1.16;
+    word-break: break-word;
   }
 
   .landing-subtitle {
@@ -622,7 +648,7 @@ th {
     right: auto;
     bottom: auto;
     left: auto;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     margin-top: 12px;
   }
 
@@ -664,5 +690,41 @@ th {
   .workshop-pets {
     position: static;
     justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .platform-shell {
+    width: min(100%, calc(100vw - 16px));
+  }
+
+  .platform-nav {
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .platform-nav-links,
+  .platform-nav-account {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing-hero {
+    padding: 18px;
+  }
+
+  .landing-stage {
+    min-height: auto;
+  }
+
+  .pet-window {
+    min-height: 150px;
+  }
+
+  .workshop-preview {
+    padding: 18px;
+  }
+
+  .workshop-pets img {
+    width: min(42vw, 86px);
   }
 }
