@@ -42,6 +42,6 @@ export interface PetState {
   enteredAt: number;
   lastInteractionAt: number;
   direction: -1 | 1;
-  idleHistory: readonly IdleActionName[];
+  idleHistory: readonly PetActionName[];
   returnTo?: IdleActionName;
 }

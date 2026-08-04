@@ -90,11 +90,13 @@ describe("pet state machine", () => {
       lastInteractionAt: 1000,
       returnTo: "idle-look",
     });
+    expect(ambient.idleHistory).toEqual(["idle-breathe", "act-wave"]);
     expect(returnedIdle).toMatchObject({
       name: "idle",
       action: "idle-look",
       lastInteractionAt: 1000,
     });
+    expect(returnedIdle.idleHistory).toEqual(["idle-breathe", "act-wave"]);
   });
 
   it("switches idle action when the current idle animation finishes", () => {

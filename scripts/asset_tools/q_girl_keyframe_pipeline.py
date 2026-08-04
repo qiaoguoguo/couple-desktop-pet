@@ -101,14 +101,26 @@ def crop_sheet_cells(sheet: Image.Image) -> list[Image.Image]:
                 raise ValueError(f"empty keyframe cell row={row} col={col}")
 
             cropped = cleaned.crop(bbox)
-            scale = min(TARGET_WIDTH / cropped.width, TARGET_HEIGHT / cropped.height)
-            resized = cropped.resize(
-                (round(cropped.width * scale), round(cropped.height * scale)),
-                Image.Resampling.LANCZOS,
-            )
-            cells.append(resized)
+            cells.append(cropped)
 
     return cells
+
+
+def normalize_keyframes(keyframes: list[Image.Image]) -> list[Image.Image]:
+    if not keyframes:
+        return []
+
+    max_width = max(frame.width for frame in keyframes)
+    max_height = max(frame.height for frame in keyframes)
+    scale = min(TARGET_WIDTH / max_width, TARGET_HEIGHT / max_height)
+
+    return [
+        frame.resize(
+            (round(frame.width * scale), round(frame.height * scale)),
+            Image.Resampling.LANCZOS,
+        )
+        for frame in keyframes
+    ]
 
 
 def load_action_keyframes(action: str, input_dir: Path) -> list[Image.Image]:
@@ -129,7 +141,7 @@ def load_action_keyframes(action: str, input_dir: Path) -> list[Image.Image]:
     if len(keyframes) < MIN_KEYFRAME_COUNT:
         raise ValueError(f"{action} has only {len(keyframes)} keyframes")
 
-    return keyframes
+    return normalize_keyframes(keyframes)
 
 
 def build_action_frames(action: str, keyframes: list[Image.Image]) -> list[Image.Image]:
@@ -268,8 +280,14 @@ def run_self_test() -> None:
             for cell_index, color in enumerate(colors):
                 col = cell_index % CELL_COLUMNS
                 row = cell_index // CELL_COLUMNS
+                inset = 2 if cell_index != 1 else 1
                 draw.rectangle(
-                    (col * 12 + 2, row * 12 + 2, col * 12 + 9, row * 12 + 9),
+                    (
+                        col * 12 + inset,
+                        row * 12 + inset,
+                        (col + 1) * 12 - inset - 1,
+                        (row + 1) * 12 - inset - 1,
+                    ),
                     fill=color,
                 )
             sheet.save(temp_dir / f"act-cute-sheet-{sheet_index:02}.png")
@@ -285,6 +303,17 @@ def run_self_test() -> None:
         for actual, target in zip(observed, expected, strict=True):
             assert actual[3] >= 240, observed
             assert all(abs(actual[channel] - target[channel]) <= 3 for channel in range(3)), observed
+
+        small_keyframe_bbox = keyframes[0].getchannel("A").getbbox()
+        larger_keyframe_bbox = keyframes[2].getchannel("A").getbbox()
+        assert small_keyframe_bbox is not None
+        assert larger_keyframe_bbox is not None
+        small_keyframe_width = small_keyframe_bbox[2] - small_keyframe_bbox[0]
+        larger_keyframe_width = larger_keyframe_bbox[2] - larger_keyframe_bbox[0]
+        assert small_keyframe_width < larger_keyframe_width, (
+            small_keyframe_width,
+            larger_keyframe_width,
+        )
 
 
 def main() -> None:
