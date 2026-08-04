@@ -9,6 +9,52 @@ import {
 import { browserSessionStore, type SessionStore } from "./sessionStore";
 import "./app.css";
 
+const petPreviewImages = {
+  idle: new URL(
+    "../../src/assets/pets/star-sleeper/idle-breathe-01.png",
+    import.meta.url,
+  ).href,
+  wave: new URL(
+    "../../src/assets/pets/star-sleeper/act-wave-01.png",
+    import.meta.url,
+  ).href,
+  typing: new URL(
+    "../../src/assets/pets/star-sleeper/act-typing-01.png",
+    import.meta.url,
+  ).href,
+  walking: new URL(
+    "../../src/assets/pets/star-sleeper/walk-01.png",
+    import.meta.url,
+  ).href,
+};
+
+const ritualItems = [
+  {
+    title: "绑定好友",
+    description: "通过专属邀请码，找到你的那个 TA。",
+  },
+  {
+    title: "互发消息",
+    description: "给对方发一张小纸条，让思念轻轻抵达。",
+  },
+  {
+    title: "桌宠串门",
+    description: "对方的小人会来到桌面，看着 TA 在做什么。",
+  },
+  {
+    title: "互动天数",
+    description: "每一次互动都算数，见证你们的小坚持。",
+  },
+];
+
+const workshopSteps = [
+  "上传参考图",
+  "生成多版 Q 版形象",
+  "选择喜欢版本",
+  "下载资源包",
+  "导入桌面端",
+];
+
 export type PlatformRoute =
   | "/"
   | "/invite"
@@ -245,18 +291,42 @@ export function App({
   return (
     <main className="platform-shell">
       <nav className="platform-nav" aria-label="平台导航">
-        <button type="button" onClick={() => navigate("/")}>
-          首页
+        <button
+          type="button"
+          className="platform-brand"
+          onClick={() => navigate("/")}
+        >
+          情侣桌宠
         </button>
-        <button type="button" onClick={() => navigate("/invite")}>
-          邀请码
-        </button>
-        <button type="button" onClick={() => navigate("/login")}>
-          账号登录
-        </button>
-        <button type="button" onClick={() => navigate("/admin")}>
-          管理后台
-        </button>
+        <div className="platform-nav-links">
+          <button type="button" onClick={() => navigate("/")}>
+            首页
+          </button>
+          <button type="button" onClick={() => navigate("/")}>
+            桌宠互动
+          </button>
+          <button type="button" onClick={() => navigate("/")}>
+            形象工坊
+          </button>
+          <button type="button" onClick={() => navigate("/")}>
+            连续天数
+          </button>
+          <button type="button" onClick={() => navigate("/download")}>
+            下载
+          </button>
+        </div>
+        <div className="platform-nav-account">
+          <button type="button" onClick={() => navigate("/login")}>
+            账号登录
+          </button>
+          <button
+            type="button"
+            className="platform-admin-link"
+            onClick={() => navigate("/admin")}
+          >
+            管理后台
+          </button>
+        </div>
       </nav>
 
       {error ? <p className="platform-error">{error}</p> : null}
@@ -310,18 +380,115 @@ function HomePage({
   onNavigate(route: PlatformRoute): void;
 }) {
   return (
-    <section className="platform-panel">
-      <h1>情侣桌宠内测平台</h1>
-      <p>邀请码账号、Windows 内测包下载和基础设备绑定入口。</p>
-      <div className="platform-actions">
-        <button type="button" onClick={() => onNavigate("/invite")}>
-          输入邀请码
+    <>
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <div className="landing-copy">
+          <p className="landing-kicker">轻社交桌宠 · Windows 内测中</p>
+          <h1 id="landing-title">每天见一面，屏幕也会变温柔</h1>
+          <p className="landing-subtitle">
+            下载桌面端，导入彼此的小人。消息、串门和连续互动，让陪伴变成可看见的日常。
+          </p>
+          <div className="landing-actions">
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => onNavigate("/invite")}
+            >
+              加入内测
+            </button>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => onNavigate("/download")}
+            >
+              先下载体验
+            </button>
+          </div>
+          <p className="platform-support">
+            Windows 内测中 · 后续支持 macOS / Linux
+          </p>
+        </div>
+
+        <div className="landing-stage" aria-label="桌宠互动预览">
+          <div className="message-bubble">
+            今天也想你啦，晚安。
+          </div>
+          <div className="screen-pair" aria-hidden="true">
+            <div className="pet-window pet-window-left">
+              <img src={petPreviewImages.wave} alt="" />
+              <span>我的桌面</span>
+            </div>
+            <div className="visit-path" />
+            <div className="pet-window pet-window-right">
+              <img src={petPreviewImages.typing} alt="" />
+              <span>对方来访</span>
+            </div>
+          </div>
+          <div className="streak-card">
+            <p>连续互动 27 天</p>
+            <strong>27</strong>
+            <span>天</span>
+            <small>我们的小日常，正在变成习惯</small>
+          </div>
+          <div className="leaderboard-preview" aria-label="本周暖心榜">
+            <h2>本周暖心榜</h2>
+            <ol>
+              <li>
+                <span>星星不睡觉</span>
+                <strong>56 天</strong>
+              </li>
+              <li>
+                <span>云朵与海</span>
+                <strong>48 天</strong>
+              </li>
+              <li>
+                <span>桃子汽水</span>
+                <strong>41 天</strong>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section className="ritual-strip" aria-label="桌宠互动流程">
+        {ritualItems.map((item) => (
+          <article key={item.title} className="ritual-item">
+            <img src={petPreviewImages.walking} alt="" />
+            <h2>{item.title}</h2>
+            <p>{item.description}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="workshop-preview" aria-labelledby="workshop-title">
+        <div>
+          <p className="landing-kicker">形象工坊即将开放</p>
+          <h2 id="workshop-title">自由捏造属于你们的小人</h2>
+          <p>
+            之后可以用参考图生成多版 Q 版形象，再下载资源包导入桌面端。本轮仅开放预约体验展示，不接入真实 AI 生图服务。
+          </p>
+        </div>
+        <div className="workshop-steps">
+          {workshopSteps.map((step, index) => (
+            <div key={step} className="workshop-step">
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{step}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="workshop-pets" aria-hidden="true">
+          <img src={petPreviewImages.idle} alt="" />
+          <img src={petPreviewImages.wave} alt="" />
+        </div>
+        <button
+          type="button"
+          className="secondary-action workshop-action"
+          onClick={() => onNavigate("/invite")}
+        >
+          即将开放预约体验
         </button>
-        <button type="button" onClick={() => onNavigate("/login")}>
-          登录下载
-        </button>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
 

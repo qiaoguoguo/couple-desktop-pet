@@ -1,6 +1,6 @@
 :root {
-  color: #1f2933;
-  background: #eef2f6;
+  color: #34251f;
+  background: #fff8ee;
   font-family:
     Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 }
@@ -12,6 +12,8 @@
 body {
   margin: 0;
   min-width: 320px;
+  background:
+    linear-gradient(180deg, #fff5e7 0, #fffaf3 52%, #fff8ee 100%);
 }
 
 button,
@@ -21,36 +23,90 @@ input {
 
 button {
   min-height: 34px;
-  border: 1px solid #b8c2cc;
+  border: 1px solid #dfbea1;
   border-radius: 6px;
-  background: #ffffff;
-  color: #1f2933;
+  background: #fffdf8;
+  color: #34251f;
   cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 button:hover {
-  border-color: #697888;
+  border-color: #d96f58;
+  box-shadow: 0 8px 18px rgb(108 55 39 / 12%);
+  transform: translateY(-1px);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgb(235 118 94 / 30%);
+  outline-offset: 2px;
 }
 
 .platform-shell {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 24px 0 40px;
+  padding: 18px 0 44px;
 }
 
 .platform-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 8px;
+  border: 1px solid #edd2b6;
+  border-radius: 8px;
+  background: rgb(255 253 248 / 88%);
+  box-shadow: 0 10px 26px rgb(117 74 41 / 8%);
+}
+
+.platform-nav button {
+  min-height: 36px;
+  border-color: transparent;
+  background: transparent;
+  padding: 0 12px;
+}
+
+.platform-brand {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.platform-nav-links,
+.platform-nav-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.platform-nav-links button {
+  font-weight: 700;
+}
+
+.platform-nav-account button:first-child {
+  border-color: #dfbea1;
+  background: #fff8ee;
+}
+
+.platform-admin-link {
+  color: #82685e;
+  font-size: 13px;
 }
 
 .platform-panel {
-  border: 1px solid #d7dee6;
+  border: 1px solid #edd2b6;
   border-radius: 8px;
-  background: #ffffff;
+  background: #fffdf8;
   padding: 18px;
-  box-shadow: 0 8px 18px rgb(27 39 51 / 8%);
+  box-shadow: 0 10px 24px rgb(117 74 41 / 10%);
 }
 
 .platform-panel h1 {
@@ -70,6 +126,336 @@ button:hover {
   margin-top: 16px;
 }
 
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(430px, 1.05fr);
+  gap: 22px;
+  align-items: stretch;
+  min-height: 560px;
+  border: 1px solid #edcfad;
+  border-radius: 8px;
+  background: #fff1df;
+  padding: 48px;
+  box-shadow: 0 20px 42px rgb(105 65 40 / 14%);
+}
+
+.landing-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.landing-kicker {
+  margin: 0 0 16px;
+  color: #a85f4a;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.landing-copy h1 {
+  max-width: 620px;
+  margin: 0;
+  color: #3d2419;
+  font-size: 72px;
+  font-weight: 900;
+  line-height: 1.14;
+  letter-spacing: 0;
+}
+
+.landing-subtitle {
+  max-width: 520px;
+  margin: 22px 0 0;
+  color: #5d4537;
+  font-size: 18px;
+  line-height: 1.85;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.primary-action,
+.secondary-action {
+  min-height: 52px;
+  padding: 0 28px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.primary-action {
+  border-color: #e46f58;
+  background: #ee7660;
+  color: #fffdf8;
+  box-shadow: 0 12px 22px rgb(207 82 58 / 24%);
+}
+
+.secondary-action {
+  border-color: #e7c4a5;
+  background: #fffdf8;
+}
+
+.platform-support {
+  margin: 24px 0 0;
+  color: #755b4d;
+  font-size: 14px;
+}
+
+.landing-stage {
+  position: relative;
+  min-height: 464px;
+  overflow: hidden;
+  border: 1px solid #e4c29f;
+  border-radius: 8px;
+  background: #ffe9cf;
+  padding: 22px;
+}
+
+.screen-pair {
+  position: absolute;
+  right: 24px;
+  bottom: 28px;
+  left: 24px;
+  display: grid;
+  grid-template-columns: 1fr 26px 1fr;
+  align-items: end;
+  gap: 10px;
+}
+
+.pet-window {
+  display: grid;
+  place-items: center;
+  min-height: 190px;
+  border: 2px solid #8e5a38;
+  border-radius: 8px;
+  background: #fffaf2;
+  box-shadow: 0 18px 28px rgb(90 52 28 / 18%);
+}
+
+.pet-window img {
+  display: block;
+  width: min(72%, 170px);
+  height: auto;
+  object-fit: contain;
+}
+
+.pet-window span {
+  margin-bottom: 12px;
+  color: #6d5142;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.visit-path {
+  height: 2px;
+  margin-bottom: 92px;
+  border-top: 2px dashed #e9a48f;
+}
+
+.message-bubble {
+  position: absolute;
+  top: 42px;
+  left: 38px;
+  z-index: 2;
+  max-width: 220px;
+  border: 1px solid #e7c4a5;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px 16px;
+  color: #4e372b;
+  font-weight: 800;
+  line-height: 1.6;
+  box-shadow: 0 10px 22px rgb(93 54 32 / 14%);
+}
+
+.streak-card {
+  position: absolute;
+  top: 26px;
+  right: 24px;
+  width: 176px;
+  border: 1px solid #e7c4a5;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 18px;
+  text-align: center;
+  box-shadow: 0 10px 22px rgb(93 54 32 / 14%);
+}
+
+.streak-card p,
+.streak-card small {
+  margin: 0;
+}
+
+.streak-card strong {
+  display: inline-block;
+  margin: 6px 4px;
+  color: #ec715b;
+  font-size: 52px;
+  line-height: 1;
+}
+
+.streak-card small {
+  display: block;
+  color: #8a6f60;
+  line-height: 1.5;
+}
+
+.leaderboard-preview {
+  position: absolute;
+  top: 196px;
+  right: 24px;
+  z-index: 2;
+  width: 210px;
+  border: 1px solid #ead0b3;
+  border-radius: 8px;
+  background: #fffaf2;
+  padding: 14px;
+  box-shadow: 0 10px 22px rgb(93 54 32 / 12%);
+}
+
+.leaderboard-preview h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.leaderboard-preview ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leaderboard-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #f0ddc8;
+  padding-bottom: 8px;
+  color: #5d4537;
+}
+
+.leaderboard-preview li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ritual-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border-right: 1px solid #edd2b6;
+  border-left: 1px solid #edd2b6;
+  background: #fffdf8;
+}
+
+.ritual-item {
+  min-width: 0;
+  border-right: 1px solid #f0ddc8;
+  padding: 30px 22px;
+  text-align: center;
+}
+
+.ritual-item:last-child {
+  border-right: 0;
+}
+
+.ritual-item img {
+  width: 74px;
+  height: 74px;
+  object-fit: contain;
+}
+
+.ritual-item h2 {
+  margin: 12px 0 8px;
+  font-size: 20px;
+}
+
+.ritual-item p {
+  margin: 0;
+  color: #6a5144;
+  line-height: 1.65;
+}
+
+.workshop-preview {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+  gap: 22px;
+  margin-top: 28px;
+  overflow: hidden;
+  border: 1px solid #edd2b6;
+  border-radius: 8px;
+  background: #fff0df;
+  padding: 30px;
+}
+
+.workshop-preview h2 {
+  margin: 0 0 12px;
+  color: #3d2419;
+  font-size: 34px;
+  line-height: 1.25;
+}
+
+.workshop-preview p {
+  max-width: 520px;
+  margin: 0;
+  color: #6a5144;
+  line-height: 1.75;
+}
+
+.workshop-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  align-self: start;
+}
+
+.workshop-step {
+  min-height: 104px;
+  border: 1px solid #e7c4a5;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.workshop-step span {
+  display: block;
+  margin-bottom: 10px;
+  color: #df826b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.workshop-step strong {
+  display: block;
+  line-height: 1.45;
+}
+
+.workshop-pets {
+  position: absolute;
+  right: 28px;
+  bottom: 14px;
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.workshop-pets img {
+  width: 92px;
+  height: 92px;
+  object-fit: contain;
+}
+
+.workshop-action {
+  width: fit-content;
+  align-self: end;
+}
+
 .platform-form {
   display: grid;
   gap: 12px;
@@ -83,9 +469,10 @@ button:hover {
 
 .platform-form input {
   min-height: 36px;
-  border: 1px solid #b8c2cc;
+  border: 1px solid #dfbea1;
   border-radius: 6px;
   padding: 0 10px;
+  background: #fffdf8;
 }
 
 .platform-error,
@@ -126,10 +513,156 @@ td {
 }
 
 th {
-  background: #f6f8fa;
+  background: #fff5e7;
   font-weight: 700;
 }
 
 .admin-section {
   margin-top: 14px;
+}
+
+@media (max-width: 900px) {
+  .landing-copy h1 {
+    font-size: 56px;
+  }
+
+  .landing-hero,
+  .workshop-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-stage {
+    min-height: 500px;
+  }
+
+  .ritual-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ritual-item:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ritual-item:nth-child(-n + 2) {
+    border-bottom: 1px solid #f0ddc8;
+  }
+
+  .workshop-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .platform-shell {
+    width: min(100% - 20px, 620px);
+    padding-top: 10px;
+  }
+
+  .platform-nav {
+    align-items: stretch;
+  }
+
+  .platform-brand,
+  .platform-nav-links,
+  .platform-nav-account {
+    width: 100%;
+  }
+
+  .platform-nav-links,
+  .platform-nav-account {
+    justify-content: flex-start;
+  }
+
+  .platform-nav button {
+    padding: 0 9px;
+  }
+
+  .landing-hero {
+    min-height: auto;
+    padding: 24px;
+  }
+
+  .landing-copy h1 {
+    font-size: 40px;
+  }
+
+  .landing-subtitle {
+    font-size: 16px;
+  }
+
+  .landing-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .primary-action,
+  .secondary-action {
+    width: 100%;
+  }
+
+  .landing-stage {
+    min-height: 590px;
+    padding: 16px;
+  }
+
+  .message-bubble,
+  .streak-card,
+  .leaderboard-preview {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    width: 100%;
+    max-width: none;
+    margin-bottom: 12px;
+  }
+
+  .screen-pair {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    grid-template-columns: 1fr;
+    margin-top: 12px;
+  }
+
+  .visit-path {
+    width: 2px;
+    height: 24px;
+    margin: 0 auto;
+    border-top: 0;
+    border-left: 2px dashed #e9a48f;
+  }
+
+  .pet-window {
+    min-height: 170px;
+  }
+
+  .ritual-strip,
+  .workshop-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .ritual-item,
+  .ritual-item:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid #f0ddc8;
+  }
+
+  .ritual-item:last-child {
+    border-bottom: 0;
+  }
+
+  .workshop-preview {
+    padding: 22px;
+  }
+
+  .workshop-preview h2 {
+    font-size: 28px;
+  }
+
+  .workshop-pets {
+    position: static;
+    justify-content: center;
+  }
 }

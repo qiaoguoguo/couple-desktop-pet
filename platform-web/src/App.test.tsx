@@ -17,12 +17,37 @@ describe("platform web app", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the internal test entry and download/login path", () => {
+  it("shows the social desktop pet landing page", () => {
     render(<App apiClient={createApiClient()} sessionStore={createSessionStore()} />);
 
-    expect(screen.getByText("情侣桌宠内测平台")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "输入邀请码" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "登录下载" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", {
+        name: "每天见一面，屏幕也会变温柔",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "加入内测" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "先下载体验" })).toBeTruthy();
+    expect(screen.getByText("连续互动 27 天")).toBeTruthy();
+    expect(screen.getByText("本周暖心榜")).toBeTruthy();
+    expect(screen.getByText("绑定好友")).toBeTruthy();
+    expect(screen.getByText("互发消息")).toBeTruthy();
+    expect(screen.getByText("桌宠串门")).toBeTruthy();
+    expect(screen.getByText("互动天数")).toBeTruthy();
+    expect(screen.getByText("上传参考图")).toBeTruthy();
+    expect(screen.getByText("生成多版 Q 版形象")).toBeTruthy();
+    expect(screen.getByText("导入桌面端")).toBeTruthy();
+    expect(screen.getByText("即将开放预约体验")).toBeTruthy();
+  });
+
+  it("navigates from the landing CTAs to invitation and download flows", () => {
+    render(<App apiClient={createApiClient()} sessionStore={createSessionStore()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "加入内测" }));
+    expect(screen.getByRole("heading", { name: "内测邀请码" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "首页" }));
+    fireEvent.click(screen.getByRole("button", { name: "先下载体验" }));
+    expect(screen.getByRole("heading", { name: "请先登录后下载" })).toBeTruthy();
   });
 
   it("verifies an invitation and moves to registration", async () => {
