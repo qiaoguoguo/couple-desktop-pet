@@ -278,9 +278,11 @@ input:focus-visible {
   max-width: 590px;
   margin: 0;
   color: #342014;
-  font-size: clamp(54px, 5.7vw, 78px);
-  font-weight: 900;
-  line-height: 1.15;
+  font-family:
+    STKaiti, KaiTi, "Kaiti SC", "Songti SC", FangSong, SimSun, serif;
+  font-size: clamp(48px, 4.8vw, 70px);
+  font-weight: 700;
+  line-height: 1.18;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
@@ -735,7 +737,7 @@ th {
   }
 
   .landing-copy h1 {
-    font-size: clamp(38px, 8vw, 58px);
+    font-size: clamp(36px, 7vw, 52px);
   }
 
   .message-bubble,
@@ -839,8 +841,8 @@ th {
   .landing-copy h1 {
     inline-size: 100%;
     max-inline-size: min(300px, calc(100vw - 72px));
-    font-size: clamp(28px, 7.2vw, 32px);
-    line-height: 1.16;
+    font-size: clamp(28px, 7vw, 31px);
+    line-height: 1.2;
     overflow-wrap: anywhere;
     word-break: break-all;
   }
