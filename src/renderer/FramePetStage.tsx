@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import type { PetActionName } from "../assets/builtInPetManifest";
+import type { PetActionName } from "../assets/petActionNames";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 import { getFrameIndex } from "./animationPlayer";
 
@@ -177,7 +177,7 @@ export function FramePetStage({
       {showFallback ? (
         <div className="pet-dev-card pet-fallback-card" aria-label={`${petPackage.name}开发占位`}>
           <div className="pet-dev-face">
-            <span>星</span>
+            <span>Q</span>
           </div>
           <p>{actionLabels[action]}</p>
         </div>

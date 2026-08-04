@@ -455,7 +455,7 @@ describe("App", () => {
     ]);
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       appearance: {
-        selectedPetPackageId: "builtin:star-sleeper",
+        selectedPetPackageId: "builtin:q-girl",
         peerPetPackageByDeviceId: {
           dev_b: "imported:moon-buddy",
         },
@@ -478,7 +478,7 @@ describe("App", () => {
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       appearance: {
-        selectedPetPackageId: "builtin:star-sleeper",
+        selectedPetPackageId: "builtin:q-girl",
         peerPetPackageByDeviceId: {
           dev_b: "imported:moon-buddy",
         },

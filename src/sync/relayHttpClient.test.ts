@@ -18,7 +18,7 @@ describe("RelayHttpClient", () => {
       client.createPairCode({
         deviceId: "dev_a",
         deviceSecret: "secret_a",
-        displayName: "星星桌宠",
+        displayName: "Q 版桌宠",
       }),
     ).resolves.toEqual({
       ok: true,
@@ -48,7 +48,7 @@ describe("RelayHttpClient", () => {
     await client.createPairCode({
       deviceId: "dev_a",
       deviceSecret: "secret_a",
-      displayName: "星星桌宠",
+      displayName: "Q 版桌宠",
     });
 
     expect(observedThis).toBeUndefined();
@@ -73,7 +73,7 @@ describe("RelayHttpClient", () => {
       client.acceptPairCode({
         deviceId: "dev_b",
         deviceSecret: "secret_b",
-        displayName: "星星桌宠",
+        displayName: "Q 版桌宠",
         code: "000000",
       }),
     ).resolves.toEqual({
@@ -167,7 +167,7 @@ describe("RelayHttpClient", () => {
       client.createPairCode({
         deviceId: "dev_a",
         deviceSecret: "secret_a",
-        displayName: "星星桌宠",
+        displayName: "Q 版桌宠",
       }),
     ).resolves.toEqual({
       ok: false,

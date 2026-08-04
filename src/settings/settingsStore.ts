@@ -1,5 +1,8 @@
+import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
 import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
+
+const LEGACY_BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper";
 
 export type { MovementRange, PetSettings } from "./settingsTypes";
 
@@ -92,12 +95,31 @@ function readAppearanceSettings(value: unknown): PetSettings["appearance"] {
   }
 
   return {
-    selectedPetPackageId: readNonEmptyString(
-      value.selectedPetPackageId,
-      defaultSettings.appearance.selectedPetPackageId,
+    selectedPetPackageId: normalizePetPackageId(
+      readNonEmptyString(
+        value.selectedPetPackageId,
+        defaultSettings.appearance.selectedPetPackageId,
+      ),
     ),
-    peerPetPackageByDeviceId: readStringRecord(value.peerPetPackageByDeviceId),
+    peerPetPackageByDeviceId: readPetPackageMapping(
+      value.peerPetPackageByDeviceId,
+    ),
   };
+}
+
+function readPetPackageMapping(value: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(readStringRecord(value)).map(([key, packageId]) => [
+      key,
+      normalizePetPackageId(packageId),
+    ]),
+  );
+}
+
+function normalizePetPackageId(packageId: string): string {
+  return packageId === LEGACY_BUILT_IN_PET_PACKAGE_ID
+    ? BUILT_IN_PET_PACKAGE_ID
+    : packageId;
 }
 
 function readStringRecord(value: unknown): Record<string, string> {

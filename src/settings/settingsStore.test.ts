@@ -16,7 +16,7 @@ describe("settings defaults", () => {
     expect(defaultSettings.clickThrough).toBe(false);
     expect(defaultSettings.movementRange).toBe("bottom");
     expect(defaultSettings.appearance).toEqual({
-      selectedPetPackageId: "builtin:star-sleeper",
+      selectedPetPackageId: "builtin:q-girl",
       peerPetPackageByDeviceId: {},
     });
   });
@@ -36,8 +36,30 @@ describe("settings defaults", () => {
 describe("mergeSettings", () => {
   it("defaults appearance settings to the built-in package", () => {
     expect(mergeSettings({}).appearance).toEqual({
-      selectedPetPackageId: "builtin:star-sleeper",
+      selectedPetPackageId: "builtin:q-girl",
       peerPetPackageByDeviceId: {},
+    });
+  });
+
+  it("migrates legacy built-in pet package ids to the q girl package", () => {
+    expect(
+      mergeSettings({
+        appearance: {
+          selectedPetPackageId: "builtin:star-sleeper",
+          peerPetPackageByDeviceId: {
+            dev_a: "builtin:star-sleeper",
+            dev_b: "imported:moon-buddy",
+          },
+        },
+      }),
+    ).toMatchObject({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_a: "builtin:q-girl",
+          dev_b: "imported:moon-buddy",
+        },
+      },
     });
   });
 

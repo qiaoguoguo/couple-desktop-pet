@@ -1,4 +1,4 @@
-import type { IdleActionName } from "../assets/builtInPetManifest";
+import type { IdleActionName } from "../assets/petActionNames";
 
 export function selectNextIdleAction(
   history: readonly IdleActionName[],

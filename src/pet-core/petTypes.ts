@@ -2,7 +2,7 @@ import type {
   IdleActionName,
   InteractionActionName,
   PetActionName,
-} from "../assets/builtInPetManifest";
+} from "../assets/petActionNames";
 
 export type PetStateName =
   | "idle"

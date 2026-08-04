@@ -1,7 +1,5 @@
-import type {
-  InteractionActionName,
-  PetInteractionOption,
-} from "../assets/builtInPetManifest";
+import type { InteractionActionName } from "../assets/petActionNames";
+import type { PetInteractionOption } from "../assets/builtInPetManifest";
 
 interface InteractionMenuProps {
   open: boolean;

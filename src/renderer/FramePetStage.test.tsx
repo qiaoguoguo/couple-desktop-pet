@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PetActionDefinition, PetActionName } from "../assets/builtInPetManifest";
+import type { PetActionDefinition } from "../assets/builtInPetManifest";
+import type { PetActionName } from "../assets/petActionNames";
 import {
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,

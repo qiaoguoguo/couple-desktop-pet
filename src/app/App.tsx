@@ -774,7 +774,7 @@ export function App() {
     const result = await new RelayHttpClient(identity.relayUrl).createPairCode({
       deviceId: identity.deviceId ?? "",
       deviceSecret: identity.deviceSecret ?? "",
-      displayName: "星星桌宠",
+      displayName: "Q 版桌宠",
     });
 
     if (result.ok) {
@@ -797,7 +797,7 @@ export function App() {
       const result = await new RelayHttpClient(identity.relayUrl).acceptPairCode({
         deviceId: identity.deviceId ?? "",
         deviceSecret: identity.deviceSecret ?? "",
-        displayName: "星星桌宠",
+        displayName: "Q 版桌宠",
         code,
       });
 

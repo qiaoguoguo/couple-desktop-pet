@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IdleActionName } from "../assets/builtInPetManifest";
+import type { IdleActionName } from "../assets/petActionNames";
 import { selectNextIdleAction } from "./idleActionSelector";
 
 const idleActions: readonly IdleActionName[] = [

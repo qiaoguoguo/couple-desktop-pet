@@ -1,4 +1,4 @@
-import type { IdleActionName } from "../assets/builtInPetManifest";
+import type { IdleActionName } from "../assets/petActionNames";
 import type { PetEvent, PetState } from "./petTypes";
 
 const IDLE_TIMEOUT_MS = 120000;

@@ -25,7 +25,7 @@ export function AppearancePanel({
 }: AppearancePanelProps) {
   const selectedPackage =
     packages.find((pkg) => pkg.id === selectedPackageId) ?? packages[0];
-  const selectedValue = selectedPackage?.id ?? "builtin:star-sleeper";
+  const selectedValue = selectedPackage?.id ?? "builtin:q-girl";
   const deletablePackages = packages.filter(
     (pkg) =>
       pkg.source === "imported" &&
@@ -38,7 +38,7 @@ export function AppearancePanel({
       <div className="appearance-panel-header">
         <div>
           <h2>形象管理</h2>
-          <p>{selectedPackage?.name ?? "星星睡衣小星人"}</p>
+          <p>{selectedPackage?.name ?? "Q 版小人"}</p>
         </div>
         {selectedPackage?.previewUrl ? (
           <img src={selectedPackage.previewUrl} alt={`${selectedPackage.name}预览`} />
