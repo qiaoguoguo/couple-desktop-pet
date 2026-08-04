@@ -183,7 +183,10 @@ def measure_green_edges(image: Image.Image) -> EdgeMetrics:
     edge_pixels = 0
     green_edge_pixels = 0
 
-    for r, g, b, a in rgba.getdata():
+    pixel_data_reader = getattr(rgba, "get_flattened_data", None)
+    pixel_data = pixel_data_reader() if callable(pixel_data_reader) else rgba.getdata()
+
+    for r, g, b, a in pixel_data:
         if a == 0 or a >= 250:
             continue
 
