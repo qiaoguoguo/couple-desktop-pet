@@ -321,6 +321,54 @@ describe("App", () => {
     );
   });
 
+  it("plays the configured scene action and returns to the configured idle action", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const scenicPackage = importedPackageSummary();
+    scenicPackage.scenes = {
+      ...scenicPackage.scenes,
+      "act-cute": {
+        action: "act-wave",
+        bubbleCues: [{ atMs: 1000, text: "挥挥手。" }],
+        returnTo: "idle-look",
+      },
+    };
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([scenicPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: scenicPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    const petImage = screen.getByRole("img", { name: "月亮伙伴" });
+
+    act(() => {
+      fireEvent.click(petImage);
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+
+    expect(
+      screen
+        .getByRole("img", { name: "月亮伙伴" })
+        .closest("[data-action]")
+        ?.getAttribute("data-action"),
+    ).toBe("act-wave");
+
+    act(() => {
+      vi.advanceTimersByTime(6250);
+    });
+
+    expect(
+      screen
+        .getByRole("img", { name: "月亮伙伴" })
+        .closest("[data-action]")
+        ?.getAttribute("data-action"),
+    ).toBe("idle-look");
+  });
+
   it("refreshes the hide timer when the same bubble is shown again", async () => {
     vi.useFakeTimers();
     render(<App />);
@@ -632,7 +680,12 @@ describe("App", () => {
 
     const remoteLayer = screen.getByLabelText("对方桌宠消息");
     expect(remoteLayer).toBeTruthy();
-    expect(screen.getByRole("img", { name: "对方桌宠来访占位" })).toBeTruthy();
+    const visitorImage = screen.getByRole("img", {
+      name: "Q 版小人来访",
+    }) as HTMLImageElement;
+    expect(visitorImage.getAttribute("src")).toContain(
+      "/src/assets/pets/q-girl/frames/act-wave/0001.png",
+    );
     expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
 
     act(() => vi.advanceTimersByTime(5000));
@@ -666,6 +719,7 @@ describe("App", () => {
       });
     });
 
+    expect(screen.getByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
     fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
     await flushAppEffects();
     act(() => vi.advanceTimersByTime(799));

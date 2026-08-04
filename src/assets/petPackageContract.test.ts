@@ -8,6 +8,13 @@ import {
   readPetPackageManifest,
 } from "./petPackageContract";
 
+interface TestScene {
+  action: string;
+  bubbleCues: Array<{ atMs: number; text?: string; source?: string }>;
+  returnTo: string;
+  waitForAcknowledge?: boolean;
+}
+
 function validAction(action: string, loop: boolean) {
   return {
     fps: PET_ACTION_FPS,
@@ -18,7 +25,16 @@ function validAction(action: string, loop: boolean) {
   };
 }
 
-function validManifest() {
+function validManifest(): {
+  formatVersion: number;
+  renderer: string;
+  id: string;
+  name: string;
+  baseSize: { width: number; height: number };
+  frameSize: { width: number; height: number };
+  actions: Record<string, ReturnType<typeof validAction>>;
+  scenes: Record<string, TestScene>;
+} {
   return {
     formatVersion: 2,
     renderer: "frame-sequence",
@@ -42,6 +58,31 @@ function validManifest() {
       "act-cute": {
         action: "act-cute",
         bubbleCues: [{ atMs: 1800, text: "陪我一会儿嘛。" }],
+        returnTo: "idle-breathe",
+      },
+      "act-typing": {
+        action: "act-typing",
+        bubbleCues: [{ atMs: 1800, text: "我也在努力敲代码。" }],
+        returnTo: "idle-breathe",
+      },
+      "act-wave": {
+        action: "act-wave",
+        bubbleCues: [{ atMs: 1200, text: "嗨，我在这里！" }],
+        returnTo: "idle-breathe",
+      },
+      "act-hug": {
+        action: "act-hug",
+        bubbleCues: [{ atMs: 2000, text: "可以抱一下吗？" }],
+        returnTo: "idle-breathe",
+      },
+      "act-pout": {
+        action: "act-pout",
+        bubbleCues: [{ atMs: 1800, text: "哼，快哄我。" }],
+        returnTo: "idle-breathe",
+      },
+      "act-drowsy": {
+        action: "act-drowsy",
+        bubbleCues: [{ atMs: 2200, text: "有点困啦。" }],
         returnTo: "idle-breathe",
       },
       "remote-message": {
@@ -115,5 +156,28 @@ describe("pet package v2 contract", () => {
       frames: "frames/act-cute-",
     };
     expect(readPetPackageManifest(wrongDirectory)).toBeNull();
+  });
+
+  it("rejects manifests missing required scenes", () => {
+    const missingScene = validManifest();
+    delete missingScene.scenes["act-hug"];
+
+    expect(readPetPackageManifest(missingScene)).toBeNull();
+  });
+
+  it("rejects remote-message scenes without acknowledgement", () => {
+    const missingAcknowledgement = validManifest();
+    delete missingAcknowledgement.scenes["remote-message"].waitForAcknowledge;
+
+    expect(readPetPackageManifest(missingAcknowledgement)).toBeNull();
+  });
+
+  it("rejects remote-message scenes without a remote message cue", () => {
+    const missingRemoteCue = validManifest();
+    missingRemoteCue.scenes["remote-message"].bubbleCues = [
+      { atMs: 1000, text: "普通气泡" },
+    ];
+
+    expect(readPetPackageManifest(missingRemoteCue)).toBeNull();
   });
 });

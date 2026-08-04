@@ -5,8 +5,12 @@ The current built-in package is `builtin:q-girl`. It is a first-party PNG frame-
 The user-provided Q-girl reference image is used only as character and style direction. Committed frames must not be treated as copied pixels from third-party art, and no third-party web assets, downloaded asset packs, fonts, models, or audio are included here.
 
 Generation boundary:
-- Generated with Codex built-in Image Gen from project prompts.
-- Converted locally to transparent PNG frames.
+- Current Q-girl frames are temporary local verification assets derived from
+  the project reference image by `scripts/asset_tools/generate_q_girl_temp_frames.py`
+  with chroma-key cleanup and lightweight transforms.
+- They are not final Codex Image Gen original action frames, and should be
+  replaced before public release with visually reviewed first-party animation
+  frames.
 - No watermark.
 - No readable text on clothing.
 - Keep future replacement assets first-party, clearly licensed, or explicitly documented.

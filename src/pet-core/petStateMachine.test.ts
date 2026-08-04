@@ -47,6 +47,30 @@ describe("pet state machine", () => {
     });
   });
 
+  it("returns interactions to the configured idle action", () => {
+    const idle = createInitialPetState(1000);
+    const interacting = transitionPetState(idle, {
+      type: "INTERACTION_SELECTED",
+      action: "act-wave",
+      returnTo: "idle-look",
+      at: 1200,
+    });
+    const returnedIdle = transitionPetState(interacting, {
+      type: "ANIMATION_FINISHED",
+      at: 7200,
+    });
+
+    expect(interacting).toMatchObject({
+      name: "interacting",
+      action: "act-wave",
+      returnTo: "idle-look",
+    });
+    expect(returnedIdle).toMatchObject({
+      name: "idle",
+      action: "idle-look",
+    });
+  });
+
   it("switches idle action when the current idle animation finishes", () => {
     const idle = createInitialPetState(1000);
     const nextIdle = transitionPetState(idle, {

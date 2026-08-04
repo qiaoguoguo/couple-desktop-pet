@@ -27,7 +27,14 @@ export function transitionPetState(state: PetState, event: PetEvent): PetState {
 
       return { ...state, lastInteractionAt: event.at };
     case "INTERACTION_SELECTED":
-      return enterState(state, "interacting", event.action, event.at, event.at);
+      return enterState(
+        state,
+        "interacting",
+        event.action,
+        event.at,
+        event.at,
+        event.returnTo,
+      );
     case "DRAG_STARTED":
       return enterState(state, "dragging", "drag", event.at, event.at);
     case "DRAG_ENDED":
@@ -64,7 +71,7 @@ export function transitionPetState(state: PetState, event: PetEvent): PetState {
       };
     case "ANIMATION_FINISHED":
       if (state.name === "interacting" || state.name === "walking") {
-        return enterIdle(state, event.at);
+        return enterIdle(state, event.at, state.lastInteractionAt, state.returnTo);
       }
 
       return state;
@@ -75,8 +82,9 @@ function enterIdle(
   state: PetState,
   enteredAt: number,
   lastInteractionAt = state.lastInteractionAt,
+  action: IdleActionName = defaultIdleAction,
 ): PetState {
-  return enterState(state, "idle", defaultIdleAction, enteredAt, lastInteractionAt);
+  return enterState(state, "idle", action, enteredAt, lastInteractionAt);
 }
 
 function enterState(
@@ -85,6 +93,7 @@ function enterState(
   action: PetState["action"],
   enteredAt: number,
   lastInteractionAt = state.lastInteractionAt,
+  returnTo?: IdleActionName,
 ): PetState {
   return {
     ...state,
@@ -92,5 +101,6 @@ function enterState(
     action,
     enteredAt,
     lastInteractionAt,
+    returnTo,
   };
 }

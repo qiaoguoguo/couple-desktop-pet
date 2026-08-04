@@ -190,11 +190,12 @@ export function App() {
       ];
 
     return peerPackageId
-      ? petPackages.find((pkg) => pkg.id === peerPackageId) ?? null
-      : null;
+      ? petPackages.find((pkg) => pkg.id === peerPackageId) ?? selectedPetPackage
+      : selectedPetPackage;
   }, [
     activeRemoteMessage,
     petPackages,
+    selectedPetPackage,
     settings.appearance.peerPetPackageByDeviceId,
   ]);
   const refreshPetPackages = useCallback(async () => {
@@ -887,7 +888,8 @@ export function App() {
     setPetState((currentState) =>
       transitionPetState(currentState, {
         type: "INTERACTION_SELECTED",
-        action,
+        action: scene.action,
+        returnTo: scene.returnTo,
         at: now,
       }),
     );

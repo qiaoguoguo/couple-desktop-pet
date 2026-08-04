@@ -1,6 +1,5 @@
 import type {
   IdleActionName,
-  InteractionActionName,
   PetActionName,
 } from "../assets/petActionNames";
 
@@ -21,7 +20,12 @@ export type PetEvent =
   | { type: "SETTINGS_CHANGED"; at: number }
   | { type: "ANIMATION_FINISHED"; at: number }
   | { type: "IDLE_ANIMATION_FINISHED"; action: IdleActionName; at: number }
-  | { type: "INTERACTION_SELECTED"; action: InteractionActionName; at: number };
+  | {
+      type: "INTERACTION_SELECTED";
+      action: PetActionName;
+      returnTo?: IdleActionName;
+      at: number;
+    };
 
 export type PetEventType = PetEvent["type"];
 
@@ -32,4 +36,5 @@ export interface PetState {
   lastInteractionAt: number;
   direction: -1 | 1;
   idleHistory: readonly IdleActionName[];
+  returnTo?: IdleActionName;
 }

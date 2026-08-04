@@ -17,6 +17,7 @@ const UNSUPPORTED_LEGACY_PACKAGE_MESSAGE: &str =
     "旧版资源包动作标准过低，请使用新版生成器重新生成。";
 const MAX_ARCHIVE_SIZE_BYTES: u64 = 80 * 1024 * 1024;
 const MAX_EXTRACTED_SIZE_BYTES: u64 = 160 * 1024 * 1024;
+const MAX_SINGLE_FILE_SIZE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_ARCHIVE_FILES: usize = 500;
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -244,10 +245,15 @@ fn validate_archive_paths<R: Read + std::io::Seek>(
         validate_relative_archive_path(&name)?;
 
         if file.is_dir() {
+            validate_allowed_archive_dir(&name)?;
             continue;
         }
 
         validate_allowed_archive_file(&name)?;
+        if file.size() > MAX_SINGLE_FILE_SIZE_BYTES {
+            return Err("资源包单个文件过大".to_string());
+        }
+
         total_size = total_size.saturating_add(file.size());
         if total_size > MAX_EXTRACTED_SIZE_BYTES {
             return Err("资源包解压后太大".to_string());
@@ -273,16 +279,59 @@ fn validate_relative_archive_path(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_allowed_archive_dir(name: &str) -> Result<(), String> {
+    let normalized = name.trim_end_matches('/');
+
+    if normalized == "frames" || REQUIRED_ACTIONS.iter().any(|action| {
+        normalized
+            .strip_prefix("frames/")
+            .is_some_and(|directory| directory == *action)
+    }) {
+        return Ok(());
+    }
+
+    Err(format!("资源包包含不支持的文件: {name}"))
+}
+
 fn validate_allowed_archive_file(name: &str) -> Result<(), String> {
     if name == "pet.json" || name == "preview.png" {
         return Ok(());
     }
 
-    if name.starts_with("frames/") && name.ends_with(".png") {
+    if is_expected_frame_file(name) {
         return Ok(());
     }
 
     Err(format!("资源包包含不支持的文件: {name}"))
+}
+
+fn is_expected_frame_file(name: &str) -> bool {
+    let mut parts = name.split('/');
+    let Some("frames") = parts.next() else {
+        return false;
+    };
+    let Some(action) = parts.next() else {
+        return false;
+    };
+    let Some(file_name) = parts.next() else {
+        return false;
+    };
+
+    if parts.next().is_some() || !REQUIRED_ACTIONS.contains(&action) {
+        return false;
+    }
+
+    let Some(frame_number) = file_name.strip_suffix(".png") else {
+        return false;
+    };
+
+    if frame_number.len() != 4 {
+        return false;
+    }
+
+    frame_number
+        .parse::<usize>()
+        .is_ok_and(|index| (1..=PET_FRAMES_PER_ACTION).contains(&index))
 }
 
 fn read_manifest<R: Read + std::io::Seek>(
@@ -520,6 +569,7 @@ mod tests {
 
     use super::{
         delete_pet_package_from_root, import_pet_package_from_path, list_pet_packages_from_root,
+        MAX_SINGLE_FILE_SIZE_BYTES,
     };
 
     const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -593,6 +643,41 @@ mod tests {
     }
 
     #[test]
+    fn rejects_extra_png_files_outside_standard_frame_set() {
+        for (case_name, extra_path) in [
+            ("extra-frame", "frames/extra.png"),
+            ("unknown-action", "frames/unknown/0001.png"),
+            ("overflow-index", "frames/act-cute/0031.png"),
+        ] {
+            let temp = unique_temp_dir(case_name);
+            let source = temp.join("bad.cdpet");
+            write_test_package_with_extra_file(&source, "bad-extra", extra_path, &PNG_SIGNATURE);
+            let root = temp.join("packages");
+
+            let error = import_pet_package_from_path(&source, &root).unwrap_err();
+            assert!(
+                error.contains("资源包包含不支持的文件"),
+                "{extra_path} produced {error}"
+            );
+
+            let _ = fs::remove_dir_all(temp);
+        }
+    }
+
+    #[test]
+    fn rejects_package_entries_over_the_single_file_limit() {
+        let temp = unique_temp_dir("single-file-too-large");
+        let source = temp.join("large.cdpet");
+        write_test_package_with_large_preview(&source, "large-preview");
+        let root = temp.join("packages");
+
+        let error = import_pet_package_from_path(&source, &root).unwrap_err();
+        assert!(error.contains("资源包单个文件过大"), "{error}");
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
     fn rejects_legacy_v1_package_with_upgrade_message() {
         let temp = unique_temp_dir("legacy-v1");
         let source = temp.join("legacy.cdpet");
@@ -642,6 +727,22 @@ mod tests {
         let mut zip = ZipWriter::new(file);
         let options = SimpleFileOptions::default();
 
+        write_standard_entries(&mut zip, options, manifest_id, include_all_frames);
+
+        if include_path_traversal {
+            zip.start_file("../escape.png", options).unwrap();
+            zip.write_all(&PNG_SIGNATURE).unwrap();
+        }
+
+        zip.finish().unwrap();
+    }
+
+    fn write_standard_entries(
+        zip: &mut ZipWriter<fs::File>,
+        options: SimpleFileOptions,
+        manifest_id: &str,
+        include_all_frames: bool,
+    ) {
         zip.start_file("pet.json", options).unwrap();
         zip.write_all(test_manifest(manifest_id).as_bytes()).unwrap();
 
@@ -659,10 +760,44 @@ mod tests {
                 zip.write_all(&PNG_SIGNATURE).unwrap();
             }
         }
+    }
 
-        if include_path_traversal {
-            zip.start_file("../escape.png", options).unwrap();
-            zip.write_all(&PNG_SIGNATURE).unwrap();
+    fn write_test_package_with_extra_file(
+        source: &Path,
+        manifest_id: &str,
+        extra_path: &str,
+        extra_contents: &[u8],
+    ) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        write_standard_entries(&mut zip, options, manifest_id, true);
+
+        zip.start_file(extra_path, options).unwrap();
+        zip.write_all(extra_contents).unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn write_test_package_with_large_preview(source: &Path, manifest_id: &str) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("pet.json", options).unwrap();
+        zip.write_all(test_manifest(manifest_id).as_bytes()).unwrap();
+
+        zip.start_file("preview.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
+        let padding_len = (MAX_SINGLE_FILE_SIZE_BYTES + 1) as usize - PNG_SIGNATURE.len();
+        zip.write_all(&vec![0_u8; padding_len]).unwrap();
+
+        for action in REQUIRED_ACTIONS {
+            for index in 1..=30 {
+                zip.start_file(format!("frames/{action}/{index:04}.png"), options)
+                    .unwrap();
+                zip.write_all(&PNG_SIGNATURE).unwrap();
+            }
         }
 
         zip.finish().unwrap();

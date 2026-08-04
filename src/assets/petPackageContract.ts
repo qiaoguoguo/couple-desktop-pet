@@ -1,5 +1,6 @@
 import {
   idleActionNames,
+  interactionActionNames,
   isPetActionName,
   requiredPetActions,
   type IdleActionName,
@@ -12,6 +13,10 @@ export const PET_FRAMES_PER_ACTION = 30;
 export const PET_ACTION_FPS = 5;
 export const PET_ACTION_DURATION_MS = 6000;
 export const REQUIRED_PET_ACTIONS = requiredPetActions;
+const REQUIRED_PET_SCENE_IDS = [
+  ...interactionActionNames,
+  "remote-message",
+] as const;
 export const UNSUPPORTED_LEGACY_PACKAGE_MESSAGE =
   "旧版资源包动作标准过低，请使用新版生成器重新生成。";
 
@@ -190,11 +195,27 @@ function readScenes(input: unknown): PetPackageManifest["scenes"] | null {
     };
   }
 
+  for (const sceneId of REQUIRED_PET_SCENE_IDS) {
+    if (!scenes[sceneId]) {
+      return null;
+    }
+  }
+
+  const remoteMessageScene = scenes["remote-message"];
+  if (
+    remoteMessageScene.waitForAcknowledge !== true ||
+    !remoteMessageScene.bubbleCues.some(
+      (cue) => cue.source === "remoteMessage",
+    )
+  ) {
+    return null;
+  }
+
   return scenes;
 }
 
 function readBubbleCues(input: unknown): readonly PetPackageBubbleCue[] | null {
-  if (!Array.isArray(input)) {
+  if (!Array.isArray(input) || input.length === 0) {
     return null;
   }
 
