@@ -259,7 +259,7 @@ describe("App", () => {
     expect(
       await screen.findByRole("region", { name: "情侣桌宠 MVP" }),
     ).toBeTruthy();
-    expect(screen.getByRole("img", { name: "星星睡衣小星人" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
   });
 
@@ -272,7 +272,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("img", { name: "星星睡衣小星人" })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: "Q 版小人" })).toBeTruthy();
   });
 
   it("keeps the settings button visually hidden by default", async () => {
@@ -286,35 +286,60 @@ describe("App", () => {
   it("opens interaction options when clicking the pet", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "星星睡衣小星人" }));
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
   });
 
-  it("selects an interaction, closes the menu, and shows the interaction bubble", async () => {
+  it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {
+    vi.useFakeTimers();
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "星星睡衣小星人" }));
+    const petImage = screen.getByRole("img", { name: "Q 版小人" });
+
+    act(() => {
+      fireEvent.click(petImage);
+    });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
 
     expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.queryByText("陪我一会儿嘛。")).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1800);
+    });
+
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
+
+    act(() => {
+      vi.advanceTimersByTime(4250);
+    });
+
+    expect(petImage.closest("[data-action]")?.getAttribute("data-action")).toBe(
+      "idle-breathe",
+    );
   });
 
   it("refreshes the hide timer when the same bubble is shown again", async () => {
     vi.useFakeTimers();
     render(<App />);
 
-    const petFrame = screen.getByRole("img", { name: "星星睡衣小星人" });
+    const petFrame = screen.getByRole("img", { name: "Q 版小人" });
 
-    fireEvent.click(petFrame);
+    act(() => {
+      fireEvent.click(petFrame);
+    });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    act(() => vi.advanceTimersByTime(1800));
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
 
     act(() => vi.advanceTimersByTime(1000));
-    fireEvent.click(petFrame);
+    act(() => {
+      fireEvent.click(petFrame);
+    });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    act(() => vi.advanceTimersByTime(1800));
     act(() => vi.advanceTimersByTime(1000));
 
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
@@ -1027,7 +1052,7 @@ describe("App", () => {
 
   it("opens the pet context menu with right-click and can open settings", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
+    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
     const contextMenuEvent = new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -1051,7 +1076,7 @@ describe("App", () => {
 
   it("routes pet context menu commands through the desktop facade", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
+    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
 
     fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     fireEvent.click(screen.getByRole("menuitem", { name: "重置位置" }));
@@ -1068,7 +1093,7 @@ describe("App", () => {
 
   it("closes the pet context menu with Escape", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "星星睡衣小星人" });
+    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
 
     fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     expect(screen.getByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
