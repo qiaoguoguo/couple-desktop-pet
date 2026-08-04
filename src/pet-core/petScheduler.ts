@@ -21,7 +21,7 @@ export function getNextScheduledEvent(
   if (
     autoMoveEnabled &&
     state.name === "idle" &&
-    now - state.lastInteractionAt >= AUTO_MOVE_IDLE_MS
+    now - state.enteredAt >= AUTO_MOVE_IDLE_MS
   ) {
     return { type: "AUTO_MOVE_TICK", at: now };
   }

@@ -1,5 +1,6 @@
 import type {
   IdleActionName,
+  InteractionActionName,
   PetActionName,
 } from "../assets/petActionNames";
 
@@ -23,6 +24,12 @@ export type PetEvent =
   | {
       type: "INTERACTION_SELECTED";
       action: PetActionName;
+      returnTo?: IdleActionName;
+      at: number;
+    }
+  | {
+      type: "AMBIENT_INTERACTION_SELECTED";
+      action: InteractionActionName;
       returnTo?: IdleActionName;
       at: number;
     };

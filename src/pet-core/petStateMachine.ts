@@ -35,6 +35,15 @@ export function transitionPetState(state: PetState, event: PetEvent): PetState {
         event.at,
         event.returnTo,
       );
+    case "AMBIENT_INTERACTION_SELECTED":
+      return enterState(
+        state,
+        "interacting",
+        event.action,
+        event.at,
+        state.lastInteractionAt,
+        event.returnTo,
+      );
     case "DRAG_STARTED":
       return enterState(state, "dragging", "drag", event.at, event.at);
     case "DRAG_ENDED":

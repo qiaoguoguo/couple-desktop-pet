@@ -71,6 +71,32 @@ describe("pet state machine", () => {
     });
   });
 
+  it("plays ambient interactions without updating the last user interaction time", () => {
+    const idle = createInitialPetState(1000);
+    const ambient = transitionPetState(idle, {
+      type: "AMBIENT_INTERACTION_SELECTED",
+      action: "act-wave",
+      returnTo: "idle-look",
+      at: 7000,
+    });
+    const returnedIdle = transitionPetState(ambient, {
+      type: "ANIMATION_FINISHED",
+      at: 13000,
+    });
+
+    expect(ambient).toMatchObject({
+      name: "interacting",
+      action: "act-wave",
+      lastInteractionAt: 1000,
+      returnTo: "idle-look",
+    });
+    expect(returnedIdle).toMatchObject({
+      name: "idle",
+      action: "idle-look",
+      lastInteractionAt: 1000,
+    });
+  });
+
   it("switches idle action when the current idle animation finishes", () => {
     const idle = createInitialPetState(1000);
     const nextIdle = transitionPetState(idle, {
