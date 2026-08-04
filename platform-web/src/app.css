@@ -11,11 +11,15 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  max-width: 100%;
-  overflow-x: hidden;
   background:
     linear-gradient(180deg, #fff5e7 0, #fffaf3 52%, #fff8ee 100%);
 }
@@ -581,21 +585,36 @@ th {
 
 @media (max-width: 760px) {
   .platform-shell {
-    width: min(620px, calc(100vw - 20px));
+    width: calc(100% - 20px);
+    max-width: calc(100vw - 20px);
+    margin-right: auto;
+    margin-left: auto;
     padding-top: 10px;
+    overflow-x: clip;
+  }
+
+  .platform-nav,
+  .platform-nav-links,
+  .platform-nav-account,
+  .landing-hero,
+  .landing-copy,
+  .landing-stage,
+  .screen-pair,
+  .workshop-preview,
+  .workshop-steps {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .platform-nav {
     align-items: stretch;
     width: 100%;
-    max-width: 100%;
   }
 
   .platform-brand,
   .platform-nav-links,
   .platform-nav-account {
     width: 100%;
-    max-width: 100%;
   }
 
   .platform-nav-links,
@@ -608,25 +627,24 @@ th {
 
   .platform-nav button {
     width: 100%;
-    min-width: 0;
+    max-width: 100%;
     padding: 0 6px;
     white-space: normal;
     overflow-wrap: anywhere;
+    word-break: keep-all;
     line-height: 1.2;
   }
 
   .landing-hero {
     width: 100%;
-    max-width: 100%;
-    min-width: 0;
     min-height: auto;
     padding: 24px;
   }
 
   .landing-copy h1 {
     inline-size: 100%;
-    max-width: 100%;
-    font-size: clamp(28px, 8vw, 34px);
+    max-inline-size: calc(100vw - 68px);
+    font-size: clamp(26px, 7.4vw, 32px);
     line-height: 1.16;
     overflow-wrap: anywhere;
     word-break: break-all;
@@ -648,8 +666,6 @@ th {
 
   .landing-stage {
     width: 100%;
-    max-width: 100%;
-    min-width: 0;
     min-height: 590px;
     padding: 16px;
   }
@@ -704,15 +720,11 @@ th {
 
   .workshop-preview {
     width: 100%;
-    max-width: 100%;
-    min-width: 0;
     padding: 22px;
   }
 
   .workshop-steps {
     width: 100%;
-    max-width: 100%;
-    min-width: 0;
   }
 
   .workshop-preview h2 {
@@ -727,7 +739,8 @@ th {
 
 @media (max-width: 420px) {
   .platform-shell {
-    width: min(100%, calc(100vw - 16px));
+    width: calc(100% - 20px);
+    max-width: calc(100vw - 20px);
   }
 
   .platform-nav {
