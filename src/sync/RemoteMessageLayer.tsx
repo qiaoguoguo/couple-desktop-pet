@@ -16,7 +16,12 @@ export function RemoteMessageLayer({
 }: RemoteMessageLayerProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const visitorAction = peerPackage?.actions["act-wave"] ?? null;
+  const visitorActionName =
+    peerPackage?.scenes["remote-message"]?.action ?? "act-wave";
+  const visitorAction =
+    peerPackage?.actions[visitorActionName] ??
+    peerPackage?.actions["act-wave"] ??
+    null;
 
   useEffect(() => {
     setElapsedMs(0);

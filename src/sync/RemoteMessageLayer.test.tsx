@@ -107,6 +107,32 @@ describe("RemoteMessageLayer", () => {
     expect(image.getAttribute("src")).toBe("asset://moon/act-wave/0002.png");
   });
 
+  it("uses the remote-message scene action for remote visit animation", () => {
+    const peerPackage = resolvedPackage();
+    peerPackage.scenes = {
+      "remote-message": {
+        action: "act-hug",
+        bubbleCues: [{ atMs: 1000, source: "remoteMessage" }],
+        waitForAcknowledge: true,
+        returnTo: "idle-breathe",
+      },
+    };
+
+    render(
+      <RemoteMessageLayer
+        message={remoteMessage()}
+        peerPackage={peerPackage}
+        onAcknowledge={vi.fn()}
+      />,
+    );
+
+    const image = screen.getByRole("img", {
+      name: "月亮伙伴来访",
+    }) as HTMLImageElement;
+
+    expect(image.getAttribute("src")).toBe("asset://moon/act-hug/0001.png");
+  });
+
   it("uses a readable fallback when no peer package is selected", () => {
     render(
       <RemoteMessageLayer

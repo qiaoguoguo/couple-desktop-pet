@@ -15,6 +15,8 @@ const PET_FRAMES_PER_ACTION: usize = 30;
 const REQUIRED_RENDERER: &str = "frame-sequence";
 const UNSUPPORTED_LEGACY_PACKAGE_MESSAGE: &str =
     "旧版资源包动作标准过低，请使用新版生成器重新生成。";
+const MIN_MANIFEST_DIMENSION: u32 = 64;
+const MAX_MANIFEST_DIMENSION: u32 = 2048;
 const MAX_ARCHIVE_SIZE_BYTES: u64 = 80 * 1024 * 1024;
 const MAX_EXTRACTED_SIZE_BYTES: u64 = 160 * 1024 * 1024;
 const MAX_SINGLE_FILE_SIZE_BYTES: u64 = 8 * 1024 * 1024;
@@ -363,11 +365,25 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     if manifest.name.trim().is_empty() {
         return Err("资源包名称不能为空".to_string());
     }
-    if manifest.base_size.width < 64 || manifest.base_size.height < 64 {
+    if manifest.base_size.width < MIN_MANIFEST_DIMENSION
+        || manifest.base_size.height < MIN_MANIFEST_DIMENSION
+    {
         return Err("baseSize 太小".to_string());
     }
-    if manifest.frame_size.width < 64 || manifest.frame_size.height < 64 {
+    if manifest.base_size.width > MAX_MANIFEST_DIMENSION
+        || manifest.base_size.height > MAX_MANIFEST_DIMENSION
+    {
+        return Err("baseSize 太大".to_string());
+    }
+    if manifest.frame_size.width < MIN_MANIFEST_DIMENSION
+        || manifest.frame_size.height < MIN_MANIFEST_DIMENSION
+    {
         return Err("frameSize 太小".to_string());
+    }
+    if manifest.frame_size.width > MAX_MANIFEST_DIMENSION
+        || manifest.frame_size.height > MAX_MANIFEST_DIMENSION
+    {
+        return Err("frameSize 太大".to_string());
     }
 
     for action in REQUIRED_ACTIONS {
@@ -428,6 +444,21 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
                 return Err(format!("场景气泡无效: {scene_id}"));
             }
         }
+    }
+
+    let remote_message_scene = manifest
+        .scenes
+        .get("remote-message")
+        .ok_or_else(|| "缺少场景配置: remote-message".to_string())?;
+    if remote_message_scene.wait_for_acknowledge != Some(true) {
+        return Err("remote-message 必须等待用户确认".to_string());
+    }
+    if !remote_message_scene
+        .bubble_cues
+        .iter()
+        .any(|cue| cue.source.as_deref() == Some("remoteMessage"))
+    {
+        return Err("remote-message 必须包含 remoteMessage 气泡来源".to_string());
     }
 
     Ok(())
@@ -678,6 +709,79 @@ mod tests {
     }
 
     #[test]
+    fn rejects_remote_message_scene_without_acknowledgement_contract() {
+        let missing_ack = test_manifest("missing-ack")
+            .replace(",\n      \"waitForAcknowledge\": true", "");
+        let false_ack = test_manifest("false-ack")
+            .replace("\"waitForAcknowledge\": true", "\"waitForAcknowledge\": false");
+
+        for (case_name, manifest) in [
+            ("remote-message-missing-ack", missing_ack),
+            ("remote-message-false-ack", false_ack),
+        ] {
+            let temp = unique_temp_dir(case_name);
+            let source = temp.join("bad.cdpet");
+            write_test_package_with_manifest(&source, &manifest);
+            let root = temp.join("packages");
+
+            let error = import_pet_package_from_path(&source, &root).unwrap_err();
+            assert!(
+                error.contains("remote-message"),
+                "{case_name} produced {error}"
+            );
+
+            let _ = fs::remove_dir_all(temp);
+        }
+    }
+
+    #[test]
+    fn rejects_remote_message_scene_without_remote_message_cue() {
+        let manifest = test_manifest("missing-remote-cue").replace(
+            r#"{ "atMs": 1000, "source": "remoteMessage" }"#,
+            r#"{ "atMs": 1000, "text": "普通气泡" }"#,
+        );
+        let temp = unique_temp_dir("remote-message-missing-source");
+        let source = temp.join("bad.cdpet");
+        write_test_package_with_manifest(&source, &manifest);
+        let root = temp.join("packages");
+
+        let error = import_pet_package_from_path(&source, &root).unwrap_err();
+        assert!(error.contains("remote-message"), "{error}");
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn rejects_manifest_sizes_above_the_frontend_contract_limit() {
+        let base_too_large = test_manifest("base-too-large").replace(
+            r#""baseSize": { "width": 256, "height": 320 }"#,
+            r#""baseSize": { "width": 256, "height": 4096 }"#,
+        );
+        let frame_too_large = test_manifest("frame-too-large").replace(
+            r#""frameSize": { "width": 768, "height": 960 }"#,
+            r#""frameSize": { "width": 4096, "height": 960 }"#,
+        );
+
+        for (case_name, manifest) in [
+            ("base-size-too-large", base_too_large),
+            ("frame-size-too-large", frame_too_large),
+        ] {
+            let temp = unique_temp_dir(case_name);
+            let source = temp.join("bad.cdpet");
+            write_test_package_with_manifest(&source, &manifest);
+            let root = temp.join("packages");
+
+            let error = import_pet_package_from_path(&source, &root).unwrap_err();
+            assert!(
+                error.contains("Size") || error.contains("size"),
+                "{case_name} produced {error}"
+            );
+
+            let _ = fs::remove_dir_all(temp);
+        }
+    }
+
+    #[test]
     fn rejects_legacy_v1_package_with_upgrade_message() {
         let temp = unique_temp_dir("legacy-v1");
         let source = temp.join("legacy.cdpet");
@@ -791,6 +895,28 @@ mod tests {
         zip.write_all(&PNG_SIGNATURE).unwrap();
         let padding_len = (MAX_SINGLE_FILE_SIZE_BYTES + 1) as usize - PNG_SIGNATURE.len();
         zip.write_all(&vec![0_u8; padding_len]).unwrap();
+
+        for action in REQUIRED_ACTIONS {
+            for index in 1..=30 {
+                zip.start_file(format!("frames/{action}/{index:04}.png"), options)
+                    .unwrap();
+                zip.write_all(&PNG_SIGNATURE).unwrap();
+            }
+        }
+
+        zip.finish().unwrap();
+    }
+
+    fn write_test_package_with_manifest(source: &Path, manifest_contents: &str) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("pet.json", options).unwrap();
+        zip.write_all(manifest_contents.as_bytes()).unwrap();
+
+        zip.start_file("preview.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
 
         for action in REQUIRED_ACTIONS {
             for index in 1..=30 {

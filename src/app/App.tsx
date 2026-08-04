@@ -188,10 +188,14 @@ export function App() {
       settings.appearance.peerPetPackageByDeviceId[
         activeRemoteMessage.fromDeviceId
       ];
+    const builtInPeerPetPackage =
+      petPackages.find((pkg) => pkg.id === BUILT_IN_PET_PACKAGE_ID) ?? null;
 
     return peerPackageId
-      ? petPackages.find((pkg) => pkg.id === peerPackageId) ?? selectedPetPackage
-      : selectedPetPackage;
+      ? petPackages.find((pkg) => pkg.id === peerPackageId) ??
+          builtInPeerPetPackage ??
+          selectedPetPackage
+      : builtInPeerPetPackage ?? selectedPetPackage;
   }, [
     activeRemoteMessage,
     petPackages,

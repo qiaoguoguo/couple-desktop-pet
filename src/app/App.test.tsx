@@ -556,6 +556,41 @@ describe("App", () => {
     expect(await screen.findByRole("img", { name: "月亮伙伴来访" })).toBeTruthy();
   });
 
+  it("falls back remote messages without peer mapping to the built-in pet package", async () => {
+    const moonPackage = importedPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "imported:moon-buddy",
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(screen.getByRole("img", { name: "月亮伙伴" })).toBeTruthy();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "我来串门啦",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+
+    expect(await screen.findByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
+  });
+
   it("persists the selected peer pet package for the paired device", async () => {
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([
       importedPackageSummary(),
