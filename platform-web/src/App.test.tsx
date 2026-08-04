@@ -21,15 +21,30 @@ describe("platform web app", () => {
   it("shows the social desktop pet landing page", () => {
     render(<App apiClient={createApiClient()} sessionStore={createSessionStore()} />);
 
+    const navigation = screen.getByRole("navigation", { name: "平台导航" });
+    expect(navigation.textContent).toContain("桌宠互动");
+    expect(navigation.textContent).toContain("形象工坊");
+    expect(navigation.textContent).toContain("连续天数");
+    expect(navigation.textContent).toContain("下载");
+    expect(navigation.textContent).toContain("登录");
+    expect(navigation.textContent).not.toContain("邀请码");
+    expect(navigation.textContent).not.toContain("管理后台");
     expect(
       screen.getByRole("heading", {
-        name: "每天见一面，屏幕也会变温柔",
+        name: /每天见一面，\s*屏幕也会变温柔/,
       }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "加入内测" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "先下载体验" })).toBeTruthy();
-    expect(screen.getByText("连续互动 27 天")).toBeTruthy();
+    expect(screen.getByText("今天也想你啦～ 晚安")).toBeTruthy();
+    expect(screen.getByText("我也是呀～ 记得早点休息哦")).toBeTruthy();
+    expect(screen.getByText("Windows")).toBeTruthy();
+    expect(screen.getByText("macOS")).toBeTruthy();
+    expect(screen.getByText("Android")).toBeTruthy();
+    expect(screen.getByText("连续互动")).toBeTruthy();
+    expect(screen.getByText("27")).toBeTruthy();
     expect(screen.getByText("本周暖心榜")).toBeTruthy();
+    expect(screen.getByText("查看更多")).toBeTruthy();
     expect(screen.getByText("绑定好友")).toBeTruthy();
     expect(screen.getByText("互发消息")).toBeTruthy();
     expect(screen.getByText("桌宠串门")).toBeTruthy();
@@ -52,12 +67,12 @@ describe("platform web app", () => {
     fireEvent.click(screen.getByRole("button", { name: "加入内测" }));
     expect(screen.getByRole("heading", { name: "内测邀请码" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "首页" }));
+    fireEvent.click(screen.getByRole("button", { name: "情侣桌宠" }));
     fireEvent.click(screen.getByRole("button", { name: "先下载体验" }));
     expect(screen.getByRole("heading", { name: "请先登录后下载" })).toBeTruthy();
   });
 
-  it("keeps invitation in the top navigation", () => {
+  it("keeps invitation off the home navigation but reachable from the CTA", () => {
     render(
       <App
         apiClient={createApiClient()}
@@ -66,7 +81,8 @@ describe("platform web app", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "邀请码" }));
+    expect(screen.queryByRole("button", { name: "邀请码" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "加入内测" }));
 
     expect(screen.getByRole("heading", { name: "内测邀请码" })).toBeTruthy();
   });
@@ -113,7 +129,7 @@ describe("platform web app", () => {
 
     expect(
       screen.getByRole("heading", {
-        name: "每天见一面，屏幕也会变温柔",
+        name: /每天见一面，\s*屏幕也会变温柔/,
       }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "桌宠互动" })).toBeTruthy();

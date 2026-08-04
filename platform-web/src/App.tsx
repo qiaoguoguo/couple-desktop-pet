@@ -9,42 +9,56 @@ import {
 import { browserSessionStore, type SessionStore } from "./sessionStore";
 import "./app.css";
 
-const petPreviewImages = {
-  idle: new URL(
-    "../../src/assets/pets/star-sleeper/idle-breathe-01.png",
+const landingImages = {
+  brandMascots: new URL("./assets/landing/brand-mascots.png", import.meta.url)
+    .href,
+  featureBind: new URL("./assets/landing/feature-bind.png", import.meta.url)
+    .href,
+  featureMessage: new URL(
+    "./assets/landing/feature-message.png",
     import.meta.url,
   ).href,
-  wave: new URL(
-    "../../src/assets/pets/star-sleeper/act-wave-01.png",
+  featureVisit: new URL("./assets/landing/feature-visit.png", import.meta.url)
+    .href,
+  featureStreak: new URL(
+    "./assets/landing/feature-streak.png",
     import.meta.url,
   ).href,
-  typing: new URL(
-    "../../src/assets/pets/star-sleeper/act-typing-01.png",
+  heroSocialDesktop: new URL(
+    "./assets/landing/hero-social-desktop.png",
     import.meta.url,
   ).href,
-  walking: new URL(
-    "../../src/assets/pets/star-sleeper/walk-01.png",
-    import.meta.url,
-  ).href,
+  workshopPets: new URL("./assets/landing/workshop-pets.png", import.meta.url)
+    .href,
 };
 
 const ritualItems = [
   {
     title: "绑定好友",
-    description: "通过专属邀请码，找到你的那个 TA。",
+    description: "通过专属码或邀请，找到你的那个 TA。",
+    image: landingImages.featureBind,
   },
   {
     title: "互发消息",
     description: "给对方发一张小纸条，让思念轻轻抵达。",
+    image: landingImages.featureMessage,
   },
   {
     title: "桌宠串门",
     description: "对方的小人会来你的屏幕边打招呼，把问候变成可见的小动作。",
+    image: landingImages.featureVisit,
   },
   {
     title: "互动天数",
     description: "每一次互动都算数，见证你们的小坚持。",
+    image: landingImages.featureStreak,
   },
+];
+
+const leaderboardRows = [
+  ["星星不睡觉", "56 天"],
+  ["云朵与海", "48 天"],
+  ["桃子汽水", "41 天"],
 ];
 
 const workshopSteps = [
@@ -308,56 +322,76 @@ export function App({
     }
   }
 
+  const isHomeRoute = route === "/";
+
   return (
-    <main className="platform-shell">
-      <nav className="platform-nav" aria-label="平台导航">
+    <main
+      className={`platform-shell ${isHomeRoute ? "platform-shell-home" : "platform-shell-app"}`}
+    >
+      <nav
+        className={`platform-nav ${isHomeRoute ? "platform-nav-home" : "platform-nav-app"}`}
+        aria-label="平台导航"
+      >
         <button
           type="button"
           className="platform-brand"
           onClick={() => navigate("/")}
         >
-          情侣桌宠
+          <img src={landingImages.brandMascots} alt="" />
+          <span>情侣桌宠</span>
         </button>
         <div className="platform-nav-links">
-          <button type="button" onClick={() => navigate("/")}>
-            首页
-          </button>
-          <button type="button" onClick={() => navigate("/invite")}>
-            邀请码
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToLandingSection("interaction")}
-          >
-            桌宠互动
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToLandingSection("workshop")}
-          >
-            形象工坊
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToLandingSection("streak")}
-          >
-            连续天数
-          </button>
-          <button type="button" onClick={() => navigate("/download")}>
-            下载
-          </button>
+          {isHomeRoute ? (
+            <>
+              <button
+                type="button"
+                onClick={() => scrollToLandingSection("interaction")}
+              >
+                桌宠互动
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToLandingSection("workshop")}
+              >
+                形象工坊
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToLandingSection("streak")}
+              >
+                连续天数
+              </button>
+              <button type="button" onClick={() => navigate("/download")}>
+                下载
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => navigate("/")}>
+                首页
+              </button>
+              <button type="button" onClick={() => navigate("/invite")}>
+                邀请码
+              </button>
+              <button type="button" onClick={() => navigate("/download")}>
+                下载
+              </button>
+            </>
+          )}
         </div>
         <div className="platform-nav-account">
           <button type="button" onClick={() => navigate("/login")}>
-            账号登录
+            {isHomeRoute ? "登录" : "账号登录"}
           </button>
-          <button
-            type="button"
-            className="platform-admin-link"
-            onClick={() => navigate("/admin")}
-          >
-            管理后台
-          </button>
+          {isHomeRoute ? null : (
+            <button
+              type="button"
+              className="platform-admin-link"
+              onClick={() => navigate("/admin")}
+            >
+              管理后台
+            </button>
+          )}
         </div>
       </nav>
 
@@ -418,12 +452,22 @@ function HomePage({
         className="landing-hero"
         aria-labelledby="landing-title"
       >
+        <img
+          className="landing-hero-image"
+          src={landingImages.heroSocialDesktop}
+          alt=""
+        />
         <div className="landing-copy">
-          <p className="landing-kicker">轻社交桌宠 · Windows 内测中</p>
-          <h1 id="landing-title">每天见一面，屏幕也会变温柔</h1>
-          <p className="landing-subtitle">
-            下载桌面端，导入彼此的小人。消息、串门和连续互动，让陪伴变成可看见的日常。
-          </p>
+          <h1 id="landing-title">
+            每天见一面，
+            <br />
+            屏幕也会变温柔
+          </h1>
+          <div className="landing-subtitle">
+            <p>下载桌面端，导入彼此的小人。</p>
+            <p>消息、串门和连续互动，</p>
+            <p>让陪伴变成可看见的日常。</p>
+          </div>
           <div className="landing-actions">
             <button
               type="button"
@@ -440,56 +484,57 @@ function HomePage({
               先下载体验
             </button>
           </div>
-          <p className="platform-support">
-            Windows 内测中 · 后续支持 macOS / Linux
-          </p>
+          <div className="platform-tags" aria-label="平台支持">
+            <span>Windows</span>
+            <span>macOS</span>
+            <span>Android</span>
+          </div>
         </div>
 
-        <div className="landing-stage" aria-label="桌宠互动预览">
-          <div className="message-bubble">
-            今天也想你啦，晚安。
-          </div>
-          <div className="screen-pair" aria-hidden="true">
-            <div className="pet-window pet-window-left">
-              <img src={petPreviewImages.wave} alt="" />
-              <span>我的桌面</span>
-            </div>
-            <div className="visit-path" />
-            <div className="pet-window pet-window-right">
-              <img src={petPreviewImages.typing} alt="" />
-              <span>对方来访</span>
-            </div>
-          </div>
-          <div id="streak" className="streak-card">
-            <p>连续互动 27 天</p>
+        <div className="message-bubble message-bubble-primary">
+          <img src={landingImages.brandMascots} alt="" />
+          <span>今天也想你啦～ 晚安</span>
+        </div>
+        <div className="message-bubble message-bubble-secondary">
+          <span>我也是呀～ 记得早点休息哦</span>
+          <img src={landingImages.brandMascots} alt="" />
+        </div>
+
+        <aside id="streak" className="streak-card" aria-label="连续互动卡片">
+          <h2>连续互动</h2>
+          <div className="streak-total">
             <strong>27</strong>
             <span>天</span>
-            <small>我们的小日常，正在变成习惯</small>
           </div>
+          <div className="streak-mascots">
+            <img src={landingImages.brandMascots} alt="" />
+          </div>
+          <p>我们的小日常，正在变成习惯</p>
           <div className="leaderboard-preview" aria-label="本周暖心榜">
-            <h2>本周暖心榜</h2>
+            <div className="leaderboard-heading">
+              <h3>本周暖心榜</h3>
+              <span>心动</span>
+            </div>
             <ol>
-              <li>
-                <span>星星不睡觉</span>
-                <strong>56 天</strong>
-              </li>
-              <li>
-                <span>云朵与海</span>
-                <strong>48 天</strong>
-              </li>
-              <li>
-                <span>桃子汽水</span>
-                <strong>41 天</strong>
-              </li>
+              {leaderboardRows.map(([name, days], index) => (
+                <li key={name}>
+                  <span className="leaderboard-rank">{index + 1}</span>
+                  <span>{name}</span>
+                  <strong>{days}</strong>
+                </li>
+              ))}
             </ol>
           </div>
-        </div>
+          <button type="button" onClick={() => onNavigate("/download")}>
+            查看更多
+          </button>
+        </aside>
       </section>
 
       <section className="ritual-strip" aria-label="桌宠互动流程">
         {ritualItems.map((item) => (
           <article key={item.title} className="ritual-item">
-            <img src={petPreviewImages.walking} alt="" />
+            <img src={item.image} alt="" />
             <h2>{item.title}</h2>
             <p>{item.description}</p>
           </article>
@@ -505,7 +550,7 @@ function HomePage({
           <p className="landing-kicker">形象工坊即将开放</p>
           <h2 id="workshop-title">自由捏造属于你们的小人</h2>
           <p>
-            之后可以用参考图生成多版 Q 版形象，再下载资源包导入桌面端。本轮仅开放预约体验展示，不接入真实 AI 生图服务。
+            上传参考图，生成多版 Q 版桌宠形象，挑选最喜欢的一版下载资源包，再导入桌面端成为你们的专属陪伴。
           </p>
         </div>
         <div className="workshop-steps">
@@ -517,8 +562,7 @@ function HomePage({
           ))}
         </div>
         <div className="workshop-pets" aria-hidden="true">
-          <img src={petPreviewImages.idle} alt="" />
-          <img src={petPreviewImages.wave} alt="" />
+          <img src={landingImages.workshopPets} alt="" />
         </div>
         <button
           type="button"
