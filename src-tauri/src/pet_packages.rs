@@ -11,10 +11,13 @@ use zip::ZipArchive;
 
 const PET_PACKAGES_DIR: &str = "pet-packages";
 const IMPORTED_PREFIX: &str = "imported:";
-const PET_FRAMES_PER_ACTION: usize = 18;
+const PET_FRAMES_PER_ACTION: usize = 30;
+const REQUIRED_RENDERER: &str = "frame-sequence";
+const UNSUPPORTED_LEGACY_PACKAGE_MESSAGE: &str =
+    "旧版资源包动作标准过低，请使用新版生成器重新生成。";
 const MAX_ARCHIVE_SIZE_BYTES: u64 = 80 * 1024 * 1024;
 const MAX_EXTRACTED_SIZE_BYTES: u64 = 160 * 1024 * 1024;
-const MAX_ARCHIVE_FILES: usize = 240;
+const MAX_ARCHIVE_FILES: usize = 500;
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
 const REQUIRED_ACTIONS: [&str; 12] = [
@@ -36,6 +39,7 @@ const REQUIRED_ACTIONS: [&str; 12] = [
 struct PetPackageManifest {
     #[serde(rename = "formatVersion")]
     format_version: u8,
+    renderer: Option<String>,
     id: String,
     name: String,
     #[serde(rename = "baseSize")]
@@ -43,6 +47,8 @@ struct PetPackageManifest {
     #[serde(rename = "frameSize")]
     frame_size: PackageSize,
     actions: BTreeMap<String, PackageAction>,
+    #[serde(default)]
+    scenes: BTreeMap<String, PackageScene>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -51,11 +57,35 @@ pub struct PackageSize {
     height: u32,
 }
 
-#[derive(Debug, Deserialize)]
-struct PackageAction {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackageAction {
     fps: f64,
     #[serde(rename = "loop")]
     loop_value: bool,
+    #[serde(rename = "frameCount")]
+    frame_count: usize,
+    #[serde(rename = "durationMs")]
+    duration_ms: u32,
+    frames: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackageBubbleCue {
+    #[serde(rename = "atMs")]
+    at_ms: u32,
+    text: Option<String>,
+    source: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackageScene {
+    action: String,
+    #[serde(rename = "bubbleCues")]
+    bubble_cues: Vec<PackageBubbleCue>,
+    #[serde(rename = "returnTo")]
+    return_to: String,
+    #[serde(rename = "waitForAcknowledge")]
+    wait_for_acknowledge: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -69,7 +99,9 @@ pub struct ImportedPetPackageSummary {
     #[serde(rename = "frameSize")]
     pub frame_size: PackageSize,
     #[serde(rename = "previewPath")]
-    pub preview_path: Option<String>,
+    pub preview_path: String,
+    pub actions: BTreeMap<String, PackageAction>,
+    pub scenes: BTreeMap<String, PackageScene>,
     #[serde(rename = "framePaths")]
     pub frame_paths: BTreeMap<String, Vec<String>>,
 }
@@ -267,8 +299,14 @@ fn read_manifest<R: Read + std::io::Seek>(
 }
 
 fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
-    if manifest.format_version != 1 {
+    if manifest.format_version == 1 {
+        return Err(UNSUPPORTED_LEGACY_PACKAGE_MESSAGE.to_string());
+    }
+    if manifest.format_version != 2 {
         return Err("资源包版本不支持".to_string());
+    }
+    if manifest.renderer.as_deref() != Some(REQUIRED_RENDERER) {
+        return Err("资源包 renderer 必须是 frame-sequence".to_string());
     }
     if !is_valid_manifest_id(&manifest.id) {
         return Err("资源包 id 只能包含英文、数字、下划线和短横线".to_string());
@@ -289,11 +327,58 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
             .get(action)
             .ok_or_else(|| format!("缺少动作配置: {action}"))?;
 
-        if !(action_config.fps > 0.0 && action_config.fps <= 24.0) {
-            return Err(format!("动作帧率无效: {action}"));
+        if action_config.fps != 5.0 {
+            return Err(format!("动作帧率必须是 5 fps: {action}"));
+        }
+
+        if action_config.frame_count != PET_FRAMES_PER_ACTION {
+            return Err(format!("动作帧数量必须是 30: {action}"));
+        }
+
+        if action_config.duration_ms != 6000 {
+            return Err(format!("动作时长必须是 6000ms: {action}"));
+        }
+
+        if action_config.frames != format!("frames/{action}/") {
+            return Err(format!("动作帧目录无效: {action}"));
         }
 
         let _ = action_config.loop_value;
+    }
+
+    for scene_id in [
+        "act-cute",
+        "act-typing",
+        "act-wave",
+        "act-hug",
+        "act-pout",
+        "act-drowsy",
+        "remote-message",
+    ] {
+        let scene = manifest
+            .scenes
+            .get(scene_id)
+            .ok_or_else(|| format!("缺少场景配置: {scene_id}"))?;
+
+        if !REQUIRED_ACTIONS.contains(&scene.action.as_str()) {
+            return Err(format!("场景动作无效: {scene_id}"));
+        }
+
+        if !["idle-breathe", "idle-look", "idle-stretch"].contains(&scene.return_to.as_str()) {
+            return Err(format!("场景回落动作无效: {scene_id}"));
+        }
+
+        if scene.bubble_cues.is_empty() {
+            return Err(format!("场景缺少气泡时机: {scene_id}"));
+        }
+
+        for cue in &scene.bubble_cues {
+            if cue.text.as_deref().unwrap_or("").trim().is_empty()
+                && cue.source.as_deref() != Some("remoteMessage")
+            {
+                return Err(format!("场景气泡无效: {scene_id}"));
+            }
+        }
     }
 
     Ok(())
@@ -310,6 +395,13 @@ fn is_valid_manifest_id(id: &str) -> bool {
 fn validate_required_frames<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
 ) -> Result<(), String> {
+    {
+        let mut preview = archive
+            .by_name("preview.png")
+            .map_err(|_| "缺少 preview.png".to_string())?;
+        validate_png_file(&mut preview, "preview.png")?;
+    }
+
     for action in REQUIRED_ACTIONS {
         for frame_index in 1..=PET_FRAMES_PER_ACTION {
             let frame_path = expected_frame_path(action, frame_index);
@@ -318,10 +410,6 @@ fn validate_required_frames<R: Read + std::io::Seek>(
                 .map_err(|_| format!("缺少帧文件: {frame_path}"))?;
             validate_png_file(&mut file, &frame_path)?;
         }
-    }
-
-    if let Ok(mut preview) = archive.by_name("preview.png") {
-        validate_png_file(&mut preview, "preview.png")?;
     }
 
     Ok(())
@@ -341,7 +429,7 @@ fn validate_png_file<R: Read>(reader: &mut R, path: &str) -> Result<(), String> 
 }
 
 fn expected_frame_path(action: &str, frame_index: usize) -> String {
-    format!("frames/{action}-{frame_index:02}.png")
+    format!("frames/{action}/{frame_index:04}.png")
 }
 
 fn extract_archive<R: Read + std::io::Seek>(
@@ -402,6 +490,9 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
     }
 
     let preview_path = package_dir.join("preview.png");
+    if !preview_path.exists() {
+        return Err("缺少 preview.png".to_string());
+    }
 
     Ok(ImportedPetPackageSummary {
         id: format!("{IMPORTED_PREFIX}{}", manifest.id),
@@ -409,9 +500,9 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
         name: manifest.name.trim().to_string(),
         base_size: manifest.base_size,
         frame_size: manifest.frame_size,
-        preview_path: preview_path
-            .exists()
-            .then(|| preview_path.to_string_lossy().to_string()),
+        preview_path: preview_path.to_string_lossy().to_string(),
+        actions: manifest.actions,
+        scenes: manifest.scenes,
         frame_paths,
     })
 }
@@ -457,12 +548,16 @@ mod tests {
         let imported = import_pet_package_from_path(&source, &root).unwrap();
         assert_eq!(imported.id, "imported:moon-buddy");
         assert_eq!(imported.manifest_id, "moon-buddy");
-        assert!(imported
-            .preview_path
-            .as_ref()
-            .unwrap()
-            .ends_with("preview.png"));
-        assert_eq!(imported.frame_paths["idle-breathe"].len(), 18);
+        assert!(imported.preview_path.ends_with("preview.png"));
+        assert_eq!(imported.frame_paths["idle-breathe"].len(), 30);
+        assert_eq!(imported.actions["idle-breathe"].fps, 5.0);
+        assert_eq!(imported.actions["idle-breathe"].frame_count, 30);
+        assert_eq!(imported.actions["idle-breathe"].duration_ms, 6000);
+        assert_eq!(imported.scenes["act-cute"].action, "act-cute");
+        assert_eq!(
+            imported.scenes["remote-message"].wait_for_acknowledge,
+            Some(true)
+        );
 
         let packages = list_pet_packages_from_root(&root).unwrap();
         assert_eq!(packages.len(), 1);
@@ -493,6 +588,22 @@ mod tests {
 
         let error = import_pet_package_from_path(&source, &root).unwrap_err();
         assert!(error.contains("非法路径"));
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn rejects_legacy_v1_package_with_upgrade_message() {
+        let temp = unique_temp_dir("legacy-v1");
+        let source = temp.join("legacy.cdpet");
+        write_legacy_v1_package(&source, "old-star");
+        let root = temp.join("packages");
+
+        let error = import_pet_package_from_path(&source, &root).unwrap_err();
+        assert_eq!(
+            error,
+            "旧版资源包动作标准过低，请使用新版生成器重新生成。"
+        );
 
         let _ = fs::remove_dir_all(temp);
     }
@@ -538,12 +649,12 @@ mod tests {
         zip.write_all(&PNG_SIGNATURE).unwrap();
 
         for action in REQUIRED_ACTIONS {
-            for index in 1..=18 {
-                if !include_all_frames && action == "act-drowsy" && index == 18 {
+            for index in 1..=30 {
+                if !include_all_frames && action == "act-drowsy" && index == 30 {
                     continue;
                 }
 
-                zip.start_file(format!("frames/{action}-{index:02}.png"), options)
+                zip.start_file(format!("frames/{action}/{index:04}.png"), options)
                     .unwrap();
                 zip.write_all(&PNG_SIGNATURE).unwrap();
             }
@@ -563,20 +674,87 @@ mod tests {
             .map(|action| {
                 let loop_value = action.starts_with("idle")
                     || matches!(*action, "walk" | "drag" | "sleep");
-                format!(r#""{action}": {{ "fps": 3, "loop": {loop_value} }}"#)
+                format!(
+                    r#""{action}": {{ "fps": 5, "loop": {loop_value}, "frameCount": 30, "durationMs": 6000, "frames": "frames/{action}/" }}"#
+                )
             })
             .collect::<Vec<_>>()
             .join(",");
 
         format!(
             r#"{{
-  "formatVersion": 1,
+  "formatVersion": 2,
+  "renderer": "frame-sequence",
   "id": "{manifest_id}",
   "name": "测试形象",
   "baseSize": {{ "width": 256, "height": 320 }},
-  "frameSize": {{ "width": 512, "height": 512 }},
-  "actions": {{ {actions} }}
+  "frameSize": {{ "width": 768, "height": 960 }},
+  "actions": {{ {actions} }},
+  "scenes": {{
+    "act-cute": {{
+      "action": "act-cute",
+      "bubbleCues": [{{ "atMs": 1800, "text": "陪我一会儿嘛。" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "act-typing": {{
+      "action": "act-typing",
+      "bubbleCues": [{{ "atMs": 1800, "text": "我也在努力敲代码。" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "act-wave": {{
+      "action": "act-wave",
+      "bubbleCues": [{{ "atMs": 1200, "text": "嗨，我在这里！" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "act-hug": {{
+      "action": "act-hug",
+      "bubbleCues": [{{ "atMs": 2000, "text": "可以抱一下吗？" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "act-pout": {{
+      "action": "act-pout",
+      "bubbleCues": [{{ "atMs": 1800, "text": "哼，快哄我。" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "act-drowsy": {{
+      "action": "act-drowsy",
+      "bubbleCues": [{{ "atMs": 2200, "text": "有点困啦。" }}],
+      "returnTo": "idle-breathe"
+    }},
+    "remote-message": {{
+      "action": "act-wave",
+      "bubbleCues": [{{ "atMs": 1000, "source": "remoteMessage" }}],
+      "waitForAcknowledge": true,
+      "returnTo": "idle-breathe"
+    }}
+  }}
 }}"#
         )
+    }
+
+    fn write_legacy_v1_package(source: &Path, manifest_id: &str) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("pet.json", options).unwrap();
+        zip.write_all(
+            format!(
+                r#"{{
+  "formatVersion": 1,
+  "id": "{manifest_id}",
+  "name": "旧版",
+  "baseSize": {{ "width": 256, "height": 320 }},
+  "frameSize": {{ "width": 512, "height": 512 }},
+  "actions": {{}}
+}}"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
+        zip.start_file("preview.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
+        zip.finish().unwrap();
     }
 }
