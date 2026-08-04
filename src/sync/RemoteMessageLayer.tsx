@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
+import { getFrameIndex } from "../renderer/animationPlayer";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
 
 export interface RemoteMessageLayerProps {
@@ -14,11 +15,45 @@ export function RemoteMessageLayer({
   onAcknowledge,
 }: RemoteMessageLayerProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const visitorAction = peerPackage?.actions["act-wave"] ?? null;
 
-  const imageUrl =
-    peerPackage?.previewUrl ??
-    peerPackage?.actions["idle-breathe"].frames[0] ??
-    null;
+  useEffect(() => {
+    setElapsedMs(0);
+  }, [message?.id, peerPackage?.id]);
+
+  useEffect(() => {
+    if (!message || !visitorAction || visitorAction.frames.length === 0) {
+      return;
+    }
+
+    const frameTimer = window.setInterval(() => {
+      setElapsedMs((current) => current + 100);
+    }, 100);
+
+    return () => window.clearInterval(frameTimer);
+  }, [message, visitorAction]);
+
+  const imageUrl = useMemo(() => {
+    if (visitorAction && visitorAction.frames.length > 0) {
+      return (
+        visitorAction.frames[
+          getFrameIndex(
+            elapsedMs,
+            visitorAction.frames.length,
+            visitorAction.fps,
+            visitorAction.loop,
+          )
+        ] ?? visitorAction.frames[0]
+      );
+    }
+
+    return (
+      peerPackage?.previewUrl ??
+      peerPackage?.actions["idle-breathe"].frames[0] ??
+      null
+    );
+  }, [elapsedMs, peerPackage, visitorAction]);
 
   useEffect(() => {
     setImageFailed(false);

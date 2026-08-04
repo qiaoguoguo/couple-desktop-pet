@@ -1,10 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   PetActionDefinition,
   PetActionName,
 } from "../assets/builtInPetManifest";
 import {
+  PET_ACTION_DURATION_MS,
+  PET_ACTION_FPS,
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
 } from "../assets/petPackageContract";
@@ -42,16 +44,24 @@ function createActions(): Record<PetActionName, PetActionDefinition> {
 
   for (const action of REQUIRED_PET_ACTIONS) {
     actions[action] = {
-      fps: 3,
-      loop: action.startsWith("idle"),
+      fps: PET_ACTION_FPS,
+      loop:
+        action.startsWith("idle") ||
+        action === "walk" ||
+        action === "drag" ||
+        action === "sleep",
       frameCount: PET_FRAMES_PER_ACTION,
-      durationMs: 6000,
+      durationMs: PET_ACTION_DURATION_MS,
       category: action.startsWith("idle")
         ? "idle"
         : action.startsWith("act-")
           ? "interaction"
           : "movement",
-      frames: [`asset://moon/${action}-01.png`],
+      frames: Array.from(
+        { length: PET_FRAMES_PER_ACTION },
+        (_, index) =>
+          `asset://moon/${action}/${String(index + 1).padStart(4, "0")}.png`,
+      ),
     };
   }
 
@@ -59,6 +69,11 @@ function createActions(): Record<PetActionName, PetActionDefinition> {
 }
 
 describe("RemoteMessageLayer", () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
   it("renders the peer pet image and incoming message", () => {
     render(
       <RemoteMessageLayer
@@ -71,6 +86,27 @@ describe("RemoteMessageLayer", () => {
     expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
     expect(screen.getByRole("img", { name: "月亮伙伴来访" })).toBeTruthy();
     expect(screen.getByText("想你啦")).toBeTruthy();
+  });
+
+  it("plays the peer act-wave frame sequence for remote visits", () => {
+    vi.useFakeTimers();
+    render(
+      <RemoteMessageLayer
+        message={remoteMessage()}
+        peerPackage={resolvedPackage()}
+        onAcknowledge={vi.fn()}
+      />,
+    );
+
+    const image = screen.getByRole("img", {
+      name: "月亮伙伴来访",
+    }) as HTMLImageElement;
+
+    expect(image.getAttribute("src")).toBe("asset://moon/act-wave/0001.png");
+
+    act(() => vi.advanceTimersByTime(200));
+
+    expect(image.getAttribute("src")).toBe("asset://moon/act-wave/0002.png");
   });
 
   it("uses a readable fallback when no peer package is selected", () => {
