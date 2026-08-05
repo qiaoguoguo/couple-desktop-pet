@@ -1,14 +1,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PetActionDefinition } from "../assets/builtInPetManifest";
-import type { PetActionName } from "../assets/petActionNames";
-import {
-  PET_ACTION_DURATION_MS,
-  PET_ACTION_FPS,
-  PET_FRAMES_PER_ACTION,
-  REQUIRED_PET_ACTIONS,
-} from "../assets/petPackageContract";
-import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
+import type {
+  ResolvedPetMotion,
+  ResolvedPetPackage,
+} from "../assets/petPackageRegistry";
 import { RemoteMessageLayer } from "./RemoteMessageLayer";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
 
@@ -32,40 +27,36 @@ function resolvedPackage(): ResolvedPetPackage {
     frameSize: { width: 768, height: 960 },
     previewUrl: "asset://moon/preview.png",
     source: "imported",
-    actions: createActions(),
-    defaultMotionId: "idle-breathe",
-    motions: {} as ResolvedPetPackage["motions"],
+    actions: {} as ResolvedPetPackage["actions"],
+    defaultMotionId: "motion-001",
+    motions: {
+      "motion-001": motion("motion-001", {
+        frames: [
+          "asset://moon/motions/motion-001/0001.png",
+          "asset://moon/motions/motion-001/0002.png",
+        ],
+        tags: ["idle"],
+      }),
+    },
     scenes: {},
   };
 }
 
-function createActions(): Record<PetActionName, PetActionDefinition> {
-  const actions = {} as Record<PetActionName, PetActionDefinition>;
-
-  for (const action of REQUIRED_PET_ACTIONS) {
-    actions[action] = {
-      fps: PET_ACTION_FPS,
-      loop:
-        action.startsWith("idle") ||
-        action === "walk" ||
-        action === "drag" ||
-        action === "sleep",
-      frameCount: PET_FRAMES_PER_ACTION,
-      durationMs: PET_ACTION_DURATION_MS,
-      category: action.startsWith("idle")
-        ? "idle"
-        : action.startsWith("act-")
-          ? "interaction"
-          : "movement",
-      frames: Array.from(
-        { length: PET_FRAMES_PER_ACTION },
-        (_, index) =>
-          `asset://moon/${action}/${String(index + 1).padStart(4, "0")}.png`,
-      ),
-    };
-  }
-
-  return actions;
+function motion(
+  id: string,
+  overrides: Partial<ResolvedPetMotion> = {},
+): ResolvedPetMotion {
+  return {
+    id,
+    fps: 5,
+    loop: true,
+    frameCount: 1,
+    durationMs: 6000,
+    frames: [`asset://moon/motions/${id}/0001.png`],
+    weight: 1,
+    tags: [],
+    ...overrides,
+  };
 }
 
 async function advanceTypewriterText(text: string) {
@@ -101,7 +92,7 @@ describe("RemoteMessageLayer", () => {
     expect(screen.getByText("想你啦")).toBeTruthy();
   });
 
-  it("plays the peer act-wave frame sequence for remote visits", () => {
+  it("renders a peer v3 default motion when act-wave is unavailable", () => {
     vi.useFakeTimers();
     render(
       <RemoteMessageLayer
@@ -115,22 +106,25 @@ describe("RemoteMessageLayer", () => {
       name: "月亮伙伴来访",
     }) as HTMLImageElement;
 
-    expect(image.getAttribute("src")).toBe("asset://moon/act-wave/0001.png");
+    expect(image.getAttribute("src")).toBe(
+      "asset://moon/motions/motion-001/0001.png",
+    );
 
     act(() => vi.advanceTimersByTime(200));
 
-    expect(image.getAttribute("src")).toBe("asset://moon/act-wave/0002.png");
+    expect(image.getAttribute("src")).toBe(
+      "asset://moon/motions/motion-001/0002.png",
+    );
   });
 
-  it("uses the remote-message scene action for remote visit animation", () => {
+  it("prefers a message tagged motion over the default motion", () => {
     const peerPackage = resolvedPackage();
-    peerPackage.scenes = {
-      "remote-message": {
-        action: "act-hug",
-        bubbleCues: [{ atMs: 1000, source: "remoteMessage" }],
-        waitForAcknowledge: true,
-        returnTo: "idle-breathe",
-      },
+    peerPackage.motions = {
+      ...peerPackage.motions,
+      "motion-message": motion("motion-message", {
+        frames: ["asset://moon/motions/motion-message/0001.png"],
+        tags: ["message"],
+      }),
     };
 
     render(
@@ -145,7 +139,31 @@ describe("RemoteMessageLayer", () => {
       name: "月亮伙伴来访",
     }) as HTMLImageElement;
 
-    expect(image.getAttribute("src")).toBe("asset://moon/act-hug/0001.png");
+    expect(image.getAttribute("src")).toBe(
+      "asset://moon/motions/motion-message/0001.png",
+    );
+  });
+
+  it("falls back to preview when no usable motion frames exist", () => {
+    const peerPackage = resolvedPackage();
+    peerPackage.defaultMotionId = "missing-default";
+    peerPackage.motions = {
+      empty: motion("empty", { frames: [], tags: ["message"] }),
+    };
+
+    render(
+      <RemoteMessageLayer
+        message={remoteMessage()}
+        peerPackage={peerPackage}
+        onAcknowledge={vi.fn()}
+      />,
+    );
+
+    const image = screen.getByRole("img", {
+      name: "月亮伙伴来访",
+    }) as HTMLImageElement;
+
+    expect(image.getAttribute("src")).toBe("asset://moon/preview.png");
   });
 
   it("uses a readable fallback when no peer package is selected", () => {

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
+import type {
+  ResolvedPetMotion,
+  ResolvedPetPackage,
+} from "../assets/petPackageRegistry";
 import { getFrameIndex } from "../renderer/animationPlayer";
 import { TypewriterText } from "../ui/TypewriterText";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
@@ -17,19 +20,17 @@ export function RemoteMessageLayer({
 }: RemoteMessageLayerProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const visitorActionName =
-    peerPackage?.scenes["remote-message"]?.action ?? "act-wave";
-  const visitorAction =
-    peerPackage?.actions[visitorActionName] ??
-    peerPackage?.actions["act-wave"] ??
-    null;
+  const visitorMotion = useMemo(
+    () => resolveRemoteVisitorMotion(peerPackage),
+    [peerPackage],
+  );
 
   useEffect(() => {
     setElapsedMs(0);
-  }, [message?.id, peerPackage?.id]);
+  }, [message?.id, peerPackage?.id, visitorMotion?.id]);
 
   useEffect(() => {
-    if (!message || !visitorAction || visitorAction.frames.length === 0) {
+    if (!message || !visitorMotion) {
       return;
     }
 
@@ -38,28 +39,24 @@ export function RemoteMessageLayer({
     }, 100);
 
     return () => window.clearInterval(frameTimer);
-  }, [message, visitorAction]);
+  }, [message, visitorMotion]);
 
   const imageUrl = useMemo(() => {
-    if (visitorAction && visitorAction.frames.length > 0) {
+    if (visitorMotion) {
       return (
-        visitorAction.frames[
+        visitorMotion.frames[
           getFrameIndex(
             elapsedMs,
-            visitorAction.frames.length,
-            visitorAction.fps,
-            visitorAction.loop,
+            visitorMotion.frames.length,
+            visitorMotion.fps,
+            visitorMotion.loop,
           )
-        ] ?? visitorAction.frames[0]
+        ] ?? visitorMotion.frames[0]
       );
     }
 
-    return (
-      peerPackage?.previewUrl ??
-      peerPackage?.actions["idle-breathe"].frames[0] ??
-      null
-    );
-  }, [elapsedMs, peerPackage, visitorAction]);
+    return peerPackage?.previewUrl ?? null;
+  }, [elapsedMs, peerPackage?.previewUrl, visitorMotion]);
 
   useEffect(() => {
     setImageFailed(false);
@@ -104,5 +101,23 @@ export function RemoteMessageLayer({
         <TypewriterText text={message.text} />
       </div>
     </div>
+  );
+}
+
+function resolveRemoteVisitorMotion(
+  peerPackage: ResolvedPetPackage | null,
+): ResolvedPetMotion | null {
+  if (!peerPackage) {
+    return null;
+  }
+
+  const motions = Object.values(peerPackage.motions);
+  const usableMotions = motions.filter((motion) => motion.frames.length > 0);
+
+  return (
+    usableMotions.find((motion) => motion.tags.includes("message")) ??
+    usableMotions.find((motion) => motion.id === peerPackage.defaultMotionId) ??
+    usableMotions[0] ??
+    null
   );
 }
