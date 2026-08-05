@@ -25,6 +25,21 @@ export function MessageComposerWindow({
   const trimmed = text.trim();
 
   useEffect(() => {
+    function handleWindowKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void closeWindow();
+      }
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [closeWindow]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -110,9 +125,18 @@ export function MessageComposerWindow({
         />
         <div className="message-composer-actions">
           <span>{text.length}/280</span>
-          <button type="button" disabled={sending} onClick={() => void submit()}>
-            {sending ? "发送中" : "发送"}
-          </button>
+          <div className="message-composer-action-buttons">
+            <button
+              type="button"
+              className="message-composer-cancel"
+              onClick={() => void closeWindow()}
+            >
+              取消
+            </button>
+            <button type="button" disabled={sending} onClick={() => void submit()}>
+              {sending ? "发送中" : "发送"}
+            </button>
+          </div>
         </div>
         {status ? <p className="message-composer-status">{status}</p> : null}
       </section>

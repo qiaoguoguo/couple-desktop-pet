@@ -10,6 +10,8 @@ use tauri::{
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const MESSAGE_COMPOSER_WINDOW_LABEL: &str = "message-composer";
+const MESSAGE_COMPOSER_WINDOW_URL: &str = "index.html?window=message-composer";
+const MESSAGE_COMPOSER_WINDOW_DECORATIONS: bool = true;
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
@@ -138,7 +140,7 @@ pub fn open_message_composer_window(app: AppHandle) -> Result<(), String> {
     tauri::WebviewWindowBuilder::new(
         &app,
         MESSAGE_COMPOSER_WINDOW_LABEL,
-        tauri::WebviewUrl::App("index.html".into()),
+        tauri::WebviewUrl::App(MESSAGE_COMPOSER_WINDOW_URL.into()),
     )
     .title("发送消息")
     .inner_size(420.0, 240.0)
@@ -146,7 +148,7 @@ pub fn open_message_composer_window(app: AppHandle) -> Result<(), String> {
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
-    .decorations(false)
+    .decorations(MESSAGE_COMPOSER_WINDOW_DECORATIONS)
     .transparent(false)
     .build()
     .map(|_| ())
@@ -975,6 +977,19 @@ mod tests {
     #[test]
     fn open_message_composer_uses_dedicated_window_label() {
         assert_eq!(MESSAGE_COMPOSER_WINDOW_LABEL, "message-composer");
+    }
+
+    #[test]
+    fn open_message_composer_uses_explicit_window_mode_url() {
+        assert_eq!(
+            MESSAGE_COMPOSER_WINDOW_URL,
+            "index.html?window=message-composer"
+        );
+    }
+
+    #[test]
+    fn open_message_composer_keeps_native_close_fallback() {
+        assert!(MESSAGE_COMPOSER_WINDOW_DECORATIONS);
     }
 
     fn unique_settings_path(label: &str) -> PathBuf {

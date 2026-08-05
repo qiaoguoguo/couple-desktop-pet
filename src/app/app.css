@@ -717,6 +717,12 @@ body {
   gap: 8px;
 }
 
+.message-composer-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .message-composer-actions span,
 .message-composer-status {
   color: #7a5a43;
@@ -731,6 +737,12 @@ body {
   background: #f28b54;
   color: #fff;
   font-weight: 700;
+}
+
+.message-composer-actions .message-composer-cancel {
+  border: 1px solid rgb(75 43 26 / 0.18);
+  background: #fff4e8;
+  color: #6c4934;
 }
 
 .message-composer-status {

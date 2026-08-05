@@ -116,4 +116,46 @@ describe("MessageComposerWindow", () => {
       false,
     );
   });
+
+  it("does not emit empty messages", () => {
+    const emitSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MessageComposerWindow emitSubmit={emitSubmit} closeWindow={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(emitSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("先写一点想说的话")).toBeTruthy();
+  });
+
+  it("lets the user close the composer with the cancel button", () => {
+    const closeWindow = vi.fn();
+    render(<MessageComposerWindow closeWindow={closeWindow} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the user close the composer with Escape after an error", async () => {
+    const emitSubmit = vi.fn().mockRejectedValue(new Error("event unavailable"));
+    const closeWindow = vi.fn();
+    render(
+      <MessageComposerWindow emitSubmit={emitSubmit} closeWindow={closeWindow} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "晚安" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(screen.getByText("发送窗口暂时不可用")).toBeTruthy());
+    fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Escape" });
+
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+  });
 });
