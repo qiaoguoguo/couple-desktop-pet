@@ -6,11 +6,9 @@ import "./app/app.css";
 import { shouldRenderMessageComposer } from "./app/rootMode";
 import { MessageComposerWindow } from "./message/MessageComposerWindow";
 
-const currentWindow = getCurrentWindow();
 const Root = shouldRenderMessageComposer({
-  windowLabel: currentWindow.label,
-  locationSearch: window.location.search,
   locationHash: window.location.hash,
+  readWindowLabel: () => getCurrentWindow().label,
 })
   ? MessageComposerWindow
   : App;

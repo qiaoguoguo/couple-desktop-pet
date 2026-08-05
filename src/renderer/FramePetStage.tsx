@@ -89,9 +89,11 @@ export function FramePetStage({
     setImageFailed(false);
   }, [currentFrameUrl]);
 
-  const showFallback = !currentFrameUrl || imageFailed;
-  const stageStyle = { "--pet-scale": String(scale) } as CSSProperties;
   const isEdgePeek = Boolean(edgePeekSide && edgePeekImageUrl);
+  const showFallback = !currentFrameUrl || imageFailed;
+  const stageStyle = {
+    "--pet-scale": String(isEdgePeek ? 1 : scale),
+  } as CSSProperties;
   const finishDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (activePointerIdRef.current !== event.pointerId) {

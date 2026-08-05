@@ -10,6 +10,7 @@ import {
   buildPetPackageRegistry,
   type ResolvedPetPackage,
 } from "../assets/petPackageRegistry";
+import { builtInEdgePeekImages, isEdgePeekSide } from "../desktop/edgePeek";
 import { FramePetStage } from "./FramePetStage";
 import framePetStageSource from "./FramePetStage.tsx?raw";
 
@@ -109,6 +110,40 @@ describe("FramePetStage DOM frame rendering", () => {
     fireEvent.error(screen.getByRole("img", { name: "Q 版小人" }));
 
     expect(screen.getByLabelText("Q 版小人开发占位")).toBeTruthy();
+  });
+
+  it.each(["left", "right", "top", "bottom"] as const)(
+    "renders %s edge peek image without applying the normal pet scale",
+    (side) => {
+      render(
+        <FramePetStage
+          action="idle-breathe"
+          scale={0.7}
+          petPackage={builtInPackage}
+          edgePeekSide={side}
+          edgePeekImageUrl={`/edge-${side}.png`}
+          onPetClick={vi.fn()}
+          onDragStart={vi.fn()}
+          onDragEnd={vi.fn()}
+        />,
+      );
+
+      const stage = document.querySelector(".pet-frame-stage") as HTMLElement;
+
+      expect(stage.classList.contains("is-edge-peek")).toBe(true);
+      expect(stage.classList.contains(`is-edge-${side}`)).toBe(true);
+      expect(stage.dataset.edgePeekSide).toBe(side);
+      expect(stage.style.getPropertyValue("--pet-scale")).toBe("1");
+      expect(screen.getByAltText("桌宠半隐藏").getAttribute("src")).toBe(
+        `/edge-${side}.png`,
+      );
+      expect(screen.queryByRole("img", { name: "Q 版小人" })).toBeNull();
+    },
+  );
+
+  it("exposes a built-in edge peek image for every supported side", () => {
+    expect(isEdgePeekSide("bottom")).toBe(true);
+    expect(builtInEdgePeekImages.bottom).toContain("bottom");
   });
 
   it("renders the edge peek image instead of animation frames", () => {

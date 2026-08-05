@@ -10,7 +10,7 @@ use tauri::{
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const MESSAGE_COMPOSER_WINDOW_LABEL: &str = "message-composer";
-const MESSAGE_COMPOSER_WINDOW_URL: &str = "index.html?window=message-composer";
+const MESSAGE_COMPOSER_WINDOW_URL: &str = "index.html#message-composer";
 const MESSAGE_COMPOSER_WINDOW_DECORATIONS: bool = true;
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
@@ -445,6 +445,7 @@ pub enum EdgePeekSide {
     Left,
     Right,
     Top,
+    Bottom,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -537,8 +538,11 @@ fn calculate_edge_peek_snap(
     window: WindowGeometry,
 ) -> Option<EdgePeekSnap> {
     let window_width = window.width as i32;
+    let window_height = window.height as i32;
     let work_right = work_area.x + work_area.width as i32;
+    let work_bottom = work_area.y + work_area.height as i32;
     let window_right = window.x + window_width;
+    let window_bottom = window.y + window_height;
 
     if window.x - work_area.x <= EDGE_PEEK_TRIGGER_PX {
         return Some(EdgePeekSnap {
@@ -570,6 +574,16 @@ fn calculate_edge_peek_snap(
         });
     }
 
+    if work_bottom - window_bottom <= EDGE_PEEK_TRIGGER_PX {
+        return Some(EdgePeekSnap {
+            side: EdgePeekSide::Bottom,
+            position: PhysicalPosition::new(
+                clamp_axis(window.x, work_area.x, work_area.width, window.width),
+                work_bottom - window_height,
+            ),
+        });
+    }
+
     None
 }
 
@@ -590,6 +604,10 @@ fn calculate_edge_peek_restore_position(
         EdgePeekSide::Top => PhysicalPosition::new(
             clamp_axis(window.x, work_area.x, work_area.width, window.width),
             work_area.y + SAFE_WINDOW_MARGIN_PX,
+        ),
+        EdgePeekSide::Bottom => PhysicalPosition::new(
+            clamp_axis(window.x, work_area.x, work_area.width, window.width),
+            work_area.y + work_area.height as i32 - window.height as i32 - SAFE_WINDOW_MARGIN_PX,
         ),
     }
 }
@@ -896,6 +914,53 @@ mod tests {
     }
 
     #[test]
+    fn edge_peek_snaps_to_bottom_when_released_near_bottom_edge() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let window = TestWindowGeometry {
+            x: 440,
+            y: 430,
+            width: 320,
+            height: 360,
+        };
+
+        let snap = calculate_edge_peek_snap(work_area, window);
+
+        assert_eq!(
+            snap,
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Bottom,
+                position: PhysicalPosition::new(440, 440),
+            })
+        );
+    }
+
+    #[test]
+    fn edge_peek_restores_bottom_to_safe_visible_position() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let window = TestWindowGeometry {
+            x: 440,
+            y: 440,
+            width: 320,
+            height: 360,
+        };
+
+        let position =
+            calculate_edge_peek_restore_position(EdgePeekSide::Bottom, work_area, window);
+
+        assert_eq!(position, PhysicalPosition::new(440, 416));
+    }
+
+    #[test]
     fn edge_peek_snap_keeps_window_inside_work_area_bounds() {
         let work_area = TestWorkArea {
             x: 100,
@@ -921,10 +986,17 @@ mod tests {
             width: 320,
             height: 360,
         };
+        let bottom_window = TestWindowGeometry {
+            x: 440,
+            y: 512,
+            width: 320,
+            height: 360,
+        };
 
         let left_snap = calculate_edge_peek_snap(work_area, left_window).unwrap();
         let right_snap = calculate_edge_peek_snap(work_area, right_window).unwrap();
         let top_snap = calculate_edge_peek_snap(work_area, top_window).unwrap();
+        let bottom_snap = calculate_edge_peek_snap(work_area, bottom_window).unwrap();
 
         assert!(left_snap.position.x >= work_area.x);
         assert!(top_snap.position.y >= work_area.y);
@@ -932,26 +1004,10 @@ mod tests {
             right_snap.position.x + right_window.width as i32
                 <= work_area.x + work_area.width as i32
         );
-    }
-
-    #[test]
-    fn edge_peek_does_not_trigger_on_bottom_edge() {
-        let work_area = TestWorkArea {
-            x: 0,
-            y: 0,
-            width: 1200,
-            height: 800,
-        };
-        let window = TestWindowGeometry {
-            x: 440,
-            y: 430,
-            width: 320,
-            height: 360,
-        };
-
-        let snap = calculate_edge_peek_snap(work_area, window);
-
-        assert_eq!(snap, None);
+        assert!(
+            bottom_snap.position.y + bottom_window.height as i32
+                <= work_area.y + work_area.height as i32
+        );
     }
 
     #[test]
@@ -980,16 +1036,34 @@ mod tests {
     }
 
     #[test]
-    fn open_message_composer_uses_explicit_window_mode_url() {
-        assert_eq!(
-            MESSAGE_COMPOSER_WINDOW_URL,
-            "index.html?window=message-composer"
-        );
+    fn open_message_composer_uses_explicit_hash_window_mode_url() {
+        assert_eq!(MESSAGE_COMPOSER_WINDOW_URL, "index.html#message-composer");
+        assert!(!MESSAGE_COMPOSER_WINDOW_URL.contains("?window="));
     }
 
     #[test]
     fn open_message_composer_keeps_native_close_fallback() {
         assert!(MESSAGE_COMPOSER_WINDOW_DECORATIONS);
+    }
+
+    #[test]
+    fn edge_peek_keeps_non_edge_window_normal() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let window = TestWindowGeometry {
+            x: 440,
+            y: 220,
+            width: 320,
+            height: 360,
+        };
+
+        let snap = calculate_edge_peek_snap(work_area, window);
+
+        assert_eq!(snap, None);
     }
 
     fn unique_settings_path(label: &str) -> PathBuf {

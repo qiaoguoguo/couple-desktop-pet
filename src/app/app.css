@@ -47,6 +47,27 @@ body {
 
 .pet-frame-stage.is-edge-peek {
   cursor: pointer;
+  transform: none;
+}
+
+.pet-frame-stage.is-edge-left {
+  justify-self: start;
+  align-self: center;
+}
+
+.pet-frame-stage.is-edge-right {
+  justify-self: end;
+  align-self: center;
+}
+
+.pet-frame-stage.is-edge-top {
+  justify-self: center;
+  align-self: start;
+}
+
+.pet-frame-stage.is-edge-bottom {
+  justify-self: center;
+  align-self: end;
 }
 
 .pet-frame-image {
