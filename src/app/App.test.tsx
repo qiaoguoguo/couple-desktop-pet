@@ -217,10 +217,20 @@ async function flushAppEffects() {
 }
 
 async function openSettingsFromContextMenu() {
+  await flushAppEffects();
   const surface = screen.getByRole("region", { name: "情侣桌宠 MVP" });
 
-  fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
-  fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+  await act(async () => {
+    fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+  });
+
+  expect(document.getElementById("settings-panel")?.className).toBe(
+    "settings-dock",
+  );
+  expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
 }
 
 async function withViewport<T>(
@@ -792,14 +802,16 @@ describe("App", () => {
       target: { value: "imported:moon-buddy" },
     });
 
-    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appearance: expect.objectContaining({
-          peerPetPackageByDeviceId: {
-            dev_b: "imported:moon-buddy",
-          },
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearance: expect.objectContaining({
+            peerPetPackageByDeviceId: {
+              dev_b: "imported:moon-buddy",
+            },
+          }),
         }),
-      }),
+      ),
     );
   });
 
