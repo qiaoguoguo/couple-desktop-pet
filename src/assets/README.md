@@ -42,6 +42,8 @@ External pet packages are documented in `docs/pet-resource-pack-format.md`.
 
 The app imports `.cdpet` files into the app data directory under `pet-packages/` and never reads imported runtime frames from `src/assets`. Imported packages use the runtime id format `imported:<manifest-id>`, while the built-in fallback remains `builtin:q-girl`.
 
-The current version supports `formatVersion: 2` PNG sequence frames using the same manifest contract: `renderer: "frame-sequence"`, `id`, `baseSize`, `frameSize`, fixed `actions`, `fps`, `loop`, `durationMs`, `scenes`, and frame files named `frames/<action>/0001.png` through `frames/<action>/0030.png`. The relay does not transfer package files in this version.
+New external package generation should target `formatVersion: 3` with `renderer: "motion-pool"`. A v3 package needs at least one motion and may contain multiple motions under `motions/<motion-id>/`; runtime idle and ambient behavior selects from that motion pool instead of requiring fixed action names.
 
-Legacy `formatVersion: 1` packages are rejected and should be regenerated with the v2 package format.
+The six radial interaction buttons are product commands, not external package action requirements. The `act-typing` / "敲电脑" button is reused as the message composer entry in the current product flow, so a v3 package does not need a dedicated `act-typing` action folder.
+
+`formatVersion: 2` PNG frame-sequence packages remain importable as transitional compatibility for fixed-action assets, but they are no longer recommended for new generation. Legacy `formatVersion: 1` packages are rejected and should be regenerated with the v3 motion-pool package format. The relay does not transfer package files in this version.
