@@ -1253,6 +1253,7 @@ describe("App", () => {
       },
     });
     render(<App />);
+    await flushAppEffects();
 
     expect(realtimeSyncMock.callbacks).toBeTruthy();
 
@@ -1271,7 +1272,7 @@ describe("App", () => {
       name: "Q 版小人来访",
     }) as HTMLImageElement;
     expect(visitorImage.getAttribute("src")).toContain(
-      "/src/assets/pets/q-girl/frames/act-wave/0001.png",
+      "/src/assets/pets/q-girl/frames/idle-breathe/0001.png",
     );
     await advanceTypewriterText("想你啦");
     expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
