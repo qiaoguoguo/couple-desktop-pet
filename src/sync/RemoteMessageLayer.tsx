@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
 import { getFrameIndex } from "../renderer/animationPlayer";
+import { TypewriterText } from "../ui/TypewriterText";
 import type { RemoteMessageCard } from "./remoteMessageQueue";
 
 export interface RemoteMessageLayerProps {
@@ -99,7 +100,9 @@ export function RemoteMessageLayer({
         )}
         <figcaption>{peerName}</figcaption>
       </figure>
-      <div className="remote-message-bubble">{message.text}</div>
+      <div className="remote-message-bubble">
+        <TypewriterText text={message.text} />
+      </div>
     </div>
   );
 }

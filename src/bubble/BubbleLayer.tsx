@@ -1,3 +1,5 @@
+import { TypewriterText } from "../ui/TypewriterText";
+
 interface BubbleLayerProps {
   message: string;
   visible: boolean;
@@ -10,7 +12,7 @@ export function BubbleLayer({ message, visible }: BubbleLayerProps) {
 
   return (
     <div className="bubble-layer" role="status" aria-live="polite">
-      {message}
+      <TypewriterText text={message} />
     </div>
   );
 }

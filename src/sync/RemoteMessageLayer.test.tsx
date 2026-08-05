@@ -66,13 +66,22 @@ function createActions(): Record<PetActionName, PetActionDefinition> {
   return actions;
 }
 
+async function advanceTypewriterText(text: string) {
+  for (let index = 1; index < Array.from(text).length; index += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(35);
+    });
+  }
+}
+
 describe("RemoteMessageLayer", () => {
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
   });
 
-  it("renders the peer pet image and incoming message", () => {
+  it("renders the peer pet image and incoming message", async () => {
+    vi.useFakeTimers();
     render(
       <RemoteMessageLayer
         message={remoteMessage()}
@@ -83,6 +92,10 @@ describe("RemoteMessageLayer", () => {
 
     expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
     expect(screen.getByRole("img", { name: "月亮伙伴来访" })).toBeTruthy();
+    expect(screen.getByText("想")).toBeTruthy();
+
+    await advanceTypewriterText("想你啦");
+
     expect(screen.getByText("想你啦")).toBeTruthy();
   });
 
