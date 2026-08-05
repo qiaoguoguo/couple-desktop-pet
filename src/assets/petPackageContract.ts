@@ -238,18 +238,20 @@ function readMotionManifests(
       : ["idle"];
 
     if (
-      typeof fps !== "number" ||
-      fps < PET_MOTION_MIN_FPS ||
-      fps > PET_MOTION_MAX_FPS ||
+      !isIntegerInRange(fps, PET_MOTION_MIN_FPS, PET_MOTION_MAX_FPS) ||
       typeof loop !== "boolean" ||
-      typeof frameCount !== "number" ||
-      frameCount < PET_MOTION_MIN_FRAMES ||
-      frameCount > PET_MOTION_MAX_FRAMES ||
-      typeof durationMs !== "number" ||
-      durationMs < PET_MOTION_MIN_DURATION_MS ||
-      durationMs > PET_MOTION_MAX_DURATION_MS ||
+      !isIntegerInRange(
+        frameCount,
+        PET_MOTION_MIN_FRAMES,
+        PET_MOTION_MAX_FRAMES,
+      ) ||
+      !isIntegerInRange(
+        durationMs,
+        PET_MOTION_MIN_DURATION_MS,
+        PET_MOTION_MAX_DURATION_MS,
+      ) ||
       frames !== `motions/${motionId}/` ||
-      weight <= 0 ||
+      !isFiniteNumberInRange(weight, 0, Number.POSITIVE_INFINITY) ||
       tags.length === 0
     ) {
       return null;
@@ -271,6 +273,32 @@ function readMotionManifests(
 
 export function isValidPetMotionId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+}
+
+function isIntegerInRange(
+  value: unknown,
+  min: number,
+  max: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= min &&
+    value <= max
+  );
+}
+
+function isFiniteNumberInRange(
+  value: unknown,
+  minExclusive: number,
+  maxInclusive: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > minExclusive &&
+    value <= maxInclusive
+  );
 }
 
 function readActions(

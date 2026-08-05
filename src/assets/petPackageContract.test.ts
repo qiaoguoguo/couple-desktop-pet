@@ -303,4 +303,30 @@ describe("pet package v3 motion-pool contract", () => {
       )?.motions["motion-001"].frameCount,
     ).toBe(60);
   });
+
+  it.each([
+    ["frameCount must be an integer", { frameCount: 1.5 }],
+    ["fps must be finite", { fps: Number.NaN }],
+    ["durationMs must be finite", { durationMs: Number.POSITIVE_INFINITY }],
+    ["weight must be finite", { weight: Number.NaN }],
+  ])("rejects v3 motion when %s", (_name, motionPatch) => {
+    expect(
+      readPetMotionPoolManifest(
+        validMotionPoolManifest({
+          motions: {
+            "motion-001": {
+              fps: 5,
+              loop: true,
+              frameCount: 30,
+              durationMs: 6000,
+              frames: "motions/motion-001/",
+              weight: 1,
+              tags: ["idle"],
+              ...motionPatch,
+            },
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
 });
