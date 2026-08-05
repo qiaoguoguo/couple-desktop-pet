@@ -145,8 +145,8 @@ pub fn open_message_composer_surface(app: AppHandle) -> Result<(), String> {
         return show_main_window(&app);
     }
 
-    if let Err(error) = apply_window_geometry(&window, surface.window)
-        .and_then(|_| show_main_window(&app))
+    if let Err(error) =
+        apply_window_geometry(&window, surface.window).and_then(|_| show_main_window(&app))
     {
         let _ = set_saved_message_composer_surface(None);
         return Err(error);
@@ -304,9 +304,7 @@ fn saved_message_composer_surface() -> Result<Option<WindowGeometry>, String> {
         .map_err(|_| "failed to lock message composer surface state".to_string())
 }
 
-fn set_saved_message_composer_surface(
-    geometry: Option<WindowGeometry>,
-) -> Result<(), String> {
+fn set_saved_message_composer_surface(geometry: Option<WindowGeometry>) -> Result<(), String> {
     MESSAGE_COMPOSER_SURFACE_STATE
         .lock()
         .map(|mut state| {
@@ -315,9 +313,7 @@ fn set_saved_message_composer_surface(
         .map_err(|_| "failed to lock message composer surface state".to_string())
 }
 
-fn save_message_composer_surface_if_absent(
-    geometry: WindowGeometry,
-) -> Result<bool, String> {
+fn save_message_composer_surface_if_absent(geometry: WindowGeometry) -> Result<bool, String> {
     MESSAGE_COMPOSER_SURFACE_STATE
         .lock()
         .map(|mut state| {
@@ -435,10 +431,7 @@ fn read_window_position_from_path(path: &Path) -> Option<SavedWindowPosition> {
         .and_then(|contents| serde_json::from_str(&contents).ok())
 }
 
-fn write_window_position_to_path(
-    path: &Path,
-    position: SavedWindowPosition,
-) -> Result<(), String> {
+fn write_window_position_to_path(path: &Path, position: SavedWindowPosition) -> Result<(), String> {
     let parent = path.parent().ok_or_else(|| {
         format!(
             "failed to write window position {}: missing parent directory",
@@ -615,12 +608,7 @@ fn clamp_saved_window_position(
     window: WindowGeometry,
 ) -> PhysicalPosition<i32> {
     PhysicalPosition::new(
-        clamp_axis(
-            saved_position.x,
-            work_area.x,
-            work_area.width,
-            window.width,
-        ),
+        clamp_axis(saved_position.x, work_area.x, work_area.width, window.width),
         clamp_axis(
             saved_position.y,
             work_area.y,
@@ -676,10 +664,7 @@ fn calculate_message_composer_restore_geometry(
     })
 }
 
-fn calculate_edge_peek_snap(
-    work_area: WorkArea,
-    window: WindowGeometry,
-) -> Option<EdgePeekSnap> {
+fn calculate_edge_peek_snap(work_area: WorkArea, window: WindowGeometry) -> Option<EdgePeekSnap> {
     let window_width = window.width as i32;
     let window_height = window.height as i32;
     let work_right = work_area.x + work_area.width as i32;
@@ -755,13 +740,7 @@ fn calculate_edge_peek_restore_position(
     }
 }
 
-fn step_axis(
-    current: i32,
-    area_start: i32,
-    area_size: u32,
-    window_size: u32,
-    step: i32,
-) -> i32 {
+fn step_axis(current: i32, area_start: i32, area_size: u32, window_size: u32, step: i32) -> i32 {
     let (min, max) = safe_axis_bounds(area_start, area_size, window_size);
 
     if max < min {
@@ -838,8 +817,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    static MESSAGE_COMPOSER_SURFACE_TEST_LOCK: std::sync::Mutex<()> =
-        std::sync::Mutex::new(());
+    static MESSAGE_COMPOSER_SURFACE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn lock_message_composer_surface_state_for_test() -> std::sync::MutexGuard<'static, ()> {
         MESSAGE_COMPOSER_SURFACE_TEST_LOCK
@@ -1276,7 +1254,7 @@ mod tests {
         set_saved_message_composer_surface(Some(original_pet_window)).unwrap();
 
         let result = clear_message_composer_surface_after_close(Err(
-            "failed to move main window".to_string(),
+            "failed to move main window".to_string()
         ));
 
         assert_eq!(result, Err("failed to move main window".to_string()));

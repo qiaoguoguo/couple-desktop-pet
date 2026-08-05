@@ -140,11 +140,9 @@ pub fn import_pet_package_from_path(
     extract_archive(&mut archive, &staging_dir)?;
 
     if package_dir.exists() {
-        fs::remove_dir_all(&package_dir)
-            .map_err(|error| format!("无法替换旧资源包: {error}"))?;
+        fs::remove_dir_all(&package_dir).map_err(|error| format!("无法替换旧资源包: {error}"))?;
     }
-    fs::rename(&staging_dir, &package_dir)
-        .map_err(|error| format!("无法保存资源包: {error}"))?;
+    fs::rename(&staging_dir, &package_dir).map_err(|error| format!("无法保存资源包: {error}"))?;
 
     read_package_summary(&package_dir)
 }
@@ -157,8 +155,8 @@ pub fn list_pet_packages_from_root(
     }
 
     let mut packages = Vec::new();
-    let entries = fs::read_dir(packages_root)
-        .map_err(|error| format!("无法读取形象资源包目录: {error}"))?;
+    let entries =
+        fs::read_dir(packages_root).map_err(|error| format!("无法读取形象资源包目录: {error}"))?;
 
     for entry in entries {
         let entry = entry.map_err(|error| format!("无法读取形象资源包条目: {error}"))?;
@@ -170,7 +168,11 @@ pub fn list_pet_packages_from_root(
             continue;
         }
 
-        if entry.file_name().to_string_lossy().starts_with(".importing-") {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".importing-")
+        {
             continue;
         }
 
@@ -216,10 +218,7 @@ pub fn import_pet_package(
 }
 
 #[tauri::command]
-pub fn delete_pet_package(
-    app: AppHandle,
-    package_id: String,
-) -> Result<(), String> {
+pub fn delete_pet_package(app: AppHandle, package_id: String) -> Result<(), String> {
     let root = packages_root(&app)?;
     delete_pet_package_from_root(&root, &package_id)
 }
@@ -284,11 +283,13 @@ fn validate_relative_archive_path(name: &str) -> Result<(), String> {
 fn validate_allowed_archive_dir(name: &str) -> Result<(), String> {
     let normalized = name.trim_end_matches('/');
 
-    if normalized == "frames" || REQUIRED_ACTIONS.iter().any(|action| {
-        normalized
-            .strip_prefix("frames/")
-            .is_some_and(|directory| directory == *action)
-    }) {
+    if normalized == "frames"
+        || REQUIRED_ACTIONS.iter().any(|action| {
+            normalized
+                .strip_prefix("frames/")
+                .is_some_and(|directory| directory == *action)
+        })
+    {
         return Ok(());
     }
 
@@ -530,8 +531,7 @@ fn extract_archive<R: Read + std::io::Seek>(
 
         let out_path = destination.join(Path::new(&name));
         if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("无法创建资源包目录: {error}"))?;
+            fs::create_dir_all(parent).map_err(|error| format!("无法创建资源包目录: {error}"))?;
         }
 
         let mut output =
@@ -710,10 +710,12 @@ mod tests {
 
     #[test]
     fn rejects_remote_message_scene_without_acknowledgement_contract() {
-        let missing_ack = test_manifest("missing-ack")
-            .replace(",\n      \"waitForAcknowledge\": true", "");
-        let false_ack = test_manifest("false-ack")
-            .replace("\"waitForAcknowledge\": true", "\"waitForAcknowledge\": false");
+        let missing_ack =
+            test_manifest("missing-ack").replace(",\n      \"waitForAcknowledge\": true", "");
+        let false_ack = test_manifest("false-ack").replace(
+            "\"waitForAcknowledge\": true",
+            "\"waitForAcknowledge\": false",
+        );
 
         for (case_name, manifest) in [
             ("remote-message-missing-ack", missing_ack),
@@ -789,10 +791,7 @@ mod tests {
         let root = temp.join("packages");
 
         let error = import_pet_package_from_path(&source, &root).unwrap_err();
-        assert_eq!(
-            error,
-            "旧版资源包动作标准过低，请使用新版生成器重新生成。"
-        );
+        assert_eq!(error, "旧版资源包动作标准过低，请使用新版生成器重新生成。");
 
         let _ = fs::remove_dir_all(temp);
     }
@@ -848,7 +847,8 @@ mod tests {
         include_all_frames: bool,
     ) {
         zip.start_file("pet.json", options).unwrap();
-        zip.write_all(test_manifest(manifest_id).as_bytes()).unwrap();
+        zip.write_all(test_manifest(manifest_id).as_bytes())
+            .unwrap();
 
         zip.start_file("preview.png", options).unwrap();
         zip.write_all(&PNG_SIGNATURE).unwrap();
@@ -889,7 +889,8 @@ mod tests {
         let options = SimpleFileOptions::default();
 
         zip.start_file("pet.json", options).unwrap();
-        zip.write_all(test_manifest(manifest_id).as_bytes()).unwrap();
+        zip.write_all(test_manifest(manifest_id).as_bytes())
+            .unwrap();
 
         zip.start_file("preview.png", options).unwrap();
         zip.write_all(&PNG_SIGNATURE).unwrap();
