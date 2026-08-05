@@ -1495,6 +1495,57 @@ describe("App", () => {
     expect(screen.queryByText("我在这里。")).toBeNull();
   });
 
+  it("keeps the message motion while a remote message waits for acknowledgement", async () => {
+    vi.useFakeTimers();
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://127.0.0.1:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+    await flushAppEffects();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "今天见一面",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+
+    const petStage = screen
+      .getByRole("img", { name: "Q 版小人" })
+      .closest("[data-motion-id]");
+
+    expect(petStage?.getAttribute("data-motion-id")).toBe(
+      "motion-message-pair",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+    });
+
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(petStage?.getAttribute("data-motion-id")).toBe(
+      "motion-message-pair",
+    );
+    expect(windowCommandsMock.moveWindowForAutoStep).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
+    await flushAppEffects();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+  });
+
   it("dismisses a received remote message only after hover acknowledgement", async () => {
     vi.useFakeTimers();
     windowCommandsMock.readSettings.mockResolvedValueOnce({

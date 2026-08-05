@@ -169,6 +169,7 @@ export function App() {
     [activeMotionId, selectedPetPackage],
   );
   const activeRemoteMessage = remoteMessages.active;
+  const isRemoteMessageActive = Boolean(activeRemoteMessage);
   const refreshPetPackages = useCallback(async () => {
     const packages = await petPackageApi.listPetPackages();
     setImportedPetPackages(packages);
@@ -456,6 +457,10 @@ export function App() {
   useEffect(() => {
     const schedulerTimer = window.setInterval(() => {
       setPetState((currentState) => {
+        if (isRemoteMessageActive) {
+          return currentState;
+        }
+
         const currentActionDurationMs =
           activeMotion.durationMs ??
           selectedPetPackage.actions[currentState.action]?.durationMs ??
@@ -524,6 +529,7 @@ export function App() {
     return () => window.clearInterval(schedulerTimer);
   }, [
     activeMotion.durationMs,
+    isRemoteMessageActive,
     selectedPetPackage,
     setVisibleMotion,
     setVisibleMotionForAction,
