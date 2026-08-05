@@ -103,6 +103,31 @@ describe("builtInPetManifest", () => {
     }
   });
 
+  it("exposes the built-in pair message motion", () => {
+    const motion = builtInPetManifest.motions["motion-message-pair"];
+
+    expect(motion.fps).toBe(8);
+    expect(motion.loop).toBe(true);
+    expect(motion.frameCount).toBe(48);
+    expect(motion.durationMs).toBe(6000);
+    expect(motion.weight).toBe(1);
+    expect(motion.tags).toEqual(
+      expect.arrayContaining(["message", "pair", "interaction"]),
+    );
+    expect(motion.frames).toHaveLength(48);
+    expect(motion.frames[0]).toBe(
+      "pets/q-girl/frames/motion-message-pair/0001.png",
+    );
+    expect(motion.frames.at(-1)).toBe(
+      "pets/q-girl/frames/motion-message-pair/0048.png",
+    );
+
+    for (const frame of motion.frames) {
+      expect(frame.endsWith(".png")).toBe(true);
+      expect(bundledFrameUrls[`./${frame}`]).toBeTruthy();
+    }
+  });
+
   it("references only bundled PNG frame files", () => {
     for (const action of Object.values(builtInPetManifest.actions)) {
       for (const frame of action.frames) {

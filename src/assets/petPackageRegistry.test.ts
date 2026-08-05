@@ -44,7 +44,11 @@ describe("pet package registry", () => {
       builtIn.motions["act-typing"].weight,
     );
     expect(builtIn.motions["act-typing"].tags).toEqual(
-      expect.arrayContaining(["idle", "legacy-action", "act-typing"]),
+      expect.arrayContaining(["interaction", "legacy-action", "act-typing"]),
+    );
+    expect(builtIn.motions["act-typing"].tags).not.toContain("idle");
+    expect(builtIn.motions["motion-message-pair"].tags).toEqual(
+      expect.arrayContaining(["message", "pair", "interaction"]),
     );
   });
 
@@ -79,8 +83,9 @@ describe("pet package registry", () => {
       "asset://C:/pets/moon/frames/idle-breathe/0001.png",
     );
     expect(resolved?.motions["act-hug"].tags).toEqual(
-      expect.arrayContaining(["idle", "legacy-action", "act-hug"]),
+      expect.arrayContaining(["interaction", "legacy-action", "act-hug"]),
     );
+    expect(resolved?.motions["act-hug"].tags).not.toContain("idle");
   });
 
   it("builds a v3 imported motion-pool package with multiple motions and converted frame urls", () => {

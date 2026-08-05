@@ -1022,6 +1022,11 @@ export function App() {
       return;
     }
 
+    if (selectedPetPackage.motions[selection]) {
+      setVisibleMotion(selection);
+      return;
+    }
+
     if (settingsRef.current.bubblesEnabled) {
       setBubble(
         showBubble(placeholderInteractionMessage, { durationMs: 4000 }),

@@ -3,6 +3,7 @@ import {
   builtInPetManifest,
   getActionDefinition,
   type PetActionDefinition,
+  type PetMotionDefinition,
   type PetActionName,
 } from "./builtInPetManifest";
 import { readPetActionCategory } from "./petActionNames";
@@ -92,7 +93,10 @@ function buildBuiltInPackage(): ResolvedPetPackage {
     source: "built-in",
     scenes: builtInPetManifest.scenes,
     defaultMotionId: "idle-breathe",
-    motions: buildMotionsFromActions(actions),
+    motions: {
+      ...buildMotionsFromActions(actions),
+      ...buildBuiltInExtraMotions(builtInPetManifest.motions),
+    },
     actions,
   };
 }
@@ -209,7 +213,35 @@ function buildMotionsFromActions(
         durationMs: action.durationMs,
         frames: [...action.frames],
         weight: actionId.startsWith("idle-") ? 2 : 1,
-        tags: ["idle", "legacy-action", actionId],
+        tags: [
+          readPetActionCategory(actionId as PetActionName),
+          "legacy-action",
+          actionId,
+        ],
+      },
+    ]),
+  );
+}
+
+function buildBuiltInExtraMotions(
+  motions: Record<string, PetMotionDefinition>,
+): Record<string, ResolvedPetMotion> {
+  return Object.fromEntries(
+    Object.entries(motions).map(([motionId, motion]) => [
+      motionId,
+      {
+        id: motionId,
+        fps: motion.fps,
+        loop: motion.loop,
+        frameCount: motion.frameCount,
+        durationMs: motion.durationMs,
+        frames: motion.frames.flatMap((framePath) => {
+          const url = getBuiltInFrameAssetUrl(framePath);
+
+          return url ? [url] : [];
+        }),
+        weight: motion.weight,
+        tags: motion.tags,
       },
     ]),
   );

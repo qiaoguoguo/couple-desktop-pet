@@ -21,11 +21,17 @@ export function selectNextPetMotion({
     return defaultMotionId;
   }
 
+  const preferredEntries = entries.filter(
+    (motion) =>
+      motion.tags.includes("idle") || motion.tags.includes("ambient"),
+  );
+  const selectionEntries =
+    preferredEntries.length > 0 ? preferredEntries : entries;
   const lastMotion = history.at(-1);
   const candidates =
-    entries.length > 1
-      ? entries.filter((motion) => motion.id !== lastMotion)
-      : entries;
+    selectionEntries.length > 1
+      ? selectionEntries.filter((motion) => motion.id !== lastMotion)
+      : selectionEntries;
 
   return selectWeightedMotion(candidates, random)?.id ?? defaultMotionId;
 }

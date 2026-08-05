@@ -32,6 +32,16 @@ export interface PetActionDefinition {
   frames: readonly string[];
 }
 
+export interface PetMotionDefinition {
+  fps: number;
+  loop: boolean;
+  frameCount: number;
+  durationMs: number;
+  frames: readonly string[];
+  weight: number;
+  tags: readonly string[];
+}
+
 export interface PetInteractionActionOption {
   id: InteractionActionName;
   kind: "action";
@@ -53,6 +63,7 @@ export interface BuiltInPetManifest {
     height: number;
   };
   actions: Record<PetActionName, PetActionDefinition>;
+  motions: Record<string, PetMotionDefinition>;
   scenes: Record<string, PetPackageSceneManifest>;
 }
 
@@ -77,6 +88,13 @@ const frameSequence = (action: PetActionName) =>
       `pets/q-girl/frames/${action}/${String(index + 1).padStart(4, "0")}.png`,
   );
 
+const motionFrameSequence = (motionId: string, frameCount: number) =>
+  Array.from(
+    { length: frameCount },
+    (_, index) =>
+      `pets/q-girl/frames/${motionId}/${String(index + 1).padStart(4, "0")}.png`,
+  );
+
 const actionDefinition = (action: PetActionName): PetActionDefinition => ({
   fps: PET_ACTION_FPS,
   loop: isLoopingPetAction(action),
@@ -94,6 +112,17 @@ export const builtInPetManifest = {
   actions: Object.fromEntries(
     requiredPetActions.map((action) => [action, actionDefinition(action)]),
   ) as Record<PetActionName, PetActionDefinition>,
+  motions: {
+    "motion-message-pair": {
+      fps: 8,
+      loop: true,
+      frameCount: 48,
+      durationMs: 6000,
+      frames: motionFrameSequence("motion-message-pair", 48),
+      weight: 1,
+      tags: ["message", "pair", "interaction"],
+    },
+  },
   scenes: {
     "act-cute": {
       action: "act-cute",

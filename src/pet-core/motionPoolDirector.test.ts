@@ -33,6 +33,41 @@ describe("motionPoolDirector", () => {
     ).toBe("wave");
   });
 
+  it("prefers idle and ambient motions over message or interaction motions", () => {
+    expect(
+      selectNextPetMotion({
+        motions: {
+          idle: motion("idle", 1, ["idle"]),
+          "pair-message": motion("pair-message", 999, [
+            "message",
+            "pair",
+            "interaction",
+          ]),
+        },
+        defaultMotionId: "idle",
+        history: [],
+        random: () => 0.99,
+      }),
+    ).toBe("idle");
+  });
+
+  it("falls back to all usable motions when no idle or ambient motion exists", () => {
+    expect(
+      selectNextPetMotion({
+        motions: {
+          "pair-message": motion("pair-message", 1, [
+            "message",
+            "pair",
+            "interaction",
+          ]),
+        },
+        defaultMotionId: "pair-message",
+        history: [],
+        random: () => 0,
+      }),
+    ).toBe("pair-message");
+  });
+
   it("selects a motion by tag and falls back to null when no tag matches", () => {
     expect(selectMotionForTag(motions, "message", () => 0)).toBe("wave");
     expect(selectMotionForTag(motions, "comfort", () => 0)).toBeNull();

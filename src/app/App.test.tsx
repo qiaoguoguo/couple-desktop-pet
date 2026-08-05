@@ -808,11 +808,20 @@ describe("App", () => {
     expect(appSource).not.toContain("emitMessageComposerResult");
   });
 
-  it("shows a placeholder bubble for non-typing function buttons", async () => {
+  it("shows a placeholder bubble for non-typing function buttons without matching motions", async () => {
     vi.useFakeTimers();
+    const motionPackage = motionPoolPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
     render(<App />);
+    await flushAppEffects();
 
-    const petImage = screen.getByRole("img", { name: "Q 版小人" });
+    const petImage = screen.getByRole("img", { name: "动作池小人" });
 
     act(() => {
       fireEvent.click(petImage);
@@ -824,9 +833,67 @@ describe("App", () => {
     await advanceTypewriterText("功能开发中，先陪你待一会儿。");
 
     expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
-    expect(petImage.closest("[data-action]")?.getAttribute("data-action")).not.toBe(
+    expect(petImage.closest("[data-motion-id]")?.getAttribute("data-motion-id")).not.toBe(
       "act-cute",
     );
+  });
+
+  it("plays a matching motion for non-typing function buttons", async () => {
+    const motionPackage = motionPoolPackageSummary({
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-001/",
+          weight: 1,
+          tags: ["idle"],
+        },
+        "act-wave": {
+          fps: 5,
+          loop: false,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/act-wave/",
+          weight: 1,
+          tags: ["interaction"],
+        },
+      },
+      motionFramePaths: {
+        "motion-001": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
+        ],
+        "act-wave": [
+          "C:/app/pet-packages/motion-buddy/motions/act-wave/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/act-wave/0002.png",
+        ],
+      },
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    const petImage = screen.getByRole("img", { name: "动作池小人" });
+
+    fireEvent.click(petImage);
+    fireEvent.click(screen.getByRole("menuitem", { name: "打招呼" }));
+
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("act-wave");
+    expect(screen.queryByText("功能开发中，先陪你待一会儿。")).toBeNull();
   });
 
   it("ignores configured scene data for non-typing function buttons", async () => {
@@ -858,14 +925,12 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
 
-    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
-
-    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
+    expect(screen.queryByText("功能开发中，先陪你待一会儿。")).toBeNull();
     expect(screen.queryByText("挥挥手。")).toBeNull();
     const stage = screen
       .getByRole("img", { name: "月亮伙伴" })
       .closest("[data-action]");
-    expect(stage?.getAttribute("data-action")).toBe("idle-breathe");
+    expect(stage?.getAttribute("data-motion-id")).toBe("act-cute");
     expect(stage?.getAttribute("data-action")).not.toBe("act-wave");
   });
 
@@ -939,9 +1004,18 @@ describe("App", () => {
 
   it("refreshes the hide timer when the same bubble is shown again", async () => {
     vi.useFakeTimers();
+    const motionPackage = motionPoolPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
     render(<App />);
+    await flushAppEffects();
 
-    const petFrame = screen.getByRole("img", { name: "Q 版小人" });
+    const petFrame = screen.getByRole("img", { name: "动作池小人" });
 
     act(() => {
       fireEvent.click(petFrame);
@@ -1353,7 +1427,7 @@ describe("App", () => {
       name: "Q 版小人来访",
     }) as HTMLImageElement;
     expect(visitorImage.getAttribute("src")).toContain(
-      "/src/assets/pets/q-girl/frames/idle-breathe/0001.png",
+      "/src/assets/pets/q-girl/frames/motion-message-pair/0001.png",
     );
     await advanceTypewriterText("想你啦");
     expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
