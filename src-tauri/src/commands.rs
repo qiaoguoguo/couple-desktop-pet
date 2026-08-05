@@ -9,6 +9,7 @@ use tauri::{
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const MESSAGE_COMPOSER_WINDOW_LABEL: &str = "message-composer";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
@@ -121,6 +122,35 @@ pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Resu
         .set_position(position)
         .map_err(|error| format!("failed to restore main window from edge peek: {error}"))?;
     save_window_position(&app, position)
+}
+
+#[tauri::command]
+pub fn open_message_composer_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(MESSAGE_COMPOSER_WINDOW_LABEL) {
+        window
+            .show()
+            .map_err(|error| format!("failed to show message composer: {error}"))?;
+        return window
+            .set_focus()
+            .map_err(|error| format!("failed to focus message composer: {error}"));
+    }
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        MESSAGE_COMPOSER_WINDOW_LABEL,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("发送消息")
+    .inner_size(420.0, 240.0)
+    .center()
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .decorations(false)
+    .transparent(false)
+    .build()
+    .map(|_| ())
+    .map_err(|error| format!("failed to open message composer: {error}"))
 }
 
 #[tauri::command]
@@ -902,6 +932,11 @@ mod tests {
         let snap = calculate_edge_peek_snap(work_area, window);
 
         assert_eq!(snap, None);
+    }
+
+    #[test]
+    fn open_message_composer_uses_dedicated_window_label() {
+        assert_eq!(MESSAGE_COMPOSER_WINDOW_LABEL, "message-composer");
     }
 
     fn unique_settings_path(label: &str) -> PathBuf {

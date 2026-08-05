@@ -18,6 +18,7 @@ import {
   hideWindow,
   listenForOpenSettings,
   moveWindowForAutoStep,
+  openMessageComposerWindow,
   quitApp,
   readSettings as readDesktopSettings,
   resetWindowPosition,
@@ -45,6 +46,10 @@ import {
 import { SyncPanel } from "../sync/SyncPanel";
 import { useRealtimeSync } from "../sync/useRealtimeSync";
 import type { SessionMessage } from "../sync/syncTypes";
+import {
+  emitMessageComposerResult,
+  listenForMessageComposerSubmit,
+} from "../message/messageComposerEvents";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
 import {
   createInitialPetState,
@@ -856,7 +861,7 @@ export function App() {
         realtime.state.peerPresence !== "online"
       ) {
         setSyncError("对方当前不在线");
-        return;
+        return { ok: false as const, message: "对方当前不在线" };
       }
 
       const result = realtime.client?.sendMessage(text) ?? {
@@ -866,7 +871,7 @@ export function App() {
 
       if (!result.ok) {
         setSyncError(result.message);
-        return;
+        return { ok: false as const, message: result.message };
       }
 
       setSyncError(null);
@@ -885,9 +890,35 @@ export function App() {
           showBubble("消息已送出", { durationMs: sentMessageBubbleDurationMs }),
         );
       }
+
+      return { ok: true as const };
     },
     [realtime.client, realtime.state.peerPresence, realtime.state.status],
   );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForMessageComposerSubmit(async ({ text }) => {
+      const result = handleSendMessage(text);
+      await emitMessageComposerResult(result);
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+
+        unlisten = unsubscribe;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [handleSendMessage]);
 
   const handleRemoteMessageAcknowledge = useCallback((messageId: string) => {
     setRemoteMessages((current) =>
@@ -940,6 +971,18 @@ export function App() {
     setInteractionMenuPosition(null);
 
     if (selection === SEND_MESSAGE_INTERACTION_ID) {
+      const sendable =
+        settingsRef.current.sync.enabled &&
+        Boolean(settingsRef.current.sync.pairId) &&
+        realtime.state.status === "connected" &&
+        realtime.state.peerPresence === "online";
+
+      if (!sendable) {
+        setBubble(showBubble("对方在线后再发消息吧。", { durationMs: 5000 }));
+        return;
+      }
+
+      runDesktopCommand(openMessageComposerWindow);
       if (settingsRef.current.bubblesEnabled) {
         setBubble(showBubble("想说什么呢？", { durationMs: 3000 }));
       }
@@ -962,7 +1005,7 @@ export function App() {
         at: now,
       }),
     );
-  }, [selectedPetPackage]);
+  }, [realtime.state.peerPresence, realtime.state.status, selectedPetPackage]);
 
   const handlePetContextMenu = useCallback(
     (event: MouseEvent) => {

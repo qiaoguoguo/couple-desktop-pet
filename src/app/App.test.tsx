@@ -20,6 +20,7 @@ const windowCommandsMock = vi.hoisted(() => ({
   openSettingsHandler: undefined as (() => void) | undefined,
   openSettingsUnlisten: vi.fn(),
   moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
+  openMessageComposerWindow: vi.fn().mockResolvedValue(undefined),
   readSettings: vi.fn().mockResolvedValue({}),
   hideWindow: vi.fn().mockResolvedValue(undefined),
   quitApp: vi.fn().mockResolvedValue(undefined),
@@ -99,6 +100,18 @@ const relayHttpClientMock = vi.hoisted(() => {
   return mock;
 });
 
+const messageComposerEventsMock = vi.hoisted(() => ({
+  submitHandler: undefined as ((payload: { text: string }) => void) | undefined,
+  submitUnlisten: vi.fn(),
+  emitMessageComposerResult: vi.fn().mockResolvedValue(undefined),
+  listenForMessageComposerSubmit: vi.fn(
+    (handler: (payload: { text: string }) => void) => {
+      messageComposerEventsMock.submitHandler = handler;
+      return Promise.resolve(messageComposerEventsMock.submitUnlisten);
+    },
+  ),
+}));
+
 const petPackageCommandsMock = vi.hoisted(() => ({
   listPetPackages: vi.fn().mockResolvedValue([]),
   importPetPackage: vi.fn(),
@@ -116,6 +129,7 @@ vi.mock("../desktop/windowCommands", () => ({
   resetWindowPosition: windowCommandsMock.resetWindowPosition,
   restoreWindowFromEdgePeek: windowCommandsMock.restoreWindowFromEdgePeek,
   moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
+  openMessageComposerWindow: windowCommandsMock.openMessageComposerWindow,
   hideWindow: windowCommandsMock.hideWindow,
   quitApp: windowCommandsMock.quitApp,
   snapWindowToEdgeIfNeeded: windowCommandsMock.snapWindowToEdgeIfNeeded,
@@ -132,6 +146,12 @@ vi.mock("../sync/useRealtimeSync", () => ({
 
 vi.mock("../sync/relayHttpClient", () => ({
   RelayHttpClient: relayHttpClientMock.constructor,
+}));
+
+vi.mock("../message/messageComposerEvents", () => ({
+  emitMessageComposerResult: messageComposerEventsMock.emitMessageComposerResult,
+  listenForMessageComposerSubmit:
+    messageComposerEventsMock.listenForMessageComposerSubmit,
 }));
 
 vi.mock("../assets/petPackageCommands", () => ({
@@ -272,6 +292,14 @@ function readPixelVariable(element: HTMLElement, variableName: string) {
   return Number.parseFloat(element.style.getPropertyValue(variableName));
 }
 
+async function advanceTypewriterText(text: string) {
+  for (let index = 1; index < Array.from(text).length; index += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(35);
+    });
+  }
+}
+
 async function dragPetPastThresholdAndRelease(container: HTMLElement) {
   const petStage = container.querySelector(".pet-frame-stage");
 
@@ -290,6 +318,7 @@ describe("App", () => {
     windowCommandsMock.openSettingsHandler = undefined;
     windowCommandsMock.openSettingsUnlisten.mockClear();
     windowCommandsMock.moveWindowForAutoStep.mockClear();
+    windowCommandsMock.openMessageComposerWindow.mockClear();
     windowCommandsMock.readSettings.mockReset();
     windowCommandsMock.readSettings.mockResolvedValue({});
     windowCommandsMock.hideWindow.mockClear();
@@ -312,6 +341,10 @@ describe("App", () => {
     relayHttpClientMock.getPairCodeStatus.mockReset();
     relayHttpClientMock.unpair.mockReset();
     relayHttpClientMock.constructor.mockClear();
+    messageComposerEventsMock.submitHandler = undefined;
+    messageComposerEventsMock.submitUnlisten.mockClear();
+    messageComposerEventsMock.emitMessageComposerResult.mockClear();
+    messageComposerEventsMock.listenForMessageComposerSubmit.mockClear();
     petPackageCommandsMock.listPetPackages.mockReset();
     petPackageCommandsMock.listPetPackages.mockResolvedValue([]);
     petPackageCommandsMock.importPetPackage.mockReset();
@@ -430,6 +463,90 @@ describe("App", () => {
     });
   });
 
+  it("shows a pet bubble instead of opening the message composer when unpaired", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+
+    expect(windowCommandsMock.openMessageComposerWindow).not.toHaveBeenCalled();
+    expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
+  });
+
+  it("shows a pet bubble instead of opening the message composer when the peer is offline", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "offline";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+
+    expect(windowCommandsMock.openMessageComposerWindow).not.toHaveBeenCalled();
+    expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
+  });
+
+  it("opens the message composer from the pet interaction menu when the peer is online", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+
+    expect(windowCommandsMock.openMessageComposerWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends composer submissions through the realtime client and emits the result", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(
+        messageComposerEventsMock.listenForMessageComposerSubmit,
+      ).toHaveBeenCalled(),
+    );
+    await act(async () => {
+      messageComposerEventsMock.submitHandler?.({ text: "晚安" });
+      await Promise.resolve();
+    });
+
+    expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith("晚安");
+    expect(messageComposerEventsMock.emitMessageComposerResult).toHaveBeenCalledWith(
+      { ok: true },
+    );
+  });
+
   it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {
     vi.useFakeTimers();
     render(<App />);
@@ -447,6 +564,7 @@ describe("App", () => {
     act(() => {
       vi.advanceTimersByTime(1800);
     });
+    await advanceTypewriterText("陪我一会儿嘛。");
 
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
 
@@ -551,6 +669,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
     act(() => vi.advanceTimersByTime(1800));
+    await advanceTypewriterText("陪我一会儿嘛。");
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
 
     act(() => vi.advanceTimersByTime(1000));
@@ -559,6 +678,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
     act(() => vi.advanceTimersByTime(1800));
+    await advanceTypewriterText("陪我一会儿嘛。");
     act(() => vi.advanceTimersByTime(1000));
 
     expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
@@ -957,6 +1077,7 @@ describe("App", () => {
     expect(visitorImage.getAttribute("src")).toContain(
       "/src/assets/pets/q-girl/frames/act-wave/0001.png",
     );
+    await advanceTypewriterText("想你啦");
     expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
 
     act(() => vi.advanceTimersByTime(5000));
@@ -991,6 +1112,7 @@ describe("App", () => {
     });
 
     expect(screen.getByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
+    await advanceTypewriterText("摸摸头");
     fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
     await flushAppEffects();
     act(() => vi.advanceTimersByTime(799));
@@ -1078,6 +1200,7 @@ describe("App", () => {
     });
 
     const firstRemoteLayer = screen.getByLabelText("对方桌宠消息");
+    await advanceTypewriterText("第一条");
     expect(within(firstRemoteLayer).getByText("第一条")).toBeTruthy();
     expect(within(firstRemoteLayer).queryByText("第二条")).toBeNull();
 
@@ -1086,6 +1209,7 @@ describe("App", () => {
     act(() => vi.advanceTimersByTime(800));
 
     const secondRemoteLayer = screen.getByLabelText("对方桌宠消息");
+    await advanceTypewriterText("第二条");
     expect(within(secondRemoteLayer).queryByText("第一条")).toBeNull();
     expect(within(secondRemoteLayer).getByText("第二条")).toBeTruthy();
   });

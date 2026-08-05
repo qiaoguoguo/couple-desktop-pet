@@ -27,6 +27,7 @@ pub fn run() {
             commands::move_window_for_auto_step,
             commands::snap_window_to_edge_if_needed,
             commands::restore_window_from_edge_peek,
+            commands::open_message_composer_window,
             commands::show_window,
             commands::hide_window,
             commands::quit_app,
