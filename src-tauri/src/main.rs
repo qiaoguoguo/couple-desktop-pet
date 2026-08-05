@@ -25,6 +25,8 @@ pub fn run() {
             commands::set_click_through,
             commands::reset_window_position,
             commands::move_window_for_auto_step,
+            commands::snap_window_to_edge_if_needed,
+            commands::restore_window_from_edge_peek,
             commands::show_window,
             commands::hide_window,
             commands::quit_app,

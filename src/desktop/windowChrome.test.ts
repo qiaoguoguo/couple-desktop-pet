@@ -9,6 +9,7 @@ interface TauriConfig {
       transparent?: boolean;
       decorations?: boolean;
       shadow?: boolean;
+      skipTaskbar?: boolean;
     }>;
   };
 }
@@ -25,6 +26,15 @@ describe("desktop window chrome configuration", () => {
       decorations: false,
       shadow: false,
     });
+  });
+
+  it("keeps the main desktop pet window out of the taskbar", () => {
+    const tauriConfig = JSON.parse(tauriConfigRaw) as TauriConfig;
+    const mainWindow = tauriConfig.app.windows.find(
+      (windowConfig) => windowConfig.label === "main",
+    );
+
+    expect(mainWindow?.skipTaskbar).toBe(true);
   });
 
   it("uses the Windows GUI subsystem so direct exe launches do not open a console", () => {

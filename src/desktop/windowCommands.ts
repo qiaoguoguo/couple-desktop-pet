@@ -1,4 +1,5 @@
 import type { MovementRange, PetSettings } from "../settings/settingsTypes";
+import type { EdgePeekSide } from "./edgePeek";
 import {
   invokeCommand,
   listenToDesktopEvent,
@@ -30,6 +31,16 @@ export function moveWindowForAutoStep(
   movementRange: MovementRange,
 ): Promise<void> {
   return invokeCommand<void>("move_window_for_auto_step", { movementRange });
+}
+
+export function snapWindowToEdgeIfNeeded(): Promise<EdgePeekSide | null> {
+  return invokeCommand<EdgePeekSide | null>("snap_window_to_edge_if_needed");
+}
+
+export function restoreWindowFromEdgePeek(
+  side: EdgePeekSide,
+): Promise<void> {
+  return invokeCommand<void>("restore_window_from_edge_peek", { side });
 }
 
 export function showWindow(): Promise<void> {
