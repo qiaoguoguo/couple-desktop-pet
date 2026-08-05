@@ -30,9 +30,10 @@ describe("InteractionMenu", () => {
     );
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
-    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(7);
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "发消息" })).toBeTruthy();
   });
 
   it("renders Q sticker buttons with icon containers and stagger variables", () => {
@@ -73,5 +74,22 @@ describe("InteractionMenu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
 
     expect(onSelect).toHaveBeenCalledWith("act-cute");
+  });
+
+  it("selects the send message command via callback", () => {
+    const onSelect = vi.fn();
+    render(
+      <InteractionMenu
+        open
+        x={10}
+        y={20}
+        options={interactionOptions}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+
+    expect(onSelect).toHaveBeenCalledWith("send-message");
   });
 });

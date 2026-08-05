@@ -60,7 +60,11 @@ import {
   type SettingsPersistenceApi,
 } from "../settings/settingsStore";
 import type { PetSettings, SyncSettings } from "../settings/settingsTypes";
-import { interactionOptions } from "../assets/builtInPetManifest";
+import {
+  interactionOptions,
+  SEND_MESSAGE_INTERACTION_ID,
+  type InteractionCommandName,
+} from "../assets/builtInPetManifest";
 import {
   idleActionNames,
   type InteractionActionName,
@@ -895,15 +899,23 @@ export function App() {
     );
   }, [settingsOpen]);
 
-  const handleInteractionSelect = useCallback((action: InteractionActionName) => {
+  const handleInteractionSelect = useCallback((selection: InteractionActionName | InteractionCommandName) => {
+    setInteractionMenuPosition(null);
+
+    if (selection === SEND_MESSAGE_INTERACTION_ID) {
+      if (settingsRef.current.bubblesEnabled) {
+        setBubble(showBubble("想说什么呢？", { durationMs: 3000 }));
+      }
+      return;
+    }
+
     const now = Date.now();
     const scene = resolveMotionScene(
-      selectedPetPackage.scenes[action],
-      action,
-      selectedPetPackage.actions[action]?.durationMs ?? PET_ACTION_DURATION_MS,
+      selectedPetPackage.scenes[selection],
+      selection,
+      selectedPetPackage.actions[selection]?.durationMs ?? PET_ACTION_DURATION_MS,
     );
 
-    setInteractionMenuPosition(null);
     setActiveMotionScene(createMotionSceneRuntime(scene, now));
     setPetState((currentState) =>
       transitionPetState(currentState, {
