@@ -47,7 +47,6 @@ export function FramePetStage({
 }: FramePetStageProps) {
   const activePointerIdRef = useRef<number | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dragMovedRef = useRef(false);
   const draggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -101,7 +100,6 @@ export function FramePetStage({
 
       activePointerIdRef.current = null;
       pointerStartRef.current = null;
-      dragMovedRef.current = false;
       draggingRef.current = false;
 
       if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -122,7 +120,6 @@ export function FramePetStage({
 
       activePointerIdRef.current = event.pointerId;
       pointerStartRef.current = { x: event.clientX, y: event.clientY };
-      dragMovedRef.current = false;
       draggingRef.current = false;
       suppressNextClickRef.current = false;
 
@@ -142,8 +139,6 @@ export function FramePetStage({
       const deltaY = event.clientY - pointerStart.y;
 
       if (Math.hypot(deltaX, deltaY) > dragClickThresholdPx) {
-        dragMovedRef.current = true;
-
         if (!draggingRef.current) {
           draggingRef.current = true;
           onDragStart();

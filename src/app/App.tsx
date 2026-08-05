@@ -84,8 +84,9 @@ const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
 const contextMenuHeight = 148;
 const contextMenuMargin = 8;
-const interactionMenuWidth = 232;
-const interactionMenuHeight = 210;
+const interactionMenuHorizontalRadius = 128;
+const interactionMenuTopRadius = 148;
+const interactionMenuBottomRadius = 96;
 const pairCodePollIntervalMs = 2000;
 const remoteMessageDismissDelayMs = 800;
 const sentMessageBubbleDurationMs = 5000;
@@ -997,15 +998,17 @@ export function App() {
         />
       </section>
 
-      <button
-        className={settingsOpen ? "settings-toggle is-visible" : "settings-toggle is-hidden"}
-        type="button"
-        aria-expanded={settingsOpen}
-        aria-controls="settings-panel"
-        onClick={handleSettingsToggle}
-      >
-        设置
-      </button>
+      {settingsOpen ? (
+        <button
+          className="settings-toggle is-visible"
+          type="button"
+          aria-expanded={true}
+          aria-controls="settings-panel"
+          onClick={handleSettingsToggle}
+        >
+          设置
+        </button>
+      ) : null}
 
       <div id="settings-panel" className={settingsOpen ? "settings-dock" : "settings-dock is-hidden"}>
         <div className="settings-dock-header">
@@ -1106,17 +1109,35 @@ function clampMenuAxis(position: number, viewportSize: number, menuSize: number)
   return Math.min(Math.max(position, contextMenuMargin), max);
 }
 
+function clampCenterAxis(
+  position: number,
+  viewportSize: number,
+  beforeExtent: number,
+  afterExtent: number,
+) {
+  const min = beforeExtent + contextMenuMargin;
+  const max = viewportSize - afterExtent - contextMenuMargin;
+
+  if (min > max) {
+    return viewportSize / 2;
+  }
+
+  return Math.min(Math.max(position, min), max);
+}
+
 function getInteractionMenuPosition() {
   return {
-    x: clampMenuAxis(
+    x: clampCenterAxis(
       window.innerWidth / 2,
       window.innerWidth,
-      interactionMenuWidth,
+      interactionMenuHorizontalRadius,
+      interactionMenuHorizontalRadius,
     ),
-    y: clampMenuAxis(
+    y: clampCenterAxis(
       window.innerHeight / 2 + 28,
       window.innerHeight,
-      interactionMenuHeight,
+      interactionMenuTopRadius,
+      interactionMenuBottomRadius,
     ),
   };
 }

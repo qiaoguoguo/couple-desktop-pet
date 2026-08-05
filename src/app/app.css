@@ -532,6 +532,7 @@ body {
 
 .pet-interaction-button {
   position: absolute;
+  box-sizing: border-box;
   left: 0;
   top: 0;
   width: 68px;

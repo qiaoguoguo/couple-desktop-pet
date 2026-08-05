@@ -216,6 +216,48 @@ async function flushAppEffects() {
   });
 }
 
+async function openSettingsFromContextMenu() {
+  const surface = screen.getByRole("region", { name: "情侣桌宠 MVP" });
+
+  fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
+  fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+}
+
+async function withViewport<T>(
+  width: number,
+  height: number,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const previousWidth = window.innerWidth;
+  const previousHeight = window.innerHeight;
+
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: height,
+  });
+
+  try {
+    return await callback();
+  } finally {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: previousWidth,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: previousHeight,
+    });
+  }
+}
+
+function readPixelVariable(element: HTMLElement, variableName: string) {
+  return Number.parseFloat(element.style.getPropertyValue(variableName));
+}
+
 describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
@@ -260,7 +302,7 @@ describe("App", () => {
       await screen.findByRole("region", { name: "情侣桌宠 MVP" }),
     ).toBeTruthy();
     expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
   });
 
   it("falls back to the built-in pet package when selected imported package is missing", async () => {
@@ -275,18 +317,16 @@ describe("App", () => {
     expect(await screen.findByRole("img", { name: "Q 版小人" })).toBeTruthy();
   });
 
-  it("keeps the settings button visually hidden by default", async () => {
+  it("does not render the settings toggle by default", async () => {
     render(<App />);
 
-    const settingsButton = await screen.findByRole("button", { name: "设置" });
-
-    expect(settingsButton.className).toBe("settings-toggle is-hidden");
+    await screen.findByRole("region", { name: "情侣桌宠 MVP" });
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
   });
 
   it("does not reveal the settings button through shell hover or focus", async () => {
     const { container } = render(<App />);
 
-    const settingsButton = await screen.findByRole("button", { name: "设置" });
     const shell = container.querySelector(".app-shell");
 
     if (!shell) {
@@ -294,9 +334,9 @@ describe("App", () => {
     }
 
     fireEvent.mouseOver(shell);
-    fireEvent.focus(settingsButton);
+    fireEvent.focus(shell);
 
-    expect(settingsButton.className).toBe("settings-toggle is-hidden");
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
   });
 
   it("opens interaction options when clicking the pet", async () => {
@@ -323,6 +363,41 @@ describe("App", () => {
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+  });
+
+  it("keeps every radial interaction button inside a 320 by 360 window", async () => {
+    await withViewport(320, 360, async () => {
+      const { container } = render(<App />);
+      await screen.findByRole("img", { name: "Q 版小人" });
+      const petStage = container.querySelector(".pet-frame-stage");
+
+      if (!petStage) {
+        throw new Error("pet stage missing");
+      }
+
+      fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.click(petStage);
+
+      const menu = screen.getByRole("menu", { name: "互动选项" });
+      const centerX = Number.parseFloat(menu.style.left);
+      const centerY = Number.parseFloat(menu.style.top);
+      const halfButtonWidth = 34;
+      const halfButtonHeight = 31;
+
+      expect(centerX).toBe(160);
+      expect(centerY).toBe(208);
+
+      for (const button of screen.getAllByRole("menuitem") as HTMLElement[]) {
+        const offsetX = readPixelVariable(button, "--menu-x");
+        const offsetY = readPixelVariable(button, "--menu-y");
+
+        expect(centerX + offsetX - halfButtonWidth).toBeGreaterThanOrEqual(0);
+        expect(centerX + offsetX + halfButtonWidth).toBeLessThanOrEqual(320);
+        expect(centerY + offsetY - halfButtonHeight).toBeGreaterThanOrEqual(0);
+        expect(centerY + offsetY + halfButtonHeight).toBeLessThanOrEqual(360);
+      }
+    });
   });
 
   it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {
@@ -462,8 +537,7 @@ describe("App", () => {
   it("opens settings when the desktop open-settings event is received", async () => {
     render(<App />);
 
-    const settingsButton = screen.getByRole("button", { name: "设置" });
-    expect(settingsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
 
     await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
 
@@ -471,6 +545,7 @@ describe("App", () => {
       windowCommandsMock.openSettingsHandler?.();
     });
 
+    const settingsButton = screen.getByRole("button", { name: "设置" });
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
     expect(settingsButton.classList.contains("is-visible")).toBe(true);
   });
@@ -478,8 +553,8 @@ describe("App", () => {
   it("closes the settings panel from the panel header", async () => {
     render(<App />);
 
+    await openSettingsFromContextMenu();
     const settingsButton = screen.getByRole("button", { name: "设置" });
-    fireEvent.click(settingsButton);
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock",
@@ -487,7 +562,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
 
-    expect(settingsButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock is-hidden",
     );
@@ -502,7 +577,7 @@ describe("App", () => {
     dialogOpenMock.mockResolvedValueOnce("C:/Users/me/moon.cdpet");
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     fireEvent.click(screen.getByRole("button", { name: "导入形象资源包" }));
 
     await waitFor(() =>
@@ -527,7 +602,7 @@ describe("App", () => {
     ]);
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() =>
       expect(screen.getByRole("option", { name: "月亮伙伴" })).toBeTruthy(),
     );
@@ -550,7 +625,7 @@ describe("App", () => {
       .mockResolvedValueOnce([]);
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "删除月亮伙伴" })).toBeTruthy(),
     );
@@ -577,7 +652,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "删除月亮伙伴" })).toBeTruthy(),
     );
@@ -710,7 +785,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() => expect(screen.getByLabelText("对方形象")).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText("对方形象"), {
@@ -743,7 +818,7 @@ describe("App", () => {
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
   });
 
-  it("disables and persists click-through before opening settings from the button", async () => {
+  it("disables and persists click-through before opening settings from the context menu", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
     render(<App />);
 
@@ -756,9 +831,9 @@ describe("App", () => {
     windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.writeSettings.mockClear();
 
-    const settingsButton = screen.getByRole("button", { name: "设置" });
-    fireEvent.click(settingsButton);
+    await openSettingsFromContextMenu();
 
+    const settingsButton = screen.getByRole("button", { name: "设置" });
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
     expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
     expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
@@ -769,8 +844,8 @@ describe("App", () => {
   it("closes the settings panel before enabling click-through from settings", async () => {
     render(<App />);
 
+    await openSettingsFromContextMenu();
     const settingsButton = screen.getByRole("button", { name: "设置" });
-    fireEvent.click(settingsButton);
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
 
     windowCommandsMock.setClickThrough.mockClear();
@@ -778,7 +853,7 @@ describe("App", () => {
     fireEvent.click(screen.getByLabelText("点击穿透"));
 
     await waitFor(() =>
-      expect(settingsButton.getAttribute("aria-expanded")).toBe("false"),
+      expect(screen.queryByRole("button", { name: "设置" })).toBeNull(),
     );
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock is-hidden",
@@ -974,7 +1049,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() =>
       expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
         true,
@@ -1005,7 +1080,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() =>
       expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
         true,
@@ -1052,7 +1127,7 @@ describe("App", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
       true,
     );
@@ -1104,7 +1179,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
     windowCommandsMock.writeSettings.mockClear();
 
@@ -1148,7 +1223,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
     windowCommandsMock.writeSettings.mockClear();
 
@@ -1185,7 +1260,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
     windowCommandsMock.writeSettings.mockClear();
 
@@ -1210,7 +1285,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    await openSettingsFromContextMenu();
     await waitFor(() => expect(screen.getByText("已绑定")).toBeTruthy());
     windowCommandsMock.writeSettings.mockClear();
 
