@@ -554,9 +554,6 @@ fn validate_v3_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     if manifest.motions.is_empty() {
         return Err("v3 资源包至少需要一个 motion".to_string());
     }
-    if manifest.motions.len() != 1 {
-        return Err("v3 资源包仅支持一个 motion".to_string());
-    }
     let default_motion = manifest
         .default_motion
         .as_deref()
@@ -944,6 +941,34 @@ mod tests {
     }
 
     #[test]
+    fn imports_valid_v3_package_with_multiple_motions() {
+        let temp = unique_temp_dir("valid-v3-multiple-motions");
+        let source = temp.join("moon.cdpet");
+        let root = temp.join("packages");
+        let manifest = v3_test_manifest(
+            "moon-buddy",
+            "motion-001",
+            &[("motion-001", 30), ("motion-002", 2)],
+        );
+
+        write_test_package_with_manifest_and_motion_frames(
+            &source,
+            &manifest,
+            &[("motion-001", 30), ("motion-002", 2)],
+        );
+
+        let imported = import_pet_package_from_path(&source, &root).unwrap();
+
+        assert_eq!(imported.default_motion.as_deref(), Some("motion-001"));
+        assert_eq!(imported.motions["motion-001"].frame_count, 30);
+        assert_eq!(imported.motions["motion-002"].frame_count, 2);
+        assert_eq!(imported.motion_frame_paths["motion-001"].len(), 30);
+        assert_eq!(imported.motion_frame_paths["motion-002"].len(), 2);
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
     fn rejects_v3_package_when_default_motion_is_missing() {
         let temp = unique_temp_dir("v3-missing-default-motion");
         let source = temp.join("moon.cdpet");
@@ -990,15 +1015,6 @@ mod tests {
     #[test]
     fn rejects_v3_package_when_motion_contract_is_invalid() {
         for (case_name, manifest, expected_error) in [
-            (
-                "v3-too-many-motions",
-                v3_test_manifest(
-                    "moon-buddy",
-                    "motion-001",
-                    &[("motion-001", 30), ("motion-002", 30)],
-                ),
-                "v3 资源包仅支持一个 motion",
-            ),
             (
                 "v3-invalid-fps",
                 v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)])
