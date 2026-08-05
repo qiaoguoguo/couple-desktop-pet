@@ -838,6 +838,15 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    static MESSAGE_COMPOSER_SURFACE_TEST_LOCK: std::sync::Mutex<()> =
+        std::sync::Mutex::new(());
+
+    fn lock_message_composer_surface_state_for_test() -> std::sync::MutexGuard<'static, ()> {
+        MESSAGE_COMPOSER_SURFACE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn read_settings_from_path_returns_empty_object_for_invalid_json() {
         let settings_path = unique_settings_path("invalid-json");
@@ -1229,6 +1238,7 @@ mod tests {
 
     #[test]
     fn message_composer_surface_repeated_open_does_not_overwrite_saved_pet_geometry() {
+        let _guard = lock_message_composer_surface_state_for_test();
         let original_pet_window = TestWindowGeometry {
             x: 860,
             y: 420,
@@ -1255,6 +1265,7 @@ mod tests {
 
     #[test]
     fn message_composer_surface_close_failure_clears_saved_geometry() {
+        let _guard = lock_message_composer_surface_state_for_test();
         let original_pet_window = TestWindowGeometry {
             x: 860,
             y: 420,
