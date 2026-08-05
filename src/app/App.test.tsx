@@ -643,6 +643,87 @@ describe("App", () => {
     expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
   });
 
+  it("plays the local message tagged motion after sending a composer message", async () => {
+    const motionPackage = motionPoolPackageSummary({
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-001/",
+          weight: 1,
+          tags: ["idle"],
+        },
+        "motion-message": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-message/",
+          weight: 1,
+          tags: ["message"],
+        },
+      },
+      motionFramePaths: {
+        "motion-001": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
+        ],
+        "motion-message": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-message/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-message/0002.png",
+        ],
+      },
+    });
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-001");
+
+    fireEvent.click(screen.getByRole("img", { name: "动作池小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "晚安" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith("晚安");
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("img", { name: "动作池小人" })
+          .closest("[data-motion-id]")
+          ?.getAttribute("data-motion-id"),
+      ).toBe("motion-message"),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull(),
+    );
+  });
+
   it("keeps the composer panel open when sending fails", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";

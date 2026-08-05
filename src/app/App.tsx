@@ -72,7 +72,10 @@ import {
   type PetActionName,
 } from "../assets/petActionNames";
 import { selectNextIdleBehavior } from "../pet-core/idleBehaviorSelector";
-import { selectNextPetMotion } from "../pet-core/motionPoolDirector";
+import {
+  selectMotionForTag,
+  selectNextPetMotion,
+} from "../pet-core/motionPoolDirector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
 import {
   BUILT_IN_PET_PACKAGE_ID,
@@ -927,9 +930,24 @@ export function App() {
         );
       }
 
+      const messageMotionId = selectMotionForTag(
+        selectedPetPackage.motions,
+        "message",
+      );
+
+      if (messageMotionId) {
+        setVisibleMotion(messageMotionId);
+      }
+
       return { ok: true as const };
     },
-    [realtime.client, realtime.state.peerPresence, realtime.state.status],
+    [
+      realtime.client,
+      realtime.state.peerPresence,
+      realtime.state.status,
+      selectedPetPackage.motions,
+      setVisibleMotion,
+    ],
   );
 
   const handleRemoteMessageAcknowledge = useCallback((messageId: string) => {
