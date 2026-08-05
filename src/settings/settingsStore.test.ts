@@ -179,6 +179,18 @@ describe("mergeSettings", () => {
     expect(settings.sync.relayUrl).toBe("http://159.75.175.47:8787");
   });
 
+  it("migrates old disabled local sync settings to the enabled cloud relay", () => {
+    const settings = mergeSettings({
+      sync: {
+        enabled: false,
+        relayUrl: "http://127.0.0.1:8787",
+      } as never,
+    });
+
+    expect(settings.sync.enabled).toBe(true);
+    expect(settings.sync.relayUrl).toBe("http://159.75.175.47:8787");
+  });
+
   it("sanitizes invalid sync settings", () => {
     expect(
       mergeSettings({

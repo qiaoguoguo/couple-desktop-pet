@@ -535,7 +535,6 @@ fn calculate_edge_peek_snap(
     window: WindowGeometry,
 ) -> Option<EdgePeekSnap> {
     let window_width = window.width as i32;
-    let window_height = window.height as i32;
     let work_right = work_area.x + work_area.width as i32;
     let window_right = window.x + window_width;
 
@@ -543,7 +542,7 @@ fn calculate_edge_peek_snap(
         return Some(EdgePeekSnap {
             side: EdgePeekSide::Left,
             position: PhysicalPosition::new(
-                work_area.x - window_width / 2,
+                work_area.x,
                 clamp_axis(window.y, work_area.y, work_area.height, window.height),
             ),
         });
@@ -553,7 +552,7 @@ fn calculate_edge_peek_snap(
         return Some(EdgePeekSnap {
             side: EdgePeekSide::Right,
             position: PhysicalPosition::new(
-                work_right - window_width / 2,
+                work_right - window_width,
                 clamp_axis(window.y, work_area.y, work_area.height, window.height),
             ),
         });
@@ -564,7 +563,7 @@ fn calculate_edge_peek_snap(
             side: EdgePeekSide::Top,
             position: PhysicalPosition::new(
                 clamp_axis(window.x, work_area.x, work_area.width, window.width),
-                work_area.y - window_height / 2,
+                work_area.y,
             ),
         });
     }
@@ -837,7 +836,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-160, 240),
+                position: PhysicalPosition::new(0, 240),
             })
         );
     }
@@ -863,7 +862,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(1040, 240),
+                position: PhysicalPosition::new(880, 240),
             })
         );
     }
@@ -889,8 +888,47 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(440, -180),
+                position: PhysicalPosition::new(440, 0),
             })
+        );
+    }
+
+    #[test]
+    fn edge_peek_snap_keeps_window_inside_work_area_bounds() {
+        let work_area = TestWorkArea {
+            x: 100,
+            y: 80,
+            width: 1200,
+            height: 800,
+        };
+        let left_window = TestWindowGeometry {
+            x: 110,
+            y: 240,
+            width: 320,
+            height: 360,
+        };
+        let right_window = TestWindowGeometry {
+            x: 972,
+            y: 240,
+            width: 320,
+            height: 360,
+        };
+        let top_window = TestWindowGeometry {
+            x: 440,
+            y: 90,
+            width: 320,
+            height: 360,
+        };
+
+        let left_snap = calculate_edge_peek_snap(work_area, left_window).unwrap();
+        let right_snap = calculate_edge_peek_snap(work_area, right_window).unwrap();
+        let top_snap = calculate_edge_peek_snap(work_area, top_window).unwrap();
+
+        assert!(left_snap.position.x >= work_area.x);
+        assert!(top_snap.position.y >= work_area.y);
+        assert!(
+            right_snap.position.x + right_window.width as i32
+                <= work_area.x + work_area.width as i32
         );
     }
 

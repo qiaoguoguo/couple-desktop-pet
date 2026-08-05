@@ -45,10 +45,12 @@ const realtimeSyncMock = vi.hoisted(() => {
         }
       | undefined,
     client: {
-      sendMessage: vi.fn(() => ({
-        ok: true as const,
-        clientMessageId: "local_test",
-      })),
+      sendMessage: vi.fn(
+        (): { ok: true; clientMessageId: string } | { ok: false; message: string } => ({
+          ok: true,
+          clientMessageId: "local_test",
+        }),
+      ),
     },
     state: {
       status: "disabled" as
@@ -544,6 +546,40 @@ describe("App", () => {
     expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith("晚安");
     expect(messageComposerEventsMock.emitMessageComposerResult).toHaveBeenCalledWith(
       { ok: true },
+    );
+  });
+
+  it("emits a failed composer result when realtime sending fails", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    realtimeSyncMock.client.sendMessage.mockReturnValueOnce({
+      ok: false,
+      message: "发送失败",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(
+        messageComposerEventsMock.listenForMessageComposerSubmit,
+      ).toHaveBeenCalled(),
+    );
+    await act(async () => {
+      messageComposerEventsMock.submitHandler?.({ text: "晚安" });
+      await Promise.resolve();
+    });
+
+    expect(messageComposerEventsMock.emitMessageComposerResult).toHaveBeenCalledWith(
+      { ok: false, message: "发送失败" },
     );
   });
 

@@ -79,7 +79,7 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
   }
 
   return {
-    enabled: readBoolean(value.enabled, defaultSettings.sync.enabled),
+    enabled: true,
     relayUrl: normalizeRelayUrl(value.relayUrl),
     deviceId: readNullableString(value.deviceId),
     deviceSecret: readNullableString(value.deviceSecret),
