@@ -54,12 +54,6 @@ import {
   transitionPetState,
   type PetState,
 } from "../pet-core/petStateMachine";
-import {
-  createMotionSceneRuntime,
-  isMotionSceneComplete,
-  readDueBubbleCues,
-} from "../motion/motionScenePlayer";
-import type { MotionScene, MotionSceneRuntime } from "../motion/motionSceneTypes";
 import { FramePetStage } from "../renderer/FramePetStage";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import {
@@ -71,8 +65,6 @@ import {
 import type { PetSettings, SyncSettings } from "../settings/settingsTypes";
 import {
   interactionOptions,
-  SEND_MESSAGE_INTERACTION_ID,
-  type InteractionCommandName,
 } from "../assets/builtInPetManifest";
 import {
   idleActionNames,
@@ -96,6 +88,7 @@ import {
 import { AppearancePanel } from "../settings/AppearancePanel";
 
 const bubbleMessage = "我在这里。";
+const placeholderInteractionMessage = "功能开发中，先陪你待一会儿。";
 const contextMenuWidth = 132;
 const contextMenuHeight = 148;
 const contextMenuMargin = 8;
@@ -127,8 +120,6 @@ export function App() {
   >([]);
   const [petPackageError, setPetPackageError] = useState<string | null>(null);
   const [bubble, setBubble] = useState<BubbleState>(() => createHiddenBubble());
-  const [activeMotionScene, setActiveMotionScene] =
-    useState<MotionSceneRuntime | null>(null);
   const [remoteMessages, setRemoteMessages] = useState(() =>
     createEmptyRemoteMessageQueue(),
   );
@@ -549,28 +540,6 @@ export function App() {
     settings.autoMoveEnabled,
     settings.movementRange,
   ]);
-
-  useEffect(() => {
-    if (!activeMotionScene || activeMotionScene.scene.id === "remote-message") {
-      return;
-    }
-
-    const sceneTimer = window.setInterval(() => {
-      const now = Date.now();
-
-      for (const cue of readDueBubbleCues(activeMotionScene, now)) {
-        if (cue.text && settingsRef.current.bubblesEnabled) {
-          setBubble(showBubble(cue.text));
-        }
-      }
-
-      if (isMotionSceneComplete(activeMotionScene, now, false)) {
-        setActiveMotionScene(null);
-      }
-    }, 100);
-
-    return () => window.clearInterval(sceneTimer);
-  }, [activeMotionScene]);
 
   const handleSettingsChange = useCallback(
     (patch: Partial<PetSettings>) => {
@@ -1014,10 +983,10 @@ export function App() {
     settingsOpen,
   ]);
 
-  const handleInteractionSelect = useCallback((selection: InteractionActionName | InteractionCommandName) => {
+  const handleInteractionSelect = useCallback((selection: InteractionActionName) => {
     setInteractionMenuPosition(null);
 
-    if (selection === SEND_MESSAGE_INTERACTION_ID) {
+    if (selection === "act-typing") {
       const sendable =
         settingsRef.current.sync.enabled &&
         Boolean(settingsRef.current.sync.pairId) &&
@@ -1035,21 +1004,17 @@ export function App() {
       return;
     }
 
-    const now = Date.now();
-    const scene = resolveMotionScene(
-      selectedPetPackage.scenes[selection],
-      selection,
-      selectedPetPackage.actions[selection]?.durationMs ?? PET_ACTION_DURATION_MS,
-    );
+    if (settingsRef.current.bubblesEnabled) {
+      setBubble(
+        showBubble(placeholderInteractionMessage, { durationMs: 4000 }),
+      );
+    }
 
-    setVisibleMotionForAction(scene.action);
-    setActiveMotionScene(createMotionSceneRuntime(scene, now));
-    setPetState((currentState) =>
-      transitionPetState(currentState, {
-        type: "INTERACTION_SELECTED",
-        action: scene.action,
-        returnTo: scene.returnTo,
-        at: now,
+    setVisibleMotion(
+      selectNextPetMotion({
+        motions: selectedPetPackage.motions,
+        defaultMotionId: selectedPetPackage.defaultMotionId,
+        history: motionHistoryRef.current,
       }),
     );
   }, [
@@ -1057,7 +1022,7 @@ export function App() {
     realtime.state.peerPresence,
     realtime.state.status,
     selectedPetPackage,
-    setVisibleMotionForAction,
+    setVisibleMotion,
   ]);
 
   const closeMessageComposerPanel = useCallback(() => {
@@ -1347,44 +1312,6 @@ function getInteractionMenuPosition() {
       interactionMenuTopRadius,
       interactionMenuBottomRadius,
     ),
-  };
-}
-
-function resolveMotionScene(
-  scene:
-    | {
-        action: PetActionName;
-        bubbleCues: MotionScene["bubbleCues"];
-        returnTo: MotionScene["returnTo"];
-        waitForAcknowledge?: boolean;
-      }
-    | undefined,
-  fallbackAction: InteractionActionName,
-  durationMs: number,
-): MotionScene {
-  if (scene) {
-    return {
-      id: fallbackAction,
-      action: scene.action,
-      durationMs,
-      bubbleCues: scene.bubbleCues,
-      returnTo: scene.returnTo,
-      ...(scene.waitForAcknowledge === undefined
-        ? {}
-        : { waitForAcknowledge: scene.waitForAcknowledge }),
-    };
-  }
-
-  const option = interactionOptions.find(
-    (candidate) => candidate.id === fallbackAction,
-  );
-
-  return {
-    id: fallbackAction,
-    action: fallbackAction,
-    durationMs,
-    bubbleCues: option ? [{ atMs: 1800, text: option.bubble }] : [],
-    returnTo: "idle-breathe",
   };
 }
 

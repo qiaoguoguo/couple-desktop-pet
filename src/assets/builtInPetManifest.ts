@@ -32,9 +32,6 @@ export interface PetActionDefinition {
   frames: readonly string[];
 }
 
-export const SEND_MESSAGE_INTERACTION_ID = "send-message" as const;
-export type InteractionCommandName = typeof SEND_MESSAGE_INTERACTION_ID;
-
 export interface PetInteractionActionOption {
   id: InteractionActionName;
   kind: "action";
@@ -42,16 +39,7 @@ export interface PetInteractionActionOption {
   bubble: string;
 }
 
-export interface PetInteractionCommandOption {
-  id: InteractionCommandName;
-  kind: "command";
-  label: string;
-  bubble: string;
-}
-
-export type PetInteractionOption =
-  | PetInteractionActionOption
-  | PetInteractionCommandOption;
+export type PetInteractionOption = PetInteractionActionOption;
 
 export interface BuiltInPetManifest {
   id: string;
@@ -80,12 +68,6 @@ export const interactionOptions = [
   { id: "act-hug", kind: "action", label: "求抱抱", bubble: "可以抱一下吗？" },
   { id: "act-pout", kind: "action", label: "生气鼓脸", bubble: "哼，快哄我。" },
   { id: "act-drowsy", kind: "action", label: "困困打盹", bubble: "有点困啦。" },
-  {
-    id: SEND_MESSAGE_INTERACTION_ID,
-    kind: "command",
-    label: "发消息",
-    bubble: "想说什么呢？",
-  },
 ] as const satisfies readonly PetInteractionOption[];
 
 const frameSequence = (action: PetActionName) =>

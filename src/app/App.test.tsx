@@ -495,6 +495,16 @@ describe("App", () => {
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
   });
 
+  it("does not render a separate send message menu item", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+
+    expect(screen.queryByRole("menuitem", { name: "发消息" })).toBeNull();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
+    expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
+  });
+
   it("opens interaction options with one left click on the pet stage", async () => {
     const { container } = render(<App />);
     await screen.findByRole("img", { name: "Q 版小人" });
@@ -551,7 +561,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
@@ -573,13 +583,13 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
   });
 
-  it("opens an in-main-window message composer panel when the peer is online", async () => {
+  it("opens the message composer from the typing button when the peer is online", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -595,7 +605,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
@@ -618,7 +628,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "  晚安  " },
     });
@@ -653,7 +663,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "晚安" },
     });
@@ -684,7 +694,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
     await waitFor(() =>
@@ -695,7 +705,7 @@ describe("App", () => {
     expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
 
     fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
     fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Escape" });
 
     await waitFor(() =>
@@ -717,7 +727,7 @@ describe("App", () => {
     expect(appSource).not.toContain("emitMessageComposerResult");
   });
 
-  it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {
+  it("shows a placeholder bubble for non-typing function buttons", async () => {
     vi.useFakeTimers();
     render(<App />);
 
@@ -730,24 +740,15 @@ describe("App", () => {
 
     expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
     expect(screen.queryByText("陪我一会儿嘛。")).toBeNull();
+    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
 
-    act(() => {
-      vi.advanceTimersByTime(1800);
-    });
-    await advanceTypewriterText("陪我一会儿嘛。");
-
-    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
-
-    act(() => {
-      vi.advanceTimersByTime(4250);
-    });
-
-    expect(petImage.closest("[data-action]")?.getAttribute("data-action")).toBe(
-      "idle-breathe",
+    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
+    expect(petImage.closest("[data-action]")?.getAttribute("data-action")).not.toBe(
+      "act-cute",
     );
   });
 
-  it("plays the configured scene action and returns to the configured idle action", async () => {
+  it("ignores configured scene data for non-typing function buttons", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const scenicPackage = importedPackageSummary();
@@ -776,21 +777,15 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
 
-    const activeSceneStage = screen
+    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
+
+    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
+    expect(screen.queryByText("挥挥手。")).toBeNull();
+    const stage = screen
       .getByRole("img", { name: "月亮伙伴" })
       .closest("[data-action]");
-    expect(activeSceneStage?.getAttribute("data-action")).toBe("act-wave");
-    expect(activeSceneStage?.getAttribute("data-motion-id")).toBe("act-wave");
-
-    act(() => {
-      vi.advanceTimersByTime(6250);
-    });
-
-    const returnedStage = screen
-      .getByRole("img", { name: "月亮伙伴" })
-      .closest("[data-action]");
-    expect(returnedStage?.getAttribute("data-action")).toBe("idle-look");
-    expect(returnedStage?.getAttribute("data-motion-id")).toBe("idle-look");
+    expect(stage?.getAttribute("data-action")).toBe("idle-breathe");
+    expect(stage?.getAttribute("data-action")).not.toBe("act-wave");
   });
 
   it("selects the next idle segment from the active motion pool", async () => {
@@ -871,20 +866,18 @@ describe("App", () => {
       fireEvent.click(petFrame);
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
-    act(() => vi.advanceTimersByTime(1800));
-    await advanceTypewriterText("陪我一会儿嘛。");
-    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
+    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
+    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
 
     act(() => vi.advanceTimersByTime(1000));
     act(() => {
       fireEvent.click(petFrame);
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
-    act(() => vi.advanceTimersByTime(1800));
-    await advanceTypewriterText("陪我一会儿嘛。");
+    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
     act(() => vi.advanceTimersByTime(1000));
 
-    expect(screen.getByText("陪我一会儿嘛。").textContent).toBe("陪我一会儿嘛。");
+    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
   });
 
   it("opens settings when the desktop open-settings event is received", async () => {

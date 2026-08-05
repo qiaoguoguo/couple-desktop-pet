@@ -8,7 +8,6 @@ import {
   builtInPetManifest,
   idleActionNames,
   interactionOptions,
-  SEND_MESSAGE_INTERACTION_ID,
   type InteractionActionName,
   type PetActionName,
 } from "./builtInPetManifest";
@@ -48,12 +47,8 @@ describe("builtInPetManifest", () => {
     ]);
   });
 
-  it("defines single-click action options and the send message command", () => {
-    const actionOptions = interactionOptions.filter(
-      (option) => option.kind === "action",
-    );
-
-    expect(actionOptions.map((option) => option.id)).toEqual([
+  it("defines exactly six radial function buttons", () => {
+    expect(interactionOptions.map((option) => option.id)).toEqual([
       "act-cute",
       "act-typing",
       "act-wave",
@@ -61,7 +56,7 @@ describe("builtInPetManifest", () => {
       "act-pout",
       "act-drowsy",
     ] satisfies InteractionActionName[]);
-    expect(actionOptions.map((option) => option.label)).toEqual([
+    expect(interactionOptions.map((option) => option.label)).toEqual([
       "撒娇卖萌",
       "敲电脑",
       "打招呼",
@@ -69,21 +64,12 @@ describe("builtInPetManifest", () => {
       "生气鼓脸",
       "困困打盹",
     ]);
-    expect(interactionOptions).toContainEqual(
-      expect.objectContaining({
-        id: SEND_MESSAGE_INTERACTION_ID,
-        kind: "command",
-        label: "发消息",
-      }),
-    );
   });
 
   it("keeps every idle and interaction action at least five seconds long", () => {
     const longActionIds = [
       ...idleActionNames,
-      ...interactionOptions
-        .filter((option) => option.kind === "action")
-        .map((option) => option.id),
+      ...interactionOptions.map((option) => option.id),
     ];
 
     for (const actionId of longActionIds) {

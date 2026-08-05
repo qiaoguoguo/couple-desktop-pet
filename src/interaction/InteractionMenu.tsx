@@ -3,19 +3,12 @@ import actCuteIconUrl from "../assets/ui/interaction-buttons/act-cute.png";
 import actDrowsyIconUrl from "../assets/ui/interaction-buttons/act-drowsy.png";
 import actHugIconUrl from "../assets/ui/interaction-buttons/act-hug.png";
 import actPoutIconUrl from "../assets/ui/interaction-buttons/act-pout.png";
-import sendMessageIconUrl from "../assets/ui/interaction-buttons/send-message.png";
 import actTypingIconUrl from "../assets/ui/interaction-buttons/act-typing.png";
 import actWaveIconUrl from "../assets/ui/interaction-buttons/act-wave.png";
 import type { InteractionActionName } from "../assets/petActionNames";
-import {
-  SEND_MESSAGE_INTERACTION_ID,
-  type InteractionCommandName,
-  type PetInteractionOption,
-} from "../assets/builtInPetManifest";
+import type { PetInteractionOption } from "../assets/builtInPetManifest";
 
-export type InteractionMenuSelection =
-  | InteractionActionName
-  | InteractionCommandName;
+export type InteractionMenuSelection = InteractionActionName;
 
 interface InteractionMenuProps {
   open: boolean;
@@ -32,7 +25,6 @@ const optionIcons: Record<InteractionMenuSelection, string> = {
   "act-hug": actHugIconUrl,
   "act-pout": actPoutIconUrl,
   "act-drowsy": actDrowsyIconUrl,
-  [SEND_MESSAGE_INTERACTION_ID]: sendMessageIconUrl,
 };
 
 const optionPositions: Record<
@@ -45,7 +37,6 @@ const optionPositions: Record<
   "act-hug": { x: -92, y: -12 },
   "act-pout": { x: 92, y: -12 },
   "act-drowsy": { x: 0, y: 62 },
-  [SEND_MESSAGE_INTERACTION_ID]: { x: 0, y: 116 },
 };
 
 export function InteractionMenu({

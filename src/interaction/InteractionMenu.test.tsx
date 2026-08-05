@@ -18,7 +18,7 @@ describe("InteractionMenu", () => {
     expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
   });
 
-  it("renders all interaction choices when open", () => {
+  it("renders six function buttons without a separate send-message item", () => {
     render(
       <InteractionMenu
         open
@@ -30,10 +30,10 @@ describe("InteractionMenu", () => {
     );
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
-    expect(screen.getAllByRole("menuitem")).toHaveLength(7);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(6);
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "发消息" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "发消息" })).toBeNull();
   });
 
   it("renders Q sticker buttons with icon containers and stagger variables", () => {
@@ -76,7 +76,7 @@ describe("InteractionMenu", () => {
     expect(onSelect).toHaveBeenCalledWith("act-cute");
   });
 
-  it("selects the send message command via callback", () => {
+  it("selects the typing function via callback", () => {
     const onSelect = vi.fn();
     render(
       <InteractionMenu
@@ -88,8 +88,8 @@ describe("InteractionMenu", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
 
-    expect(onSelect).toHaveBeenCalledWith("send-message");
+    expect(onSelect).toHaveBeenCalledWith("act-typing");
   });
 });
