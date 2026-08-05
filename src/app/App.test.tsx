@@ -6,6 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PET_ACTION_DURATION_MS,
@@ -20,7 +22,8 @@ const windowCommandsMock = vi.hoisted(() => ({
   openSettingsHandler: undefined as (() => void) | undefined,
   openSettingsUnlisten: vi.fn(),
   moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
-  openMessageComposerWindow: vi.fn().mockResolvedValue(undefined),
+  openMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
+  closeMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
   readSettings: vi.fn().mockResolvedValue({}),
   hideWindow: vi.fn().mockResolvedValue(undefined),
   quitApp: vi.fn().mockResolvedValue(undefined),
@@ -102,18 +105,6 @@ const relayHttpClientMock = vi.hoisted(() => {
   return mock;
 });
 
-const messageComposerEventsMock = vi.hoisted(() => ({
-  submitHandler: undefined as ((payload: { text: string }) => void) | undefined,
-  submitUnlisten: vi.fn(),
-  emitMessageComposerResult: vi.fn().mockResolvedValue(undefined),
-  listenForMessageComposerSubmit: vi.fn(
-    (handler: (payload: { text: string }) => void) => {
-      messageComposerEventsMock.submitHandler = handler;
-      return Promise.resolve(messageComposerEventsMock.submitUnlisten);
-    },
-  ),
-}));
-
 const petPackageCommandsMock = vi.hoisted(() => ({
   listPetPackages: vi.fn().mockResolvedValue([]),
   importPetPackage: vi.fn(),
@@ -131,7 +122,8 @@ vi.mock("../desktop/windowCommands", () => ({
   resetWindowPosition: windowCommandsMock.resetWindowPosition,
   restoreWindowFromEdgePeek: windowCommandsMock.restoreWindowFromEdgePeek,
   moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
-  openMessageComposerWindow: windowCommandsMock.openMessageComposerWindow,
+  openMessageComposerSurface: windowCommandsMock.openMessageComposerSurface,
+  closeMessageComposerSurface: windowCommandsMock.closeMessageComposerSurface,
   hideWindow: windowCommandsMock.hideWindow,
   quitApp: windowCommandsMock.quitApp,
   snapWindowToEdgeIfNeeded: windowCommandsMock.snapWindowToEdgeIfNeeded,
@@ -148,12 +140,6 @@ vi.mock("../sync/useRealtimeSync", () => ({
 
 vi.mock("../sync/relayHttpClient", () => ({
   RelayHttpClient: relayHttpClientMock.constructor,
-}));
-
-vi.mock("../message/messageComposerEvents", () => ({
-  emitMessageComposerResult: messageComposerEventsMock.emitMessageComposerResult,
-  listenForMessageComposerSubmit:
-    messageComposerEventsMock.listenForMessageComposerSubmit,
 }));
 
 vi.mock("../assets/petPackageCommands", () => ({
@@ -320,7 +306,8 @@ describe("App", () => {
     windowCommandsMock.openSettingsHandler = undefined;
     windowCommandsMock.openSettingsUnlisten.mockClear();
     windowCommandsMock.moveWindowForAutoStep.mockClear();
-    windowCommandsMock.openMessageComposerWindow.mockClear();
+    windowCommandsMock.openMessageComposerSurface.mockClear();
+    windowCommandsMock.closeMessageComposerSurface.mockClear();
     windowCommandsMock.readSettings.mockReset();
     windowCommandsMock.readSettings.mockResolvedValue({});
     windowCommandsMock.hideWindow.mockClear();
@@ -343,10 +330,6 @@ describe("App", () => {
     relayHttpClientMock.getPairCodeStatus.mockReset();
     relayHttpClientMock.unpair.mockReset();
     relayHttpClientMock.constructor.mockClear();
-    messageComposerEventsMock.submitHandler = undefined;
-    messageComposerEventsMock.submitUnlisten.mockClear();
-    messageComposerEventsMock.emitMessageComposerResult.mockClear();
-    messageComposerEventsMock.listenForMessageComposerSubmit.mockClear();
     petPackageCommandsMock.listPetPackages.mockReset();
     petPackageCommandsMock.listPetPackages.mockResolvedValue([]);
     petPackageCommandsMock.importPetPackage.mockReset();
@@ -471,7 +454,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
-    expect(windowCommandsMock.openMessageComposerWindow).not.toHaveBeenCalled();
+    expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
   });
 
@@ -493,11 +476,11 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
-    expect(windowCommandsMock.openMessageComposerWindow).not.toHaveBeenCalled();
+    expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
   });
 
-  it("opens the message composer from the pet interaction menu when the peer is online", async () => {
+  it("opens an in-main-window message composer panel when the peer is online", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -515,10 +498,12 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
-    expect(windowCommandsMock.openMessageComposerWindow).toHaveBeenCalledTimes(1);
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
+    expect(screen.getByLabelText("消息内容")).toBeTruthy();
   });
 
-  it("sends composer submissions through the realtime client and emits the result", async () => {
+  it("sends composer panel text through the realtime client and restores the pet surface", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -533,23 +518,23 @@ describe("App", () => {
     });
     render(<App />);
 
-    await waitFor(() =>
-      expect(
-        messageComposerEventsMock.listenForMessageComposerSubmit,
-      ).toHaveBeenCalled(),
-    );
-    await act(async () => {
-      messageComposerEventsMock.submitHandler?.({ text: "晚安" });
-      await Promise.resolve();
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "  晚安  " },
     });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith("晚安");
-    expect(messageComposerEventsMock.emitMessageComposerResult).toHaveBeenCalledWith(
-      { ok: true },
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
     );
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
   });
 
-  it("emits a failed composer result when realtime sending fails", async () => {
+  it("keeps the composer panel open when sending fails", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     realtimeSyncMock.client.sendMessage.mockReturnValueOnce({
@@ -568,19 +553,69 @@ describe("App", () => {
     });
     render(<App />);
 
-    await waitFor(() =>
-      expect(
-        messageComposerEventsMock.listenForMessageComposerSubmit,
-      ).toHaveBeenCalled(),
-    );
-    await act(async () => {
-      messageComposerEventsMock.submitHandler?.({ text: "晚安" });
-      await Promise.resolve();
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.change(screen.getByLabelText("消息内容"), {
+      target: { value: "晚安" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(messageComposerEventsMock.emitMessageComposerResult).toHaveBeenCalledWith(
-      { ok: false, message: "发送失败" },
+    expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith("晚安");
+    await waitFor(() => expect(screen.getByText("发送失败")).toBeTruthy());
+    expect(windowCommandsMock.closeMessageComposerSurface).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("closes the composer panel with cancel and Escape", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
     );
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Escape" });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        2,
+      ),
+    );
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+  });
+
+  it("does not import the retired message composer window or event bridge", () => {
+    const appSource = readFileSync(
+      join(process.cwd(), "src", "app", "App.tsx"),
+      "utf8",
+    );
+
+    expect(appSource).not.toContain("openMessageComposerWindow");
+    expect(appSource).not.toContain("listenForMessageComposerSubmit");
+    expect(appSource).not.toContain("emitMessageComposerResult");
   });
 
   it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {

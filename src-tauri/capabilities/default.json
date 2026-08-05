@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the main desktop pet window.",
-  "windows": ["main", "message-composer"],
+  "windows": ["main"],
   "permissions": [
     "core:window:allow-start-dragging",
     "core:window:allow-close",

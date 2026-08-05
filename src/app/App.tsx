@@ -18,7 +18,8 @@ import {
   hideWindow,
   listenForOpenSettings,
   moveWindowForAutoStep,
-  openMessageComposerWindow,
+  closeMessageComposerSurface,
+  openMessageComposerSurface,
   quitApp,
   readSettings as readDesktopSettings,
   resetWindowPosition,
@@ -46,10 +47,7 @@ import {
 import { SyncPanel } from "../sync/SyncPanel";
 import { useRealtimeSync } from "../sync/useRealtimeSync";
 import type { SessionMessage } from "../sync/syncTypes";
-import {
-  emitMessageComposerResult,
-  listenForMessageComposerSubmit,
-} from "../message/messageComposerEvents";
+import { MessageComposerPanel } from "../message/MessageComposerPanel";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
 import {
   createInitialPetState,
@@ -131,6 +129,7 @@ export function App() {
     createEmptyRemoteMessageQueue(),
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [messageComposerOpen, setMessageComposerOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number;
     y: number;
@@ -896,30 +895,6 @@ export function App() {
     [realtime.client, realtime.state.peerPresence, realtime.state.status],
   );
 
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    void listenForMessageComposerSubmit(async ({ text }) => {
-      const result = handleSendMessage(text);
-      await emitMessageComposerResult(result);
-    })
-      .then((unsubscribe) => {
-        if (disposed) {
-          unsubscribe();
-          return;
-        }
-
-        unlisten = unsubscribe;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [handleSendMessage]);
-
   const handleRemoteMessageAcknowledge = useCallback((messageId: string) => {
     setRemoteMessages((current) =>
       markRemoteMessageHovered(current, messageId),
@@ -939,11 +914,15 @@ export function App() {
   }, [edgePeekSide]);
 
   const openInteractionMenu = useCallback(() => {
+    if (messageComposerOpen) {
+      return;
+    }
+
     setContextMenuPosition(null);
     setInteractionMenuPosition((current) =>
       current ? null : getInteractionMenuPosition(),
     );
-  }, []);
+  }, [messageComposerOpen]);
 
   const handlePetClick = useCallback(() => {
     if (settingsOpen) {
@@ -982,10 +961,9 @@ export function App() {
         return;
       }
 
-      runDesktopCommand(openMessageComposerWindow);
-      if (settingsRef.current.bubblesEnabled) {
-        setBubble(showBubble("想说什么呢？", { durationMs: 3000 }));
-      }
+      runDesktopCommand(openMessageComposerSurface);
+      setBubble(hideBubble(bubble));
+      setMessageComposerOpen(true);
       return;
     }
 
@@ -1005,7 +983,17 @@ export function App() {
         at: now,
       }),
     );
-  }, [realtime.state.peerPresence, realtime.state.status, selectedPetPackage]);
+  }, [bubble, realtime.state.peerPresence, realtime.state.status, selectedPetPackage]);
+
+  const closeMessageComposerPanel = useCallback(() => {
+    setMessageComposerOpen(false);
+    runDesktopCommand(closeMessageComposerSurface);
+  }, []);
+
+  const handleMessageComposerSubmit = useCallback(
+    (text: string) => handleSendMessage(text),
+    [handleSendMessage],
+  );
 
   const handlePetContextMenu = useCallback(
     (event: MouseEvent) => {
@@ -1133,6 +1121,12 @@ export function App() {
           peerPackage={activePeerPetPackage}
           onAcknowledge={handleRemoteMessageAcknowledge}
         />
+        {messageComposerOpen ? (
+          <MessageComposerPanel
+            onSubmit={handleMessageComposerSubmit}
+            onClose={closeMessageComposerPanel}
+          />
+        ) : null}
       </section>
 
       {settingsOpen ? (

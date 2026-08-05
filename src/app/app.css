@@ -671,13 +671,19 @@ body {
   }
 }
 
-.message-composer-shell {
-  min-height: 100vh;
+.message-composer-panel {
+  min-height: 100%;
   display: grid;
   place-items: center;
   box-sizing: border-box;
   padding: 12px;
   background: #fff7ec;
+}
+
+.message-composer-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
 }
 
 .message-composer-card {

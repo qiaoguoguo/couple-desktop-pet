@@ -1,23 +1,28 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewWindow, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, WebviewWindow,
+    WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
-const MESSAGE_COMPOSER_WINDOW_LABEL: &str = "message-composer";
-const MESSAGE_COMPOSER_WINDOW_URL: &str = "index.html#message-composer";
-const MESSAGE_COMPOSER_WINDOW_DECORATIONS: bool = true;
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
+const DEFAULT_WINDOW_WIDTH_PX: u32 = 320;
+const DEFAULT_WINDOW_HEIGHT_PX: u32 = 360;
+const MESSAGE_COMPOSER_SURFACE_WIDTH_PX: u32 = 440;
+const MESSAGE_COMPOSER_SURFACE_HEIGHT_PX: u32 = 260;
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
 const AUTO_MOVE_STEP_X_PX: i32 = 96;
 const AUTO_MOVE_STEP_Y_PX: i32 = 48;
 const EDGE_PEEK_TRIGGER_PX: i32 = 24;
+
+static MESSAGE_COMPOSER_SURFACE_STATE: Mutex<Option<WindowGeometry>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn ping() -> String {
@@ -127,32 +132,38 @@ pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Resu
 }
 
 #[tauri::command]
-pub fn open_message_composer_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window(MESSAGE_COMPOSER_WINDOW_LABEL) {
-        window
-            .show()
-            .map_err(|error| format!("failed to show message composer: {error}"))?;
-        return window
-            .set_focus()
-            .map_err(|error| format!("failed to focus message composer: {error}"));
+pub fn open_message_composer_surface(app: AppHandle) -> Result<(), String> {
+    let window = main_window(&app)?;
+    let (work_area, geometry) = read_current_window_geometry(&window, "message composer")?;
+    let surface = calculate_message_composer_surface_geometry(work_area, geometry);
+
+    set_saved_message_composer_surface(Some(surface.saved_pet_window))?;
+
+    if let Err(error) = apply_window_geometry(&window, surface.window)
+        .and_then(|_| show_main_window(&app))
+    {
+        let _ = set_saved_message_composer_surface(None);
+        return Err(error);
     }
 
-    tauri::WebviewWindowBuilder::new(
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_message_composer_surface(app: AppHandle) -> Result<(), String> {
+    let window = main_window(&app)?;
+    let (work_area, geometry) =
+        read_current_window_geometry(&window, "message composer restore")?;
+    let saved_geometry = saved_message_composer_surface()?;
+    let restore_geometry =
+        calculate_message_composer_restore_geometry(work_area, geometry, saved_geometry);
+
+    apply_window_geometry(&window, restore_geometry)?;
+    save_window_position(
         &app,
-        MESSAGE_COMPOSER_WINDOW_LABEL,
-        tauri::WebviewUrl::App(MESSAGE_COMPOSER_WINDOW_URL.into()),
-    )
-    .title("发送消息")
-    .inner_size(420.0, 240.0)
-    .center()
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(false)
-    .decorations(MESSAGE_COMPOSER_WINDOW_DECORATIONS)
-    .transparent(false)
-    .build()
-    .map(|_| ())
-    .map_err(|error| format!("failed to open message composer: {error}"))
+        PhysicalPosition::new(restore_geometry.x, restore_geometry.y),
+    )?;
+    set_saved_message_composer_surface(None)
 }
 
 #[tauri::command]
@@ -242,6 +253,10 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
 
     window.on_window_event(move |event| {
         if let WindowEvent::Moved(position) = event {
+            if is_message_composer_surface_open() {
+                return;
+            }
+
             let position = PhysicalPosition::new(position.x, position.y);
 
             if let Err(error) = save_window_position(&app_handle, position) {
@@ -256,6 +271,45 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
 fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     app.get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| format!("window `{MAIN_WINDOW_LABEL}` not found"))
+}
+
+fn apply_window_geometry<R: Runtime>(
+    window: &WebviewWindow<R>,
+    geometry: WindowGeometry,
+) -> Result<(), String> {
+    window
+        .set_size(Size::Physical(PhysicalSize::new(
+            geometry.width,
+            geometry.height,
+        )))
+        .map_err(|error| format!("failed to resize main window: {error}"))?;
+    window
+        .set_position(PhysicalPosition::new(geometry.x, geometry.y))
+        .map_err(|error| format!("failed to move main window: {error}"))
+}
+
+fn saved_message_composer_surface() -> Result<Option<WindowGeometry>, String> {
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map(|state| *state)
+        .map_err(|_| "failed to lock message composer surface state".to_string())
+}
+
+fn set_saved_message_composer_surface(
+    geometry: Option<WindowGeometry>,
+) -> Result<(), String> {
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map(|mut state| {
+            *state = geometry;
+        })
+        .map_err(|_| "failed to lock message composer surface state".to_string())
+}
+
+fn is_message_composer_surface_open() -> bool {
+    saved_message_composer_surface()
+        .map(|geometry| geometry.is_some())
+        .unwrap_or(false)
 }
 
 fn read_current_window_geometry<R: Runtime>(
@@ -431,12 +485,18 @@ struct WorkArea {
     height: u32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct WindowGeometry {
     x: i32,
     y: i32,
     width: u32,
     height: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MessageComposerSurfaceGeometry {
+    saved_pet_window: WindowGeometry,
+    window: WindowGeometry,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -531,6 +591,52 @@ fn clamp_saved_window_position(
             window.height,
         ),
     )
+}
+
+fn calculate_message_composer_surface_geometry(
+    work_area: WorkArea,
+    pet_window: WindowGeometry,
+) -> MessageComposerSurfaceGeometry {
+    MessageComposerSurfaceGeometry {
+        saved_pet_window: pet_window,
+        window: WindowGeometry {
+            x: centered_axis(
+                work_area.x,
+                work_area.width,
+                MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
+            ),
+            y: centered_axis(
+                work_area.y,
+                work_area.height,
+                MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
+            ),
+            width: MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
+            height: MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
+        },
+    }
+}
+
+fn calculate_message_composer_restore_geometry(
+    work_area: WorkArea,
+    current_window: WindowGeometry,
+    saved_pet_window: Option<WindowGeometry>,
+) -> WindowGeometry {
+    saved_pet_window.unwrap_or_else(|| WindowGeometry {
+        x: clamp_axis(
+            current_window.x,
+            work_area.x,
+            work_area.width,
+            DEFAULT_WINDOW_WIDTH_PX,
+        ),
+        y: clamp_axis(
+            current_window.y,
+            work_area.y,
+            work_area.height,
+            DEFAULT_WINDOW_HEIGHT_PX,
+        ),
+        width: DEFAULT_WINDOW_WIDTH_PX,
+        height: DEFAULT_WINDOW_HEIGHT_PX,
+    })
 }
 
 fn calculate_edge_peek_snap(
@@ -1031,19 +1137,57 @@ mod tests {
     }
 
     #[test]
-    fn open_message_composer_uses_dedicated_window_label() {
-        assert_eq!(MESSAGE_COMPOSER_WINDOW_LABEL, "message-composer");
+    fn message_composer_surface_centers_main_window_and_saves_pet_geometry() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(work_area, pet_window);
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.window.x, 380);
+        assert_eq!(surface.window.y, 270);
+        assert_eq!(surface.window.width, 440);
+        assert_eq!(surface.window.height, 260);
     }
 
     #[test]
-    fn open_message_composer_uses_explicit_hash_window_mode_url() {
-        assert_eq!(MESSAGE_COMPOSER_WINDOW_URL, "index.html#message-composer");
-        assert!(!MESSAGE_COMPOSER_WINDOW_URL.contains("?window="));
-    }
+    fn message_composer_surface_restore_uses_saved_pet_geometry_not_centered_geometry() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let saved_pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+        let current_composer_window = TestWindowGeometry {
+            x: 380,
+            y: 270,
+            width: 440,
+            height: 260,
+        };
 
-    #[test]
-    fn open_message_composer_keeps_native_close_fallback() {
-        assert!(MESSAGE_COMPOSER_WINDOW_DECORATIONS);
+        let restored = calculate_message_composer_restore_geometry(
+            work_area,
+            current_composer_window,
+            Some(saved_pet_window),
+        );
+
+        assert_eq!(restored, saved_pet_window);
     }
 
     #[test]

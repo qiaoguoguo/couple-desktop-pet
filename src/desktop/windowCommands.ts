@@ -43,8 +43,12 @@ export function restoreWindowFromEdgePeek(
   return invokeCommand<void>("restore_window_from_edge_peek", { side });
 }
 
-export function openMessageComposerWindow(): Promise<void> {
-  return invokeCommand<void>("open_message_composer_window");
+export function openMessageComposerSurface(): Promise<void> {
+  return invokeCommand<void>("open_message_composer_surface");
+}
+
+export function closeMessageComposerSurface(): Promise<void> {
+  return invokeCommand<void>("close_message_composer_surface");
 }
 
 export function showWindow(): Promise<void> {
