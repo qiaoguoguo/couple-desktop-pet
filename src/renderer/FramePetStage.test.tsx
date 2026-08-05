@@ -135,6 +135,18 @@ describe("FramePetStage runtime dependencies", () => {
 });
 
 describe("FramePetStage pointer interactions", () => {
+  it("opens pet click without starting or ending drag on a simple click", () => {
+    const { props, stage } = renderStage();
+
+    fireEvent.pointerDown(stage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(stage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.click(stage);
+
+    expect(props.onDragStart).not.toHaveBeenCalled();
+    expect(props.onDragEnd).not.toHaveBeenCalled();
+    expect(props.onPetClick).toHaveBeenCalledTimes(1);
+  });
+
   it("does not end dragging on ordinary hover leave", () => {
     const { props, stage } = renderStage();
 
@@ -144,14 +156,28 @@ describe("FramePetStage pointer interactions", () => {
     expect(props.onDragEnd).not.toHaveBeenCalled();
   });
 
-  it("ends dragging on leave only after pointer down", () => {
+  it("does not start or end dragging when pointer leaves before crossing the drag threshold", () => {
     const { props, stage } = renderStage();
 
     fireEvent.pointerDown(stage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerLeave(stage, { pointerId: 1 });
+    fireEvent.pointerLeave(stage, { pointerId: 1, clientX: 11, clientY: 11 });
 
+    expect(props.onDragStart).not.toHaveBeenCalled();
+    expect(props.onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("starts dragging only after pointer movement crosses the threshold", () => {
+    const { props, stage } = renderStage();
+
+    fireEvent.pointerDown(stage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(stage, { pointerId: 1, clientX: 12, clientY: 10 });
+    expect(props.onDragStart).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(stage, { pointerId: 1, clientX: 18, clientY: 10 });
     expect(props.onDragStart).toHaveBeenCalledTimes(1);
-    expect(props.onDragEnd).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerMove(stage, { pointerId: 1, clientX: 22, clientY: 10 });
+    expect(props.onDragStart).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses the click that follows a real drag", () => {
