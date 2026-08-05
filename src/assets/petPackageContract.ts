@@ -9,10 +9,17 @@ import {
 
 export const BUILT_IN_PET_PACKAGE_ID = "builtin:q-girl" as const;
 export const IMPORTED_PET_PACKAGE_PREFIX = "imported:" as const;
+export type PetPackageFormatVersion = 2 | 3;
 export const PET_FRAMES_PER_ACTION = 30;
 export const PET_ACTION_FPS = 5;
 export const PET_ACTION_DURATION_MS = 6000;
 export const REQUIRED_PET_ACTIONS = requiredPetActions;
+export const PET_MOTION_MIN_FRAMES = 1;
+export const PET_MOTION_MAX_FRAMES = 60;
+export const PET_MOTION_MIN_FPS = 1;
+export const PET_MOTION_MAX_FPS = 12;
+export const PET_MOTION_MIN_DURATION_MS = 3000;
+export const PET_MOTION_MAX_DURATION_MS = 12000;
 const REQUIRED_PET_SCENE_IDS = [
   ...interactionActionNames,
   "remote-message",
@@ -46,7 +53,7 @@ export interface PetPackageSceneManifest {
   waitForAcknowledge?: boolean;
 }
 
-export interface PetPackageManifest {
+export interface PetFixedActionPackageManifest {
   formatVersion: 2;
   renderer: "frame-sequence";
   id: string;
@@ -56,6 +63,31 @@ export interface PetPackageManifest {
   actions: Record<PetActionName, PetPackageActionManifest>;
   scenes: Record<string, PetPackageSceneManifest>;
 }
+
+export interface PetMotionManifest {
+  fps: number;
+  loop: boolean;
+  frameCount: number;
+  durationMs: number;
+  frames: string;
+  weight: number;
+  tags: readonly string[];
+}
+
+export interface PetMotionPoolManifest {
+  formatVersion: 3;
+  renderer: "motion-pool";
+  id: string;
+  name: string;
+  baseSize: PetPackageSize;
+  frameSize: PetPackageSize;
+  defaultMotion: string;
+  motions: Record<string, PetMotionManifest>;
+}
+
+export type PetPackageManifest =
+  | PetFixedActionPackageManifest
+  | PetMotionPoolManifest;
 
 export interface ImportedPetPackageSummary {
   id: string;
@@ -67,6 +99,10 @@ export interface ImportedPetPackageSummary {
   actions: Record<PetActionName, PetPackageActionManifest>;
   scenes: Record<string, PetPackageSceneManifest>;
   framePaths: Record<PetActionName, string[]>;
+}
+
+export interface ImportedPetMotionSummary extends PetMotionManifest {
+  framePaths: readonly string[];
 }
 
 export function toImportedPetPackageId(manifestId: string): string {
@@ -90,6 +126,14 @@ export function buildFrameFileName(index: number): string {
 export function readPetPackageManifest(
   input: unknown,
 ): PetPackageManifest | null {
+  return (
+    readFixedActionPackageManifest(input) ?? readPetMotionPoolManifest(input)
+  );
+}
+
+function readFixedActionPackageManifest(
+  input: unknown,
+): PetFixedActionPackageManifest | null {
   if (
     !isRecord(input) ||
     input.formatVersion !== 2 ||
@@ -121,7 +165,117 @@ export function readPetPackageManifest(
   };
 }
 
-function readActions(input: unknown): PetPackageManifest["actions"] | null {
+export function readPetMotionPoolManifest(
+  input: unknown,
+): PetMotionPoolManifest | null {
+  if (
+    !isRecord(input) ||
+    input.formatVersion !== 3 ||
+    input.renderer !== "motion-pool"
+  ) {
+    return null;
+  }
+
+  const id = readPackageId(input.id);
+  const name = readNonEmptyString(input.name);
+  const baseSize = readSize(input.baseSize);
+  const frameSize = readSize(input.frameSize);
+  const defaultMotion =
+    typeof input.defaultMotion === "string" ? input.defaultMotion : "";
+  const motions = readMotionManifests(input.motions);
+
+  if (
+    !id ||
+    !name ||
+    !baseSize ||
+    !frameSize ||
+    !isValidPetMotionId(defaultMotion) ||
+    !motions ||
+    !motions[defaultMotion]
+  ) {
+    return null;
+  }
+
+  return {
+    formatVersion: 3,
+    renderer: "motion-pool",
+    id,
+    name,
+    baseSize,
+    frameSize,
+    defaultMotion,
+    motions,
+  };
+}
+
+function readMotionManifests(
+  input: unknown,
+): Record<string, PetMotionManifest> | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const entries = Object.entries(input);
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const motions: Record<string, PetMotionManifest> = {};
+
+  for (const [motionId, value] of entries) {
+    if (!isValidPetMotionId(motionId) || !isRecord(value)) {
+      return null;
+    }
+
+    const fps = value.fps;
+    const loop = value.loop;
+    const frameCount = value.frameCount;
+    const durationMs = value.durationMs;
+    const frames = value.frames;
+    const weight = typeof value.weight === "number" ? value.weight : 1;
+    const tags = Array.isArray(value.tags)
+      ? value.tags.filter((tag): tag is string => typeof tag === "string")
+      : ["idle"];
+
+    if (
+      typeof fps !== "number" ||
+      fps < PET_MOTION_MIN_FPS ||
+      fps > PET_MOTION_MAX_FPS ||
+      typeof loop !== "boolean" ||
+      typeof frameCount !== "number" ||
+      frameCount < PET_MOTION_MIN_FRAMES ||
+      frameCount > PET_MOTION_MAX_FRAMES ||
+      typeof durationMs !== "number" ||
+      durationMs < PET_MOTION_MIN_DURATION_MS ||
+      durationMs > PET_MOTION_MAX_DURATION_MS ||
+      frames !== `motions/${motionId}/` ||
+      weight <= 0 ||
+      tags.length === 0
+    ) {
+      return null;
+    }
+
+    motions[motionId] = {
+      fps,
+      loop,
+      frameCount,
+      durationMs,
+      frames,
+      weight,
+      tags,
+    };
+  }
+
+  return motions;
+}
+
+export function isValidPetMotionId(value: string): boolean {
+  return /^[a-zA-Z0-9_-]{1,64}$/.test(value);
+}
+
+function readActions(
+  input: unknown,
+): PetFixedActionPackageManifest["actions"] | null {
   if (!isRecord(input)) {
     return null;
   }
@@ -160,10 +314,12 @@ function readActions(input: unknown): PetPackageManifest["actions"] | null {
 
   return Object.fromEntries(
     entries as Array<[PetActionName, PetPackageActionManifest]>,
-  ) as PetPackageManifest["actions"];
+  ) as PetFixedActionPackageManifest["actions"];
 }
 
-function readScenes(input: unknown): PetPackageManifest["scenes"] | null {
+function readScenes(
+  input: unknown,
+): PetFixedActionPackageManifest["scenes"] | null {
   if (!isRecord(input)) {
     return null;
   }

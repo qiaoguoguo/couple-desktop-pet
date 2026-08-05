@@ -5,6 +5,7 @@ import {
   PET_ACTION_FPS,
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
+  readPetMotionPoolManifest,
   readPetPackageManifest,
 } from "./petPackageContract";
 
@@ -95,6 +96,30 @@ function validManifest(): {
   };
 }
 
+function validMotionPoolManifest(overrides: Record<string, unknown> = {}) {
+  return {
+    formatVersion: 3,
+    renderer: "motion-pool",
+    id: "moon-buddy",
+    name: "月亮小人",
+    baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
+    defaultMotion: "motion-001",
+    motions: {
+      "motion-001": {
+        fps: 5,
+        loop: true,
+        frameCount: 30,
+        durationMs: 6000,
+        frames: "motions/motion-001/",
+        weight: 1,
+        tags: ["idle"],
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe("pet package v2 contract", () => {
   it("uses the q-girl package as the built-in default", () => {
     expect(BUILT_IN_PET_PACKAGE_ID).toBe("builtin:q-girl");
@@ -123,6 +148,10 @@ describe("pet package v2 contract", () => {
   it("reads a valid v2 manifest", () => {
     const manifest = readPetPackageManifest(validManifest());
     expect(manifest?.formatVersion).toBe(2);
+    if (!manifest || manifest.formatVersion !== 2) {
+      throw new Error("Expected a v2 frame-sequence manifest");
+    }
+
     expect(manifest?.renderer).toBe("frame-sequence");
     expect(manifest?.actions["act-cute"].frames).toBe("frames/act-cute/");
     expect(manifest?.actions["act-cute"].frameCount).toBe(30);
@@ -179,5 +208,99 @@ describe("pet package v2 contract", () => {
     ];
 
     expect(readPetPackageManifest(missingRemoteCue)).toBeNull();
+  });
+});
+
+describe("pet package v3 motion-pool contract", () => {
+  it("reads a valid v3 manifest with one motion", () => {
+    const manifest = readPetMotionPoolManifest({
+      formatVersion: 3,
+      renderer: "motion-pool",
+      id: "moon-buddy",
+      name: "月亮小人",
+      baseSize: { width: 256, height: 320 },
+      frameSize: { width: 768, height: 960 },
+      defaultMotion: "motion-001",
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 30,
+          durationMs: 6000,
+          frames: "motions/motion-001/",
+          weight: 2,
+          tags: ["idle"],
+        },
+      },
+    });
+
+    expect(manifest?.formatVersion).toBe(3);
+    expect(manifest?.renderer).toBe("motion-pool");
+    expect(manifest?.defaultMotion).toBe("motion-001");
+    expect(manifest?.motions["motion-001"].frameCount).toBe(30);
+  });
+
+  it("rejects a v3 manifest without a valid default motion", () => {
+    const manifest = validMotionPoolManifest({
+      defaultMotion: "missing-motion",
+    });
+
+    expect(readPetMotionPoolManifest(manifest)).toBeNull();
+  });
+
+  it("rejects a v3 motion when the frames directory does not match the motion id", () => {
+    const manifest = validMotionPoolManifest({
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 30,
+          durationMs: 6000,
+          frames: "motions/other-motion/",
+          weight: 1,
+          tags: ["idle"],
+        },
+      },
+    });
+
+    expect(readPetMotionPoolManifest(manifest)).toBeNull();
+  });
+
+  it("accepts v3 motion frame counts from 1 to 60", () => {
+    expect(
+      readPetMotionPoolManifest(
+        validMotionPoolManifest({
+          motions: {
+            "motion-001": {
+              fps: 5,
+              loop: true,
+              frameCount: 1,
+              durationMs: 3000,
+              frames: "motions/motion-001/",
+              weight: 1,
+              tags: ["idle"],
+            },
+          },
+        }),
+      )?.motions["motion-001"].frameCount,
+    ).toBe(1);
+
+    expect(
+      readPetMotionPoolManifest(
+        validMotionPoolManifest({
+          motions: {
+            "motion-001": {
+              fps: 5,
+              loop: true,
+              frameCount: 60,
+              durationMs: 12000,
+              frames: "motions/motion-001/",
+              weight: 1,
+              tags: ["idle"],
+            },
+          },
+        }),
+      )?.motions["motion-001"].frameCount,
+    ).toBe(60);
   });
 });
