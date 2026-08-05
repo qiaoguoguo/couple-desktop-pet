@@ -24,7 +24,9 @@ const windowCommandsMock = vi.hoisted(() => ({
   hideWindow: vi.fn().mockResolvedValue(undefined),
   quitApp: vi.fn().mockResolvedValue(undefined),
   resetWindowPosition: vi.fn().mockResolvedValue(undefined),
+  restoreWindowFromEdgePeek: vi.fn().mockResolvedValue(undefined),
   setClickThrough: vi.fn().mockResolvedValue(undefined),
+  snapWindowToEdgeIfNeeded: vi.fn().mockResolvedValue(null),
   startWindowDrag: vi.fn().mockResolvedValue(undefined),
   writeSettings: vi.fn().mockResolvedValue(undefined),
 }));
@@ -112,9 +114,11 @@ vi.mock("../desktop/windowCommands", () => ({
   setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   setClickThrough: windowCommandsMock.setClickThrough,
   resetWindowPosition: windowCommandsMock.resetWindowPosition,
+  restoreWindowFromEdgePeek: windowCommandsMock.restoreWindowFromEdgePeek,
   moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
   hideWindow: windowCommandsMock.hideWindow,
   quitApp: windowCommandsMock.quitApp,
+  snapWindowToEdgeIfNeeded: windowCommandsMock.snapWindowToEdgeIfNeeded,
   startWindowDrag: windowCommandsMock.startWindowDrag,
   listenForOpenSettings: vi.fn((handler: () => void) => {
     windowCommandsMock.openSettingsHandler = handler;
@@ -268,6 +272,19 @@ function readPixelVariable(element: HTMLElement, variableName: string) {
   return Number.parseFloat(element.style.getPropertyValue(variableName));
 }
 
+async function dragPetPastThresholdAndRelease(container: HTMLElement) {
+  const petStage = container.querySelector(".pet-frame-stage");
+
+  if (!petStage) {
+    throw new Error("pet stage missing");
+  }
+
+  fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
+  fireEvent.pointerMove(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
+  fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
+  await flushAppEffects();
+}
+
 describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
@@ -278,7 +295,10 @@ describe("App", () => {
     windowCommandsMock.hideWindow.mockClear();
     windowCommandsMock.quitApp.mockClear();
     windowCommandsMock.resetWindowPosition.mockClear();
+    windowCommandsMock.restoreWindowFromEdgePeek.mockClear();
     windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockReset();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValue(null);
     windowCommandsMock.startWindowDrag.mockClear();
     windowCommandsMock.writeSettings.mockClear();
     realtimeSyncMock.callbacks = undefined;
@@ -828,6 +848,30 @@ describe("App", () => {
 
     fireEvent.pointerMove(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters edge peek after drag end returns an edge side", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+
+    expect(await screen.findByAltText("桌宠半隐藏")).toBeTruthy();
+  });
+
+  it("restores from edge peek before opening the interaction menu", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    fireEvent.click(await screen.findByAltText("桌宠半隐藏"));
+
+    await waitFor(() =>
+      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+        "left",
+      ),
+    );
+    expect(await screen.findByRole("menu", { name: "互动选项" })).toBeTruthy();
   });
 
   it("disables and persists click-through before opening settings from the context menu", async () => {

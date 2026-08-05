@@ -10,12 +10,15 @@ import {
 } from "react";
 import type { PetActionName } from "../assets/petActionNames";
 import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
+import type { EdgePeekSide } from "../desktop/edgePeek";
 import { getFrameIndex } from "./animationPlayer";
 
 interface FramePetStageProps {
   action: PetActionName;
   scale: number;
   petPackage: ResolvedPetPackage;
+  edgePeekSide?: EdgePeekSide | null;
+  edgePeekImageUrl?: string | null;
   onPetClick(): void;
   onDragStart(): void;
   onDragEnd(): void;
@@ -41,6 +44,8 @@ export function FramePetStage({
   action,
   scale,
   petPackage,
+  edgePeekSide = null,
+  edgePeekImageUrl = null,
   onPetClick,
   onDragStart,
   onDragEnd,
@@ -86,6 +91,7 @@ export function FramePetStage({
 
   const showFallback = !currentFrameUrl || imageFailed;
   const stageStyle = { "--pet-scale": String(scale) } as CSSProperties;
+  const isEdgePeek = Boolean(edgePeekSide && edgePeekImageUrl);
   const finishDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (activePointerIdRef.current !== event.pointerId) {
@@ -96,6 +102,9 @@ export function FramePetStage({
 
       if (wasDragging) {
         suppressNextClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextClickRef.current = false;
+        }, 0);
       }
 
       activePointerIdRef.current = null;
@@ -163,9 +172,14 @@ export function FramePetStage({
 
   return (
     <div
-      className="pet-frame-stage"
+      className={
+        isEdgePeek
+          ? `pet-frame-stage is-edge-peek is-edge-${edgePeekSide}`
+          : "pet-frame-stage"
+      }
       data-action={action}
       data-pet-package-id={petPackage.id}
+      data-edge-peek-side={edgePeekSide ?? undefined}
       style={stageStyle}
       onClick={handleClick}
       onPointerDown={handlePointerDown}
@@ -174,7 +188,15 @@ export function FramePetStage({
       onPointerCancel={finishDrag}
       onPointerLeave={finishDrag}
     >
-      {currentFrameUrl && !imageFailed ? (
+      {isEdgePeek ? (
+        <img
+          className="pet-edge-peek-image"
+          src={edgePeekImageUrl ?? ""}
+          alt="桌宠半隐藏"
+          draggable={false}
+        />
+      ) : null}
+      {!isEdgePeek && currentFrameUrl && !imageFailed ? (
         <img
           className="pet-frame-image"
           src={currentFrameUrl}
@@ -183,7 +205,7 @@ export function FramePetStage({
           onError={() => setImageFailed(true)}
         />
       ) : null}
-      {showFallback ? (
+      {!isEdgePeek && showFallback ? (
         <div className="pet-dev-card pet-fallback-card" aria-label={`${petPackage.name}开发占位`}>
           <div className="pet-dev-face">
             <span>Q</span>

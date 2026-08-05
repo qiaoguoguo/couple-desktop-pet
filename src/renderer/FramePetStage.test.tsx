@@ -111,6 +111,26 @@ describe("FramePetStage DOM frame rendering", () => {
     expect(screen.getByLabelText("Q 版小人开发占位")).toBeTruthy();
   });
 
+  it("renders the edge peek image instead of animation frames", () => {
+    render(
+      <FramePetStage
+        action="idle-breathe"
+        scale={1}
+        petPackage={builtInPackage}
+        edgePeekSide="left"
+        edgePeekImageUrl="/edge-left.png"
+        onPetClick={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByAltText("桌宠半隐藏").getAttribute("src")).toBe(
+      "/edge-left.png",
+    );
+    expect(screen.queryByRole("img", { name: "Q 版小人" })).toBeNull();
+  });
+
   it("advances frame image URLs with the animation timer", () => {
     vi.useFakeTimers();
     renderStage();

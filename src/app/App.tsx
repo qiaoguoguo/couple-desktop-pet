@@ -21,11 +21,17 @@ import {
   quitApp,
   readSettings as readDesktopSettings,
   resetWindowPosition,
+  restoreWindowFromEdgePeek,
   setAlwaysOnTop,
   setClickThrough,
+  snapWindowToEdgeIfNeeded,
   startWindowDrag,
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
+import {
+  builtInEdgePeekImages,
+  type EdgePeekSide,
+} from "../desktop/edgePeek";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
 import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
@@ -128,6 +134,7 @@ export function App() {
     x: number;
     y: number;
   } | null>(null);
+  const [edgePeekSide, setEdgePeekSide] = useState<EdgePeekSide | null>(null);
   const [pairCode, setPairCode] = useState<{
     code: string;
     expiresAt: string;
@@ -888,16 +895,46 @@ export function App() {
     );
   }, []);
 
+  const restoreFromEdgePeekIfNeeded = useCallback(async () => {
+    const currentSide = edgePeekSide;
+
+    if (!currentSide) {
+      return false;
+    }
+
+    await restoreWindowFromEdgePeek(currentSide);
+    setEdgePeekSide(null);
+    return true;
+  }, [edgePeekSide]);
+
+  const openInteractionMenu = useCallback(() => {
+    setContextMenuPosition(null);
+    setInteractionMenuPosition((current) =>
+      current ? null : getInteractionMenuPosition(),
+    );
+  }, []);
+
   const handlePetClick = useCallback(() => {
     if (settingsOpen) {
       return;
     }
 
-    setContextMenuPosition(null);
-    setInteractionMenuPosition((current) =>
-      current ? null : getInteractionMenuPosition(),
-    );
-  }, [settingsOpen]);
+    if (edgePeekSide) {
+      void restoreFromEdgePeekIfNeeded()
+        .then(() => {
+          openInteractionMenu();
+        })
+        .catch(() => undefined);
+      return;
+    }
+
+    openInteractionMenu();
+  }, [
+    edgePeekSide,
+    openInteractionMenu,
+    restoreFromEdgePeekIfNeeded,
+    settingsOpen,
+  ]);
 
   const handleInteractionSelect = useCallback((selection: InteractionActionName | InteractionCommandName) => {
     setInteractionMenuPosition(null);
@@ -927,30 +964,71 @@ export function App() {
     );
   }, [selectedPetPackage]);
 
-  const handlePetContextMenu = useCallback((event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
+  const handlePetContextMenu = useCallback(
+    (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-    setInteractionMenuPosition(null);
-    setContextMenuPosition({
-      x: clampMenuAxis(event.clientX, window.innerWidth, contextMenuWidth),
-      y: clampMenuAxis(event.clientY, window.innerHeight, contextMenuHeight),
-    });
-  }, []);
+      const nextPosition = {
+        x: clampMenuAxis(event.clientX, window.innerWidth, contextMenuWidth),
+        y: clampMenuAxis(event.clientY, window.innerHeight, contextMenuHeight),
+      };
+
+      function openContextMenu() {
+        setInteractionMenuPosition(null);
+        setContextMenuPosition(nextPosition);
+      }
+
+      if (edgePeekSide) {
+        void restoreFromEdgePeekIfNeeded()
+          .then(() => {
+            openContextMenu();
+          })
+          .catch(() => undefined);
+        return;
+      }
+
+      openContextMenu();
+    },
+    [edgePeekSide, restoreFromEdgePeekIfNeeded],
+  );
 
   const handleDragStart = useCallback(() => {
     setInteractionMenuPosition(null);
     setContextMenuPosition(null);
-    runDesktopCommand(startWindowDrag);
-    setPetState((currentState) =>
-      transitionPetState(currentState, { type: "DRAG_STARTED", at: Date.now() }),
-    );
-  }, []);
+    const startDrag = () => {
+      runDesktopCommand(startWindowDrag);
+      setPetState((currentState) =>
+        transitionPetState(currentState, {
+          type: "DRAG_STARTED",
+          at: Date.now(),
+        }),
+      );
+    };
+
+    if (edgePeekSide) {
+      void restoreFromEdgePeekIfNeeded()
+        .then(() => {
+          startDrag();
+        })
+        .catch(() => undefined);
+      return;
+    }
+
+    startDrag();
+  }, [edgePeekSide, restoreFromEdgePeekIfNeeded]);
 
   const handleDragEnd = useCallback(() => {
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
     );
+    void snapWindowToEdgeIfNeeded()
+      .then((side) => {
+        if (side) {
+          setEdgePeekSide(side);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   const handleResetPosition = useCallback(() => {
@@ -999,6 +1077,10 @@ export function App() {
           action={petState.action}
           scale={settings.scale}
           petPackage={selectedPetPackage}
+          edgePeekSide={edgePeekSide}
+          edgePeekImageUrl={
+            edgePeekSide ? builtInEdgePeekImages[edgePeekSide] : null
+          }
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
