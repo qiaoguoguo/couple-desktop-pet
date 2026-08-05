@@ -8,6 +8,7 @@ import {
 } from "../assets/petPackageContract";
 import {
   buildPetPackageRegistry,
+  type ResolvedPetMotion,
   type ResolvedPetPackage,
 } from "../assets/petPackageRegistry";
 import { builtInEdgePeekImages, isEdgePeekSide } from "../desktop/edgePeek";
@@ -16,6 +17,7 @@ import framePetStageSource from "./FramePetStage.tsx?raw";
 
 const builtInPackage = buildPetPackageRegistry([], (path) => `asset://${path}`)[0];
 
+const importedActionsRecord = createImportedActions();
 const importedPackage: ResolvedPetPackage = {
   id: "imported:moon-buddy",
   name: "月亮伙伴",
@@ -23,9 +25,9 @@ const importedPackage: ResolvedPetPackage = {
   frameSize: { width: 768, height: 960 },
   previewUrl: "asset://moon/preview.png",
   source: "imported",
-  actions: createImportedActions(),
+  actions: importedActionsRecord,
   defaultMotionId: "idle-breathe",
-  motions: {} as ResolvedPetPackage["motions"],
+  motions: createImportedMotions(importedActionsRecord),
   scenes: {},
 };
 
@@ -58,9 +60,30 @@ function createImportedActions(): Record<PetActionName, PetActionDefinition> {
   return actions;
 }
 
+function createImportedMotions(
+  actions: Record<PetActionName, PetActionDefinition>,
+): Record<string, ResolvedPetMotion> {
+  return Object.fromEntries(
+    Object.entries(actions).map(([action, definition]) => [
+      action,
+      {
+        id: action,
+        fps: definition.fps,
+        loop: definition.loop,
+        frameCount: definition.frameCount,
+        durationMs: definition.durationMs,
+        frames: [...definition.frames],
+        weight: action.startsWith("idle-") ? 2 : 1,
+        tags: ["idle", "legacy-action", action],
+      },
+    ]),
+  );
+}
+
 function renderStage(petPackage = builtInPackage) {
   const props = {
     action: "idle-breathe" as const,
+    motion: petPackage.motions["idle-breathe"],
     scale: 1,
     petPackage,
     onPetClick: vi.fn(),
@@ -84,10 +107,11 @@ describe("FramePetStage DOM frame rendering", () => {
   });
 
   it("renders the generated pet frame image instead of the fallback when a frame URL exists", () => {
-    renderStage();
+    const { stage } = renderStage();
 
     const frameImage = screen.getByRole("img", { name: "Q 版小人" });
 
+    expect(stage.getAttribute("data-motion-id")).toBe("idle-breathe");
     expect(frameImage.getAttribute("src")).toContain(
       "pets/q-girl/frames/idle-breathe/0001.png",
     );
@@ -100,6 +124,7 @@ describe("FramePetStage DOM frame rendering", () => {
     const frameImage = screen.getByRole("img", { name: "月亮伙伴" });
 
     expect(stage.getAttribute("data-pet-package-id")).toBe("imported:moon-buddy");
+    expect(stage.getAttribute("data-motion-id")).toBe("idle-breathe");
     expect(frameImage.getAttribute("src")).toBe(
       "asset://moon/idle-breathe/0001.png",
     );
@@ -114,12 +139,59 @@ describe("FramePetStage DOM frame rendering", () => {
     expect(screen.getByLabelText("Q 版小人开发占位")).toBeTruthy();
   });
 
+  it("renders from the supplied motion while preserving the legacy action", () => {
+    const actionFrames = createImportedActions();
+    actionFrames["idle-breathe"] = {
+      ...actionFrames["idle-breathe"],
+      frames: ["legacy://idle-breathe.png"],
+    };
+    const motion: ResolvedPetMotion = {
+      id: "motion-001",
+      fps: 5,
+      loop: true,
+      frameCount: 2,
+      durationMs: 6000,
+      frames: [
+        "asset://moon/motions/motion-001/0001.png",
+        "asset://moon/motions/motion-001/0002.png",
+      ],
+      weight: 1,
+      tags: ["idle"],
+    };
+    const motionOnlyPackage: ResolvedPetPackage = {
+      ...importedPackage,
+      actions: actionFrames,
+      defaultMotionId: motion.id,
+      motions: { [motion.id]: motion },
+    };
+
+    const view = render(
+      <FramePetStage
+        action="idle-breathe"
+        motion={motion}
+        scale={1}
+        petPackage={motionOnlyPackage}
+        onPetClick={vi.fn()}
+        onDragStart={vi.fn()}
+        onDragEnd={vi.fn()}
+      />,
+    );
+    const stage = view.container.querySelector(".pet-frame-stage");
+
+    expect(stage?.getAttribute("data-action")).toBe("idle-breathe");
+    expect(stage?.getAttribute("data-motion-id")).toBe("motion-001");
+    expect(
+      screen.getByRole("img", { name: "月亮伙伴" }).getAttribute("src"),
+    ).toBe("asset://moon/motions/motion-001/0001.png");
+  });
+
   it.each(["left", "right", "top", "bottom"] as const)(
     "renders %s edge peek image without applying the normal pet scale",
     (side) => {
       render(
         <FramePetStage
           action="idle-breathe"
+          motion={builtInPackage.motions["idle-breathe"]}
           scale={0.7}
           petPackage={builtInPackage}
           edgePeekSide={side}
@@ -152,6 +224,7 @@ describe("FramePetStage DOM frame rendering", () => {
     render(
       <FramePetStage
         action="idle-breathe"
+        motion={builtInPackage.motions["idle-breathe"]}
         scale={1}
         petPackage={builtInPackage}
         edgePeekSide="left"

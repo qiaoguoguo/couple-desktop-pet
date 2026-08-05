@@ -80,6 +80,7 @@ import {
   type PetActionName,
 } from "../assets/petActionNames";
 import { selectNextIdleBehavior } from "../pet-core/idleBehaviorSelector";
+import { selectNextPetMotion } from "../pet-core/motionPoolDirector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
 import {
   BUILT_IN_PET_PACKAGE_ID,
@@ -89,6 +90,7 @@ import {
 import { createPetPackageCommands } from "../assets/petPackageCommands";
 import {
   buildPetPackageRegistry,
+  getDefaultPetMotion,
   resolveSelectedPetPackage,
 } from "../assets/petPackageRegistry";
 import { AppearancePanel } from "../settings/AppearancePanel";
@@ -116,8 +118,10 @@ export function App() {
   const [petState, setPetState] = useState<PetState>(() =>
     createInitialPetState(Date.now()),
   );
+  const [activeMotionId, setActiveMotionId] = useState<string | null>(null);
   const [settings, setSettings] = useState<PetSettings>(() => mergeSettings({}));
   const settingsRef = useRef(settings);
+  const motionHistoryRef = useRef<string[]>([]);
   const [importedPetPackages, setImportedPetPackages] = useState<
     ImportedPetPackageSummary[]
   >([]);
@@ -194,6 +198,13 @@ export function App() {
       ),
     [petPackages, settings.appearance.selectedPetPackageId],
   );
+  const activeMotion = useMemo(
+    () =>
+      selectedPetPackage.motions[
+        activeMotionId ?? selectedPetPackage.defaultMotionId
+      ] ?? getDefaultPetMotion(selectedPetPackage),
+    [activeMotionId, selectedPetPackage],
+  );
   const activeRemoteMessage = remoteMessages.active;
   const activePeerPetPackage = useMemo(() => {
     if (!activeRemoteMessage) {
@@ -223,6 +234,35 @@ export function App() {
     setImportedPetPackages(packages);
     return packages;
   }, [petPackageApi]);
+
+  const setVisibleMotion = useCallback(
+    (motionId: string) => {
+      if (!selectedPetPackage.motions[motionId]) {
+        return;
+      }
+
+      setActiveMotionId(motionId);
+      motionHistoryRef.current = [
+        ...motionHistoryRef.current.slice(-7),
+        motionId,
+      ];
+    },
+    [selectedPetPackage.motions],
+  );
+
+  const setVisibleMotionForAction = useCallback(
+    (action: PetActionName) => {
+      setVisibleMotion(action);
+    },
+    [setVisibleMotion],
+  );
+
+  useEffect(() => {
+    const defaultMotion = getDefaultPetMotion(selectedPetPackage);
+
+    setActiveMotionId(defaultMotion.id);
+    motionHistoryRef.current = [defaultMotion.id];
+  }, [selectedPetPackage.id, selectedPetPackage]);
 
   useEffect(() => {
     let disposed = false;
@@ -436,6 +476,7 @@ export function App() {
     const schedulerTimer = window.setInterval(() => {
       setPetState((currentState) => {
         const currentActionDurationMs =
+          activeMotion.durationMs ??
           selectedPetPackage.actions[currentState.action]?.durationMs ??
           PET_ACTION_DURATION_MS;
         const event = getNextScheduledEvent(
@@ -450,10 +491,22 @@ export function App() {
         }
 
         if (event.type === "AUTO_MOVE_TICK") {
+          setVisibleMotionForAction("walk");
           runDesktopCommand(() => moveWindowForAutoStep(settings.movementRange));
         }
 
+        if (event.type === "IDLE_TIMEOUT") {
+          setVisibleMotionForAction("sleep");
+        }
+
         if (event.type === "IDLE_ANIMATION_FINISHED") {
+          const nextMotionId = selectNextPetMotion({
+            motions: selectedPetPackage.motions,
+            defaultMotionId: selectedPetPackage.defaultMotionId,
+            history: motionHistoryRef.current,
+          });
+          setVisibleMotion(nextMotionId);
+
           const nextBehavior = selectNextIdleBehavior({
             history: currentState.idleHistory,
             idleActions: idleActionNames,
@@ -461,6 +514,7 @@ export function App() {
           });
 
           if (nextBehavior.source === "ambient-interaction") {
+            setVisibleMotionForAction(nextBehavior.action);
             return transitionPetState(currentState, {
               type: "AMBIENT_INTERACTION_SELECTED",
               action: nextBehavior.action,
@@ -475,12 +529,26 @@ export function App() {
           });
         }
 
+        if (
+          event.type === "ANIMATION_FINISHED" &&
+          (currentState.name === "interacting" || currentState.name === "walking")
+        ) {
+          setVisibleMotionForAction(currentState.returnTo ?? "idle-breathe");
+        }
+
         return transitionPetState(currentState, event);
       });
     }, 250);
 
     return () => window.clearInterval(schedulerTimer);
-  }, [selectedPetPackage, settings.autoMoveEnabled, settings.movementRange]);
+  }, [
+    activeMotion.durationMs,
+    selectedPetPackage,
+    setVisibleMotion,
+    setVisibleMotionForAction,
+    settings.autoMoveEnabled,
+    settings.movementRange,
+  ]);
 
   useEffect(() => {
     if (!activeMotionScene || activeMotionScene.scene.id === "remote-message") {
@@ -974,6 +1042,7 @@ export function App() {
       selectedPetPackage.actions[selection]?.durationMs ?? PET_ACTION_DURATION_MS,
     );
 
+    setVisibleMotionForAction(scene.action);
     setActiveMotionScene(createMotionSceneRuntime(scene, now));
     setPetState((currentState) =>
       transitionPetState(currentState, {
@@ -983,7 +1052,13 @@ export function App() {
         at: now,
       }),
     );
-  }, [bubble, realtime.state.peerPresence, realtime.state.status, selectedPetPackage]);
+  }, [
+    bubble,
+    realtime.state.peerPresence,
+    realtime.state.status,
+    selectedPetPackage,
+    setVisibleMotionForAction,
+  ]);
 
   const closeMessageComposerPanel = useCallback(() => {
     setMessageComposerOpen(false);
@@ -1029,6 +1104,7 @@ export function App() {
     setContextMenuPosition(null);
     const startDrag = () => {
       runDesktopCommand(startWindowDrag);
+      setVisibleMotionForAction("drag");
       setPetState((currentState) =>
         transitionPetState(currentState, {
           type: "DRAG_STARTED",
@@ -1047,9 +1123,10 @@ export function App() {
     }
 
     startDrag();
-  }, [edgePeekSide, restoreFromEdgePeekIfNeeded]);
+  }, [edgePeekSide, restoreFromEdgePeekIfNeeded, setVisibleMotionForAction]);
 
   const handleDragEnd = useCallback(() => {
+    setVisibleMotionForAction("idle-breathe");
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
     );
@@ -1060,7 +1137,7 @@ export function App() {
         }
       })
       .catch(() => undefined);
-  }, []);
+  }, [setVisibleMotionForAction]);
 
   const handleResetPosition = useCallback(() => {
     runDesktopCommand(resetWindowPosition);
@@ -1106,6 +1183,7 @@ export function App() {
         <BubbleLayer message={bubble.message} visible={bubble.visible} />
         <FramePetStage
           action={petState.action}
+          motion={activeMotion}
           scale={settings.scale}
           petPackage={selectedPetPackage}
           edgePeekSide={edgePeekSide}

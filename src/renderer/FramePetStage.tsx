@@ -9,12 +9,16 @@ import {
   type PointerEvent,
 } from "react";
 import type { PetActionName } from "../assets/petActionNames";
-import type { ResolvedPetPackage } from "../assets/petPackageRegistry";
+import type {
+  ResolvedPetMotion,
+  ResolvedPetPackage,
+} from "../assets/petPackageRegistry";
 import type { EdgePeekSide } from "../desktop/edgePeek";
 import { getFrameIndex } from "./animationPlayer";
 
 interface FramePetStageProps {
   action: PetActionName;
+  motion: ResolvedPetMotion;
   scale: number;
   petPackage: ResolvedPetPackage;
   edgePeekSide?: EdgePeekSide | null;
@@ -42,6 +46,7 @@ const dragClickThresholdPx = 4;
 
 export function FramePetStage({
   action,
+  motion,
   scale,
   petPackage,
   edgePeekSide = null,
@@ -56,26 +61,25 @@ export function FramePetStage({
   const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
-  const actionDefinition = petPackage.actions[action];
 
   const currentFrameUrl = useMemo(() => {
-    if (!actionDefinition.frames.length) {
+    if (!motion.frames.length) {
       return null;
     }
 
     const frameIndex = getFrameIndex(
       elapsedMs,
-      actionDefinition.frames.length,
-      actionDefinition.fps,
-      actionDefinition.loop,
+      motion.frames.length,
+      motion.fps,
+      motion.loop,
     );
 
-    return actionDefinition.frames[frameIndex] ?? null;
-  }, [actionDefinition, elapsedMs]);
+    return motion.frames[frameIndex] ?? null;
+  }, [elapsedMs, motion]);
 
   useEffect(() => {
     setElapsedMs(0);
-  }, [action, petPackage.id]);
+  }, [motion.id, petPackage.id]);
 
   useEffect(() => {
     const frameTimer = window.setInterval(() => {
@@ -180,6 +184,7 @@ export function FramePetStage({
           : "pet-frame-stage"
       }
       data-action={action}
+      data-motion-id={motion.id}
       data-pet-package-id={petPackage.id}
       data-edge-peek-side={edgePeekSide ?? undefined}
       style={stageStyle}
@@ -212,7 +217,7 @@ export function FramePetStage({
           <div className="pet-dev-face">
             <span>Q</span>
           </div>
-          <p>{actionLabels[action]}</p>
+          <p>{motion.id || actionLabels[action]}</p>
         </div>
       ) : null}
     </div>

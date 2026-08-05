@@ -247,6 +247,56 @@ function importedMotions(
   );
 }
 
+function motionPoolPackageSummary(
+  overrides: Partial<ImportedPetPackageSummary> = {},
+): ImportedPetPackageSummary {
+  return {
+    id: "imported:motion-buddy",
+    manifestId: "motion-buddy",
+    formatVersion: 3,
+    renderer: "motion-pool",
+    name: "动作池小人",
+    baseSize: { width: 256, height: 320 },
+    frameSize: { width: 768, height: 960 },
+    previewPath: "C:/app/pet-packages/motion-buddy/preview.png",
+    actions: {} as ImportedPetPackageSummary["actions"],
+    scenes: {},
+    framePaths: {} as ImportedPetPackageSummary["framePaths"],
+    defaultMotion: "motion-001",
+    motions: {
+      "motion-001": {
+        fps: 5,
+        loop: true,
+        frameCount: 2,
+        durationMs: 1000,
+        frames: "motions/motion-001/",
+        weight: 1,
+        tags: ["idle"],
+      },
+      "motion-002": {
+        fps: 5,
+        loop: true,
+        frameCount: 2,
+        durationMs: 1000,
+        frames: "motions/motion-002/",
+        weight: 1,
+        tags: ["idle"],
+      },
+    },
+    motionFramePaths: {
+      "motion-001": [
+        "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
+        "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
+      ],
+      "motion-002": [
+        "C:/app/pet-packages/motion-buddy/motions/motion-002/0001.png",
+        "C:/app/pet-packages/motion-buddy/motions/motion-002/0002.png",
+      ],
+    },
+    ...overrides,
+  };
+}
+
 async function flushAppEffects() {
   await act(async () => {
     await Promise.resolve();
@@ -390,6 +440,28 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("img", { name: "Q 版小人" })).toBeTruthy();
+  });
+
+  it("renders an imported v3 package from its default motion frames", async () => {
+    const motionPackage = motionPoolPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    const frameImage = screen.getByRole("img", { name: "动作池小人" });
+    const stage = frameImage.closest("[data-motion-id]");
+
+    expect(stage?.getAttribute("data-action")).toBe("idle-breathe");
+    expect(stage?.getAttribute("data-motion-id")).toBe("motion-001");
+    expect(frameImage.getAttribute("src")).toContain(
+      "motions/motion-001/0001.png",
+    );
   });
 
   it("does not render the settings toggle by default", async () => {
@@ -704,30 +776,63 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
 
-    expect(
-      screen
-        .getByRole("img", { name: "月亮伙伴" })
-        .closest("[data-action]")
-        ?.getAttribute("data-action"),
-    ).toBe("act-wave");
+    const activeSceneStage = screen
+      .getByRole("img", { name: "月亮伙伴" })
+      .closest("[data-action]");
+    expect(activeSceneStage?.getAttribute("data-action")).toBe("act-wave");
+    expect(activeSceneStage?.getAttribute("data-motion-id")).toBe("act-wave");
 
     act(() => {
       vi.advanceTimersByTime(6250);
     });
 
+    const returnedStage = screen
+      .getByRole("img", { name: "月亮伙伴" })
+      .closest("[data-action]");
+    expect(returnedStage?.getAttribute("data-action")).toBe("idle-look");
+    expect(returnedStage?.getAttribute("data-motion-id")).toBe("idle-look");
+  });
+
+  it("selects the next idle segment from the active motion pool", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const motionPackage = motionPoolPackageSummary();
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    const frameImage = screen.getByRole("img", { name: "动作池小人" });
+    expect(
+      frameImage.closest("[data-motion-id]")?.getAttribute("data-motion-id"),
+    ).toBe("motion-001");
+
+    act(() => {
+      vi.advanceTimersByTime(1250);
+    });
+    await flushAppEffects();
+
     expect(
       screen
-        .getByRole("img", { name: "月亮伙伴" })
-        .closest("[data-action]")
-        ?.getAttribute("data-action"),
-    ).toBe("idle-look");
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-002");
   });
 
   it("plays an ambient interaction during idle without showing a bubble", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const randomSpy = vi.spyOn(Math, "random");
-    randomSpy.mockReturnValueOnce(0.01).mockReturnValueOnce(0.01);
+    randomSpy
+      .mockReturnValueOnce(0.01)
+      .mockReturnValueOnce(0.01)
+      .mockReturnValueOnce(0.01);
     render(<App />);
     await flushAppEffects();
 
