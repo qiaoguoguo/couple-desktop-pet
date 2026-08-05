@@ -134,10 +134,16 @@ pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Resu
 #[tauri::command]
 pub fn open_message_composer_surface(app: AppHandle) -> Result<(), String> {
     let window = main_window(&app)?;
+    if is_message_composer_surface_open() {
+        return show_main_window(&app);
+    }
+
     let (work_area, geometry) = read_current_window_geometry(&window, "message composer")?;
     let surface = calculate_message_composer_surface_geometry(work_area, geometry);
 
-    set_saved_message_composer_surface(Some(surface.saved_pet_window))?;
+    if !save_message_composer_surface_if_absent(surface.saved_pet_window)? {
+        return show_main_window(&app);
+    }
 
     if let Err(error) = apply_window_geometry(&window, surface.window)
         .and_then(|_| show_main_window(&app))
@@ -151,19 +157,22 @@ pub fn open_message_composer_surface(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn close_message_composer_surface(app: AppHandle) -> Result<(), String> {
-    let window = main_window(&app)?;
-    let (work_area, geometry) =
-        read_current_window_geometry(&window, "message composer restore")?;
-    let saved_geometry = saved_message_composer_surface()?;
-    let restore_geometry =
-        calculate_message_composer_restore_geometry(work_area, geometry, saved_geometry);
+    let close_result = (|| {
+        let window = main_window(&app)?;
+        let (work_area, geometry) =
+            read_current_window_geometry(&window, "message composer restore")?;
+        let saved_geometry = saved_message_composer_surface()?;
+        let restore_geometry =
+            calculate_message_composer_restore_geometry(work_area, geometry, saved_geometry);
 
-    apply_window_geometry(&window, restore_geometry)?;
-    save_window_position(
-        &app,
-        PhysicalPosition::new(restore_geometry.x, restore_geometry.y),
-    )?;
-    set_saved_message_composer_surface(None)
+        apply_window_geometry(&window, restore_geometry)?;
+        save_window_position(
+            &app,
+            PhysicalPosition::new(restore_geometry.x, restore_geometry.y),
+        )
+    })();
+
+    clear_message_composer_surface_after_close(close_result)
 }
 
 #[tauri::command]
@@ -304,6 +313,34 @@ fn set_saved_message_composer_surface(
             *state = geometry;
         })
         .map_err(|_| "failed to lock message composer surface state".to_string())
+}
+
+fn save_message_composer_surface_if_absent(
+    geometry: WindowGeometry,
+) -> Result<bool, String> {
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map(|mut state| {
+            if state.is_some() {
+                return false;
+            }
+
+            *state = Some(geometry);
+            true
+        })
+        .map_err(|_| "failed to lock message composer surface state".to_string())
+}
+
+fn clear_message_composer_surface_after_close(
+    close_result: Result<(), String>,
+) -> Result<(), String> {
+    let clear_result = set_saved_message_composer_surface(None);
+
+    match (close_result, clear_result) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 fn is_message_composer_surface_open() -> bool {
@@ -1188,6 +1225,51 @@ mod tests {
         );
 
         assert_eq!(restored, saved_pet_window);
+    }
+
+    #[test]
+    fn message_composer_surface_repeated_open_does_not_overwrite_saved_pet_geometry() {
+        let original_pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+        let current_composer_window = TestWindowGeometry {
+            x: 380,
+            y: 270,
+            width: 440,
+            height: 260,
+        };
+
+        set_saved_message_composer_surface(None).unwrap();
+        assert!(save_message_composer_surface_if_absent(original_pet_window).unwrap());
+        assert!(!save_message_composer_surface_if_absent(current_composer_window).unwrap());
+
+        assert_eq!(
+            saved_message_composer_surface().unwrap(),
+            Some(original_pet_window),
+        );
+        set_saved_message_composer_surface(None).unwrap();
+    }
+
+    #[test]
+    fn message_composer_surface_close_failure_clears_saved_geometry() {
+        let original_pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+
+        set_saved_message_composer_surface(Some(original_pet_window)).unwrap();
+
+        let result = clear_message_composer_surface_after_close(Err(
+            "failed to move main window".to_string(),
+        ));
+
+        assert_eq!(result, Err("failed to move main window".to_string()));
+        assert_eq!(saved_message_composer_surface().unwrap(), None);
     }
 
     #[test]
