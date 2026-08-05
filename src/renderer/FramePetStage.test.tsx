@@ -24,6 +24,8 @@ const importedPackage: ResolvedPetPackage = {
   previewUrl: "asset://moon/preview.png",
   source: "imported",
   actions: createImportedActions(),
+  defaultMotionId: "idle-breathe",
+  motions: {} as ResolvedPetPackage["motions"],
   scenes: {},
 };
 

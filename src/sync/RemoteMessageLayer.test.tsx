@@ -33,6 +33,8 @@ function resolvedPackage(): ResolvedPetPackage {
     previewUrl: "asset://moon/preview.png",
     source: "imported",
     actions: createActions(),
+    defaultMotionId: "idle-breathe",
+    motions: {} as ResolvedPetPackage["motions"],
     scenes: {},
   };
 }

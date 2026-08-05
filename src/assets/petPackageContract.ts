@@ -10,6 +10,7 @@ import {
 export const BUILT_IN_PET_PACKAGE_ID = "builtin:q-girl" as const;
 export const IMPORTED_PET_PACKAGE_PREFIX = "imported:" as const;
 export type PetPackageFormatVersion = 2 | 3;
+export type PetPackageRenderer = "frame-sequence" | "motion-pool";
 export const PET_FRAMES_PER_ACTION = 30;
 export const PET_ACTION_FPS = 5;
 export const PET_ACTION_DURATION_MS = 6000;
@@ -92,6 +93,8 @@ export type PetPackageManifest =
 export interface ImportedPetPackageSummary {
   id: string;
   manifestId: string;
+  formatVersion: PetPackageFormatVersion;
+  renderer: PetPackageRenderer;
   name: string;
   baseSize: PetPackageSize;
   frameSize: PetPackageSize;
@@ -99,6 +102,9 @@ export interface ImportedPetPackageSummary {
   actions: Record<PetActionName, PetPackageActionManifest>;
   scenes: Record<string, PetPackageSceneManifest>;
   framePaths: Record<PetActionName, string[]>;
+  defaultMotion: string | null;
+  motions: Record<string, PetMotionManifest>;
+  motionFramePaths: Record<string, string[]>;
 }
 
 export interface ImportedPetMotionSummary extends PetMotionManifest {

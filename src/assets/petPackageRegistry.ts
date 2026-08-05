@@ -14,6 +14,17 @@ import {
   type PetPackageSceneManifest,
 } from "./petPackageContract";
 
+export interface ResolvedPetMotion {
+  id: string;
+  fps: number;
+  loop: boolean;
+  frameCount: number;
+  durationMs: number;
+  frames: string[];
+  weight: number;
+  tags: readonly string[];
+}
+
 export interface ResolvedPetPackage {
   id: string;
   name: string;
@@ -21,6 +32,8 @@ export interface ResolvedPetPackage {
   frameSize: { width: number; height: number };
   previewUrl: string | null;
   source: "built-in" | "imported";
+  defaultMotionId: string;
+  motions: Record<string, ResolvedPetMotion>;
   actions: Record<PetActionName, PetActionDefinition>;
   scenes: Record<string, PetPackageSceneManifest>;
 }
@@ -50,7 +63,26 @@ export function resolveSelectedPetPackage(
   );
 }
 
+export function getDefaultPetMotion(
+  pkg: ResolvedPetPackage,
+): ResolvedPetMotion {
+  return pkg.motions[pkg.defaultMotionId] ?? Object.values(pkg.motions)[0];
+}
+
 function buildBuiltInPackage(): ResolvedPetPackage {
+  const actions = buildActionRecord((action) => {
+    const actionDefinition = getActionDefinition(action);
+
+    return {
+      ...actionDefinition,
+      frames: actionDefinition.frames.flatMap((framePath) => {
+        const url = getBuiltInFrameAssetUrl(framePath);
+
+        return url ? [url] : [];
+      }),
+    };
+  });
+
   return {
     id: BUILT_IN_PET_PACKAGE_ID,
     name: builtInPetManifest.name,
@@ -59,18 +91,9 @@ function buildBuiltInPackage(): ResolvedPetPackage {
     previewUrl: null,
     source: "built-in",
     scenes: builtInPetManifest.scenes,
-    actions: buildActionRecord((action) => {
-      const actionDefinition = getActionDefinition(action);
-
-      return {
-        ...actionDefinition,
-        frames: actionDefinition.frames.flatMap((framePath) => {
-          const url = getBuiltInFrameAssetUrl(framePath);
-
-          return url ? [url] : [];
-        }),
-      };
-    }),
+    defaultMotionId: "idle-breathe",
+    motions: buildMotionsFromActions(actions),
+    actions,
   };
 }
 
@@ -78,6 +101,10 @@ function buildImportedPackage(
   pkg: ImportedPetPackageSummary,
   convertFileSrc: (path: string) => string,
 ): ResolvedPetPackage | null {
+  if (pkg.formatVersion === 3 && pkg.renderer === "motion-pool") {
+    return buildImportedMotionPoolPackage(pkg, convertFileSrc);
+  }
+
   const actions: Partial<Record<PetActionName, PetActionDefinition>> = {};
 
   for (const action of REQUIRED_PET_ACTIONS) {
@@ -110,9 +137,95 @@ function buildImportedPackage(
     frameSize: pkg.frameSize,
     previewUrl: convertFileSrc(normalizeImportedAssetPath(pkg.previewPath)),
     source: "imported",
+    defaultMotionId: "idle-breathe",
+    motions: buildMotionsFromActions(
+      actions as Record<PetActionName, PetActionDefinition>,
+    ),
     actions: actions as Record<PetActionName, PetActionDefinition>,
     scenes: pkg.scenes,
   };
+}
+
+function buildImportedMotionPoolPackage(
+  pkg: ImportedPetPackageSummary,
+  convertFileSrc: (path: string) => string,
+): ResolvedPetPackage | null {
+  if (!pkg.defaultMotion || !pkg.motions[pkg.defaultMotion]) {
+    return null;
+  }
+
+  const motions: Record<string, ResolvedPetMotion> = {};
+
+  for (const [motionId, motion] of Object.entries(pkg.motions)) {
+    const frames = pkg.motionFramePaths[motionId];
+    if (!frames || frames.length !== motion.frameCount) {
+      return null;
+    }
+
+    motions[motionId] = {
+      id: motionId,
+      fps: motion.fps,
+      loop: motion.loop,
+      frameCount: motion.frameCount,
+      durationMs: motion.durationMs,
+      frames: frames.map((framePath) =>
+        convertFileSrc(normalizeImportedAssetPath(framePath)),
+      ),
+      weight: motion.weight,
+      tags: motion.tags,
+    };
+  }
+
+  const defaultMotion = motions[pkg.defaultMotion];
+  if (!defaultMotion) {
+    return null;
+  }
+
+  return {
+    id: pkg.id,
+    name: pkg.name,
+    baseSize: pkg.baseSize,
+    frameSize: pkg.frameSize,
+    previewUrl: convertFileSrc(normalizeImportedAssetPath(pkg.previewPath)),
+    source: "imported",
+    defaultMotionId: pkg.defaultMotion,
+    motions,
+    actions: buildActionFallbackFromDefaultMotion(defaultMotion),
+    scenes: {},
+  };
+}
+
+function buildMotionsFromActions(
+  actions: Record<PetActionName, PetActionDefinition>,
+): Record<string, ResolvedPetMotion> {
+  return Object.fromEntries(
+    Object.entries(actions).map(([actionId, action]) => [
+      actionId,
+      {
+        id: actionId,
+        fps: action.fps,
+        loop: action.loop,
+        frameCount: action.frameCount,
+        durationMs: action.durationMs,
+        frames: [...action.frames],
+        weight: actionId.startsWith("idle-") ? 2 : 1,
+        tags: ["idle", "legacy-action", actionId],
+      },
+    ]),
+  );
+}
+
+function buildActionFallbackFromDefaultMotion(
+  motion: ResolvedPetMotion,
+): Record<PetActionName, PetActionDefinition> {
+  return buildActionRecord((action) => ({
+    fps: motion.fps,
+    loop: motion.loop,
+    frameCount: motion.frameCount,
+    durationMs: motion.durationMs,
+    category: readPetActionCategory(action),
+    frames: motion.frames,
+  }));
 }
 
 function buildActionRecord(

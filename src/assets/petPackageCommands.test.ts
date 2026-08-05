@@ -7,6 +7,8 @@ describe("pet package commands", () => {
     const importedPackage: ImportedPetPackageSummary = {
       id: "imported:moon-buddy",
       manifestId: "moon-buddy",
+      formatVersion: 2,
+      renderer: "frame-sequence",
       name: "月亮伙伴",
       baseSize: { width: 256, height: 320 },
       frameSize: { width: 768, height: 960 },
@@ -14,6 +16,9 @@ describe("pet package commands", () => {
       actions: {} as ImportedPetPackageSummary["actions"],
       scenes: {} as ImportedPetPackageSummary["scenes"],
       framePaths: {} as ImportedPetPackageSummary["framePaths"],
+      defaultMotion: "idle-breathe",
+      motions: {} as ImportedPetPackageSummary["motions"],
+      motionFramePaths: {} as ImportedPetPackageSummary["motionFramePaths"],
     };
     const invoke = vi.fn(async () => importedPackage);
     const api = createPetPackageCommands(

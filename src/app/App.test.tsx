@@ -154,16 +154,24 @@ function importedPackageSummary(
   manifestId = "moon-buddy",
   name = "月亮伙伴",
 ): ImportedPetPackageSummary {
+  const actions = importedActions();
+  const framePaths = importedFramePaths(manifestId);
+
   return {
     id: `imported:${manifestId}`,
     manifestId,
+    formatVersion: 2,
+    renderer: "frame-sequence",
     name,
     baseSize: { width: 256, height: 320 },
     frameSize: { width: 768, height: 960 },
     previewPath: `C:/app/pet-packages/${manifestId}/preview.png`,
-    actions: importedActions(),
+    actions,
     scenes: importedScenes(),
-    framePaths: importedFramePaths(manifestId),
+    framePaths,
+    defaultMotion: "idle-breathe",
+    motions: importedMotions(actions),
+    motionFramePaths: framePaths,
   };
 }
 
@@ -218,6 +226,25 @@ function importedFramePaths(
   }
 
   return framePaths;
+}
+
+function importedMotions(
+  actions: ImportedPetPackageSummary["actions"],
+): ImportedPetPackageSummary["motions"] {
+  return Object.fromEntries(
+    Object.entries(actions).map(([action, config]) => [
+      action,
+      {
+        fps: config.fps,
+        loop: config.loop,
+        frameCount: config.frameCount,
+        durationMs: config.durationMs,
+        frames: config.frames,
+        weight: action.startsWith("idle-") ? 2 : 1,
+        tags: ["idle", "legacy-action", action],
+      },
+    ]),
+  );
 }
 
 async function flushAppEffects() {
