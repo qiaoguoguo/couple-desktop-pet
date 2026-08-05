@@ -49,9 +49,14 @@ struct PetPackageManifest {
     base_size: PackageSize,
     #[serde(rename = "frameSize")]
     frame_size: PackageSize,
+    #[serde(default)]
     actions: BTreeMap<String, PackageAction>,
     #[serde(default)]
     scenes: BTreeMap<String, PackageScene>,
+    #[serde(rename = "defaultMotion")]
+    default_motion: Option<String>,
+    #[serde(default)]
+    motions: BTreeMap<String, PackageMotion>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -70,6 +75,30 @@ pub struct PackageAction {
     #[serde(rename = "durationMs")]
     duration_ms: u32,
     frames: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackageMotion {
+    fps: f64,
+    #[serde(rename = "loop")]
+    loop_value: bool,
+    #[serde(rename = "frameCount")]
+    frame_count: usize,
+    #[serde(rename = "durationMs")]
+    duration_ms: u32,
+    frames: String,
+    #[serde(default = "default_motion_weight")]
+    weight: f64,
+    #[serde(default = "default_motion_tags")]
+    tags: Vec<String>,
+}
+
+fn default_motion_weight() -> f64 {
+    1.0
+}
+
+fn default_motion_tags() -> Vec<String> {
+    vec!["idle".to_string()]
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -96,6 +125,9 @@ pub struct ImportedPetPackageSummary {
     pub id: String,
     #[serde(rename = "manifestId")]
     pub manifest_id: String,
+    #[serde(rename = "formatVersion")]
+    pub format_version: u8,
+    pub renderer: String,
     pub name: String,
     #[serde(rename = "baseSize")]
     pub base_size: PackageSize,
@@ -107,6 +139,11 @@ pub struct ImportedPetPackageSummary {
     pub scenes: BTreeMap<String, PackageScene>,
     #[serde(rename = "framePaths")]
     pub frame_paths: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "defaultMotion")]
+    pub default_motion: Option<String>,
+    pub motions: BTreeMap<String, PackageMotion>,
+    #[serde(rename = "motionFramePaths")]
+    pub motion_frame_paths: BTreeMap<String, Vec<String>>,
 }
 
 pub fn import_pet_package_from_path(
@@ -124,10 +161,10 @@ pub fn import_pet_package_from_path(
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| format!("资源包不是有效的 cdpet/zip 文件: {error}"))?;
 
-    validate_archive_paths(&mut archive)?;
     let manifest = read_manifest(&mut archive)?;
     validate_manifest(&manifest)?;
-    validate_required_frames(&mut archive)?;
+    validate_archive_paths(&mut archive, &manifest)?;
+    validate_required_frames(&mut archive, &manifest)?;
 
     let package_dir = packages_root.join(&manifest.id);
     let staging_dir = packages_root.join(format!(".importing-{}", manifest.id));
@@ -232,6 +269,7 @@ fn packages_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn validate_archive_paths<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
+    manifest: &PetPackageManifest,
 ) -> Result<(), String> {
     if archive.len() > MAX_ARCHIVE_FILES {
         return Err("资源包文件数量过多".to_string());
@@ -246,11 +284,11 @@ fn validate_archive_paths<R: Read + std::io::Seek>(
         validate_relative_archive_path(&name)?;
 
         if file.is_dir() {
-            validate_allowed_archive_dir(&name)?;
+            validate_allowed_archive_dir(&name, manifest)?;
             continue;
         }
 
-        validate_allowed_archive_file(&name)?;
+        validate_allowed_archive_file(&name, manifest)?;
         if file.size() > MAX_SINGLE_FILE_SIZE_BYTES {
             return Err("资源包单个文件过大".to_string());
         }
@@ -280,29 +318,47 @@ fn validate_relative_archive_path(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_allowed_archive_dir(name: &str) -> Result<(), String> {
+fn validate_allowed_archive_dir(name: &str, manifest: &PetPackageManifest) -> Result<(), String> {
     let normalized = name.trim_end_matches('/');
 
-    if normalized == "frames"
-        || REQUIRED_ACTIONS.iter().any(|action| {
-            normalized
-                .strip_prefix("frames/")
-                .is_some_and(|directory| directory == *action)
-        })
-    {
-        return Ok(());
+    match manifest.format_version {
+        2 => {
+            if normalized == "frames"
+                || REQUIRED_ACTIONS.iter().any(|action| {
+                    normalized
+                        .strip_prefix("frames/")
+                        .is_some_and(|directory| directory == *action)
+                })
+            {
+                return Ok(());
+            }
+        }
+        3 => {
+            if normalized == "motions"
+                || manifest.motions.keys().any(|motion_id| {
+                    normalized
+                        .strip_prefix("motions/")
+                        .is_some_and(|directory| directory == motion_id)
+                })
+            {
+                return Ok(());
+            }
+        }
+        _ => {}
     }
 
     Err(format!("资源包包含不支持的文件: {name}"))
 }
 
-fn validate_allowed_archive_file(name: &str) -> Result<(), String> {
+fn validate_allowed_archive_file(name: &str, manifest: &PetPackageManifest) -> Result<(), String> {
     if name == "pet.json" || name == "preview.png" {
         return Ok(());
     }
 
-    if is_expected_frame_file(name) {
-        return Ok(());
+    match manifest.format_version {
+        2 if is_expected_frame_file(name) => return Ok(()),
+        3 if is_expected_motion_frame_file(name, manifest) => return Ok(()),
+        _ => {}
     }
 
     Err(format!("资源包包含不支持的文件: {name}"))
@@ -337,6 +393,38 @@ fn is_expected_frame_file(name: &str) -> bool {
         .is_ok_and(|index| (1..=PET_FRAMES_PER_ACTION).contains(&index))
 }
 
+fn is_expected_motion_frame_file(name: &str, manifest: &PetPackageManifest) -> bool {
+    let mut parts = name.split('/');
+    let Some("motions") = parts.next() else {
+        return false;
+    };
+    let Some(motion_id) = parts.next() else {
+        return false;
+    };
+    let Some(file_name) = parts.next() else {
+        return false;
+    };
+
+    if parts.next().is_some() {
+        return false;
+    }
+
+    let Some(motion) = manifest.motions.get(motion_id) else {
+        return false;
+    };
+    let Some(frame_number) = file_name.strip_suffix(".png") else {
+        return false;
+    };
+
+    if frame_number.len() != 4 {
+        return false;
+    }
+
+    frame_number
+        .parse::<usize>()
+        .is_ok_and(|index| (1..=motion.frame_count).contains(&index))
+}
+
 fn read_manifest<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
 ) -> Result<PetPackageManifest, String> {
@@ -354,9 +442,15 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     if manifest.format_version == 1 {
         return Err(UNSUPPORTED_LEGACY_PACKAGE_MESSAGE.to_string());
     }
-    if manifest.format_version != 2 {
-        return Err("资源包版本不支持".to_string());
+
+    match manifest.format_version {
+        2 => validate_v2_manifest(manifest),
+        3 => validate_v3_manifest(manifest),
+        _ => Err("资源包版本不支持".to_string()),
     }
+}
+
+fn validate_v2_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     if manifest.renderer.as_deref() != Some(REQUIRED_RENDERER) {
         return Err("资源包 renderer 必须是 frame-sequence".to_string());
     }
@@ -366,26 +460,7 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     if manifest.name.trim().is_empty() {
         return Err("资源包名称不能为空".to_string());
     }
-    if manifest.base_size.width < MIN_MANIFEST_DIMENSION
-        || manifest.base_size.height < MIN_MANIFEST_DIMENSION
-    {
-        return Err("baseSize 太小".to_string());
-    }
-    if manifest.base_size.width > MAX_MANIFEST_DIMENSION
-        || manifest.base_size.height > MAX_MANIFEST_DIMENSION
-    {
-        return Err("baseSize 太大".to_string());
-    }
-    if manifest.frame_size.width < MIN_MANIFEST_DIMENSION
-        || manifest.frame_size.height < MIN_MANIFEST_DIMENSION
-    {
-        return Err("frameSize 太小".to_string());
-    }
-    if manifest.frame_size.width > MAX_MANIFEST_DIMENSION
-        || manifest.frame_size.height > MAX_MANIFEST_DIMENSION
-    {
-        return Err("frameSize 太大".to_string());
-    }
+    validate_manifest_sizes(manifest)?;
 
     for action in REQUIRED_ACTIONS {
         let action_config = manifest
@@ -465,6 +540,88 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_v3_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
+    if manifest.renderer.as_deref() != Some("motion-pool") {
+        return Err("资源包 renderer 必须是 motion-pool".to_string());
+    }
+    if !is_valid_manifest_id(&manifest.id) {
+        return Err("资源包 id 只能包含英文、数字、下划线和短横线".to_string());
+    }
+    if manifest.name.trim().is_empty() {
+        return Err("资源包名称不能为空".to_string());
+    }
+    validate_manifest_sizes(manifest)?;
+    if manifest.motions.is_empty() {
+        return Err("v3 资源包至少需要一个 motion".to_string());
+    }
+    if manifest.motions.len() != 1 {
+        return Err("v3 资源包仅支持一个 motion".to_string());
+    }
+    let default_motion = manifest
+        .default_motion
+        .as_deref()
+        .ok_or_else(|| "缺少 defaultMotion".to_string())?;
+    if !manifest.motions.contains_key(default_motion) {
+        return Err("defaultMotion 必须指向已存在的 motion".to_string());
+    }
+    for (motion_id, motion) in &manifest.motions {
+        validate_motion_manifest(motion_id, motion)?;
+    }
+
+    Ok(())
+}
+
+fn validate_manifest_sizes(manifest: &PetPackageManifest) -> Result<(), String> {
+    if manifest.base_size.width < MIN_MANIFEST_DIMENSION
+        || manifest.base_size.height < MIN_MANIFEST_DIMENSION
+    {
+        return Err("baseSize 太小".to_string());
+    }
+    if manifest.base_size.width > MAX_MANIFEST_DIMENSION
+        || manifest.base_size.height > MAX_MANIFEST_DIMENSION
+    {
+        return Err("baseSize 太大".to_string());
+    }
+    if manifest.frame_size.width < MIN_MANIFEST_DIMENSION
+        || manifest.frame_size.height < MIN_MANIFEST_DIMENSION
+    {
+        return Err("frameSize 太小".to_string());
+    }
+    if manifest.frame_size.width > MAX_MANIFEST_DIMENSION
+        || manifest.frame_size.height > MAX_MANIFEST_DIMENSION
+    {
+        return Err("frameSize 太大".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_motion_manifest(motion_id: &str, motion: &PackageMotion) -> Result<(), String> {
+    if !is_valid_manifest_id(motion_id) {
+        return Err(format!("motion id 非法: {motion_id}"));
+    }
+    if !motion.fps.is_finite() || !(1.0..=12.0).contains(&motion.fps) {
+        return Err(format!("motion 帧率必须在 1 到 12 fps: {motion_id}"));
+    }
+    if motion.frame_count < 1 || motion.frame_count > 60 {
+        return Err(format!("motion 帧数量必须在 1 到 60: {motion_id}"));
+    }
+    if motion.duration_ms < 3000 || motion.duration_ms > 12000 {
+        return Err(format!("motion 时长必须在 3000 到 12000ms: {motion_id}"));
+    }
+    if motion.frames != format!("motions/{motion_id}/") {
+        return Err(format!("motion 帧目录无效: {motion_id}"));
+    }
+    if !motion.weight.is_finite() || motion.weight <= 0.0 {
+        return Err(format!("motion 权重必须大于 0: {motion_id}"));
+    }
+    if motion.tags.iter().all(|tag| tag.trim().is_empty()) {
+        return Err(format!("motion 至少需要一个有效标签: {motion_id}"));
+    }
+    let _ = motion.loop_value;
+    Ok(())
+}
+
 fn is_valid_manifest_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
@@ -475,6 +632,7 @@ fn is_valid_manifest_id(id: &str) -> bool {
 
 fn validate_required_frames<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
+    manifest: &PetPackageManifest,
 ) -> Result<(), String> {
     {
         let mut preview = archive
@@ -483,9 +641,36 @@ fn validate_required_frames<R: Read + std::io::Seek>(
         validate_png_file(&mut preview, "preview.png")?;
     }
 
+    if manifest.format_version == 3 {
+        return validate_v3_motion_frames(archive, manifest);
+    }
+
+    validate_v2_action_frames(archive)
+}
+
+fn validate_v2_action_frames<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+) -> Result<(), String> {
     for action in REQUIRED_ACTIONS {
         for frame_index in 1..=PET_FRAMES_PER_ACTION {
             let frame_path = expected_frame_path(action, frame_index);
+            let mut file = archive
+                .by_name(&frame_path)
+                .map_err(|_| format!("缺少帧文件: {frame_path}"))?;
+            validate_png_file(&mut file, &frame_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_v3_motion_frames<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    manifest: &PetPackageManifest,
+) -> Result<(), String> {
+    for (motion_id, motion) in &manifest.motions {
+        for frame_index in 1..=motion.frame_count {
+            let frame_path = format!("motions/{motion_id}/{frame_index:04}.png");
             let mut file = archive
                 .by_name(&frame_path)
                 .map_err(|_| format!("缺少帧文件: {frame_path}"))?;
@@ -550,6 +735,51 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
         .map_err(|error| format!("已导入资源包 manifest 无效: {error}"))?;
     validate_manifest(&manifest)?;
 
+    let frame_paths = if manifest.format_version == 2 {
+        read_v2_frame_paths(package_dir)?
+    } else {
+        BTreeMap::new()
+    };
+    let motion_frame_paths = if manifest.format_version == 3 {
+        read_motion_frame_paths(package_dir, &manifest)?
+    } else {
+        build_motion_frame_paths_from_v2_actions(package_dir)?
+    };
+    let motions = if manifest.format_version == 3 {
+        manifest.motions.clone()
+    } else {
+        build_motion_manifests_from_v2_actions(&manifest.actions)
+    };
+    let default_motion = if manifest.format_version == 3 {
+        manifest.default_motion.clone()
+    } else {
+        Some("idle-breathe".to_string())
+    };
+
+    let preview_path = package_dir.join("preview.png");
+    if !preview_path.exists() {
+        return Err("缺少 preview.png".to_string());
+    }
+
+    Ok(ImportedPetPackageSummary {
+        id: format!("{IMPORTED_PREFIX}{}", manifest.id),
+        manifest_id: manifest.id,
+        format_version: manifest.format_version,
+        renderer: manifest.renderer.unwrap_or_default(),
+        name: manifest.name.trim().to_string(),
+        base_size: manifest.base_size,
+        frame_size: manifest.frame_size,
+        preview_path: preview_path.to_string_lossy().to_string(),
+        actions: manifest.actions,
+        scenes: manifest.scenes,
+        frame_paths,
+        default_motion,
+        motions,
+        motion_frame_paths,
+    })
+}
+
+fn read_v2_frame_paths(package_dir: &Path) -> Result<BTreeMap<String, Vec<String>>, String> {
     let mut frame_paths = BTreeMap::new();
     for action in REQUIRED_ACTIONS {
         let mut action_frames = Vec::with_capacity(PET_FRAMES_PER_ACTION);
@@ -569,22 +799,57 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
         frame_paths.insert(action.to_string(), action_frames);
     }
 
-    let preview_path = package_dir.join("preview.png");
-    if !preview_path.exists() {
-        return Err("缺少 preview.png".to_string());
+    Ok(frame_paths)
+}
+
+fn read_motion_frame_paths(
+    package_dir: &Path,
+    manifest: &PetPackageManifest,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mut paths = BTreeMap::new();
+    for (motion_id, motion) in &manifest.motions {
+        let mut frames = Vec::with_capacity(motion.frame_count);
+        for index in 1..=motion.frame_count {
+            let relative_path = format!("motions/{motion_id}/{index:04}.png");
+            let frame_path = package_dir.join(&relative_path);
+            if !frame_path.exists() {
+                return Err(format!("缺少帧文件: {relative_path}"));
+            }
+
+            frames.push(frame_path.to_string_lossy().to_string());
+        }
+        paths.insert(motion_id.clone(), frames);
     }
 
-    Ok(ImportedPetPackageSummary {
-        id: format!("{IMPORTED_PREFIX}{}", manifest.id),
-        manifest_id: manifest.id,
-        name: manifest.name.trim().to_string(),
-        base_size: manifest.base_size,
-        frame_size: manifest.frame_size,
-        preview_path: preview_path.to_string_lossy().to_string(),
-        actions: manifest.actions,
-        scenes: manifest.scenes,
-        frame_paths,
-    })
+    Ok(paths)
+}
+
+fn build_motion_frame_paths_from_v2_actions(
+    package_dir: &Path,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    read_v2_frame_paths(package_dir)
+}
+
+fn build_motion_manifests_from_v2_actions(
+    actions: &BTreeMap<String, PackageAction>,
+) -> BTreeMap<String, PackageMotion> {
+    actions
+        .iter()
+        .map(|(action, config)| {
+            (
+                action.clone(),
+                PackageMotion {
+                    fps: config.fps,
+                    loop_value: config.loop_value,
+                    frame_count: config.frame_count,
+                    duration_ms: config.duration_ms,
+                    frames: config.frames.clone(),
+                    weight: default_motion_weight(),
+                    tags: default_motion_tags(),
+                },
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -629,11 +894,16 @@ mod tests {
         let imported = import_pet_package_from_path(&source, &root).unwrap();
         assert_eq!(imported.id, "imported:moon-buddy");
         assert_eq!(imported.manifest_id, "moon-buddy");
+        assert_eq!(imported.format_version, 2);
+        assert_eq!(imported.renderer, "frame-sequence");
+        assert_eq!(imported.default_motion.as_deref(), Some("idle-breathe"));
         assert!(imported.preview_path.ends_with("preview.png"));
         assert_eq!(imported.frame_paths["idle-breathe"].len(), 30);
+        assert_eq!(imported.motion_frame_paths["idle-breathe"].len(), 30);
         assert_eq!(imported.actions["idle-breathe"].fps, 5.0);
         assert_eq!(imported.actions["idle-breathe"].frame_count, 30);
         assert_eq!(imported.actions["idle-breathe"].duration_ms, 6000);
+        assert_eq!(imported.motions["idle-breathe"].frame_count, 30);
         assert_eq!(imported.scenes["act-cute"].action, "act-cute");
         assert_eq!(
             imported.scenes["remote-message"].wait_for_acknowledge,
@@ -645,6 +915,146 @@ mod tests {
         assert_eq!(packages[0].id, "imported:moon-buddy");
 
         let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn imports_valid_v3_package_with_one_motion() {
+        let temp = unique_temp_dir("valid-v3-motion-pool");
+        let source = temp.join("moon.cdpet");
+        let root = temp.join("packages");
+
+        write_v3_test_package(&source, "moon-buddy", &[("motion-001", 30)]);
+
+        let imported = import_pet_package_from_path(&source, &root).unwrap();
+
+        assert_eq!(imported.manifest_id, "moon-buddy");
+        assert_eq!(imported.format_version, 3);
+        assert_eq!(imported.renderer, "motion-pool");
+        assert_eq!(imported.default_motion.as_deref(), Some("motion-001"));
+        assert_eq!(imported.motions["motion-001"].frame_count, 30);
+        assert_eq!(
+            imported
+                .motion_frame_paths
+                .get("motion-001")
+                .map(|frames| frames.len()),
+            Some(30)
+        );
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn rejects_v3_package_when_default_motion_is_missing() {
+        let temp = unique_temp_dir("v3-missing-default-motion");
+        let source = temp.join("moon.cdpet");
+        let root = temp.join("packages");
+        let manifest = v3_test_manifest("moon-buddy", "missing-motion", &[("motion-001", 30)]);
+
+        write_test_package_with_manifest_and_motion_frames(
+            &source,
+            &manifest,
+            &[("motion-001", 30)],
+        );
+
+        let error = import_pet_package_from_path(&source, &root).unwrap_err();
+
+        assert!(
+            error.contains("defaultMotion 必须指向已存在的 motion"),
+            "{error}"
+        );
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn rejects_v3_package_when_motion_frame_is_missing() {
+        let temp = unique_temp_dir("v3-missing-frame");
+        let source = temp.join("moon.cdpet");
+        let root = temp.join("packages");
+        let manifest = v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 2)]);
+
+        write_test_package_with_manifest_and_motion_frames(
+            &source,
+            &manifest,
+            &[("motion-001", 1)],
+        );
+
+        let error = import_pet_package_from_path(&source, &root).unwrap_err();
+
+        assert!(
+            error.contains("缺少帧文件: motions/motion-001/0002.png"),
+            "{error}"
+        );
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn rejects_v3_package_when_motion_contract_is_invalid() {
+        for (case_name, manifest, expected_error) in [
+            (
+                "v3-too-many-motions",
+                v3_test_manifest(
+                    "moon-buddy",
+                    "motion-001",
+                    &[("motion-001", 30), ("motion-002", 30)],
+                ),
+                "v3 资源包仅支持一个 motion",
+            ),
+            (
+                "v3-invalid-fps",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)])
+                    .replace(r#""fps": 5"#, r#""fps": 13"#),
+                "motion 帧率必须在 1 到 12 fps",
+            ),
+            (
+                "v3-invalid-frame-count",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 61)]),
+                "motion 帧数量必须在 1 到 60",
+            ),
+            (
+                "v3-invalid-duration",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)])
+                    .replace(r#""durationMs": 6000"#, r#""durationMs": 12001"#),
+                "motion 时长必须在 3000 到 12000ms",
+            ),
+            (
+                "v3-invalid-frames-dir",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)]).replace(
+                    r#""frames": "motions/motion-001/""#,
+                    r#""frames": "motions/other-motion/""#,
+                ),
+                "motion 帧目录无效",
+            ),
+            (
+                "v3-invalid-weight",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)])
+                    .replace(r#""weight": 1"#, r#""weight": 0"#),
+                "motion 权重必须大于 0",
+            ),
+            (
+                "v3-empty-tags",
+                v3_test_manifest("moon-buddy", "motion-001", &[("motion-001", 30)])
+                    .replace(r#""tags": ["idle"]"#, r#""tags": [" "]"#),
+                "motion 至少需要一个有效标签",
+            ),
+        ] {
+            let temp = unique_temp_dir(case_name);
+            let source = temp.join("bad.cdpet");
+            let root = temp.join("packages");
+
+            write_test_package_with_manifest_and_motion_frames(
+                &source,
+                &manifest,
+                &[("motion-001", 30), ("motion-002", 30)],
+            );
+
+            let error = import_pet_package_from_path(&source, &root).unwrap_err();
+
+            assert!(
+                error.contains(expected_error),
+                "{case_name} produced {error}"
+            );
+            let _ = fs::remove_dir_all(temp);
+        }
     }
 
     #[test]
@@ -928,6 +1338,66 @@ mod tests {
         }
 
         zip.finish().unwrap();
+    }
+
+    fn write_v3_test_package(source: &Path, manifest_id: &str, motions: &[(&str, usize)]) {
+        let manifest = v3_test_manifest(manifest_id, motions[0].0, motions);
+        write_test_package_with_manifest_and_motion_frames(source, &manifest, motions);
+    }
+
+    fn write_test_package_with_manifest_and_motion_frames(
+        source: &Path,
+        manifest_contents: &str,
+        motions: &[(&str, usize)],
+    ) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        zip.start_file("pet.json", options).unwrap();
+        zip.write_all(manifest_contents.as_bytes()).unwrap();
+
+        zip.start_file("preview.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
+
+        for (motion_id, frame_count) in motions {
+            for index in 1..=*frame_count {
+                zip.start_file(format!("motions/{motion_id}/{index:04}.png"), options)
+                    .unwrap();
+                zip.write_all(&PNG_SIGNATURE).unwrap();
+            }
+        }
+
+        zip.finish().unwrap();
+    }
+
+    fn v3_test_manifest(
+        manifest_id: &str,
+        default_motion: &str,
+        motions: &[(&str, usize)],
+    ) -> String {
+        let motion_entries = motions
+            .iter()
+            .map(|(motion_id, frame_count)| {
+                format!(
+                    r#""{motion_id}": {{ "fps": 5, "loop": true, "frameCount": {frame_count}, "durationMs": 6000, "frames": "motions/{motion_id}/", "weight": 1, "tags": ["idle"] }}"#
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+
+        format!(
+            r#"{{
+  "formatVersion": 3,
+  "renderer": "motion-pool",
+  "id": "{manifest_id}",
+  "name": "测试形象",
+  "baseSize": {{ "width": 256, "height": 320 }},
+  "frameSize": {{ "width": 768, "height": 960 }},
+  "defaultMotion": "{default_motion}",
+  "motions": {{ {motion_entries} }}
+}}"#
+        )
     }
 
     fn test_manifest(manifest_id: &str) -> String {
