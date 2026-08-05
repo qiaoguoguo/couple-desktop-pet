@@ -1,0 +1,17 @@
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      RELAY_HOST: 0.0.0.0
+      RELAY_PORT: 8787
+      RELAY_DB_PATH: /app/server/.data/relay.sqlite
+    ports:
+      - "8787:8787"
+    volumes:
+      - relay-data:/app/server/.data
+
+volumes:
+  relay-data:
