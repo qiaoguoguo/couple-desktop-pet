@@ -145,37 +145,6 @@ export function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const remoteMessageClickThroughOverrideRef = useRef(false);
 
-  const realtimeCallbacks = useMemo(
-    () => ({
-      onMessage: (message: {
-        id: string;
-        fromDeviceId: string;
-        text: string;
-        at: string;
-      }) => {
-        setSessionMessages((current) => [
-          ...current,
-          {
-            id: message.id,
-            direction: "received",
-            text: message.text,
-            at: message.at,
-          },
-        ]);
-
-        setRemoteMessages((current) => enqueueRemoteMessage(current, message));
-      },
-    }),
-    [],
-  );
-  const realtime = useRealtimeSync(settings.sync, realtimeCallbacks);
-  const syncStatus = useMemo(
-    () => ({
-      ...realtime.state,
-      lastError: syncError ?? realtime.state.lastError,
-    }),
-    [realtime.state, syncError],
-  );
   const petPackages = useMemo(
     () =>
       buildPetPackageRegistry(
@@ -200,29 +169,6 @@ export function App() {
     [activeMotionId, selectedPetPackage],
   );
   const activeRemoteMessage = remoteMessages.active;
-  const activePeerPetPackage = useMemo(() => {
-    if (!activeRemoteMessage) {
-      return null;
-    }
-
-    const peerPackageId =
-      settings.appearance.peerPetPackageByDeviceId[
-        activeRemoteMessage.fromDeviceId
-      ];
-    const builtInPeerPetPackage =
-      petPackages.find((pkg) => pkg.id === BUILT_IN_PET_PACKAGE_ID) ?? null;
-
-    return peerPackageId
-      ? petPackages.find((pkg) => pkg.id === peerPackageId) ??
-          builtInPeerPetPackage ??
-          selectedPetPackage
-      : builtInPeerPetPackage ?? selectedPetPackage;
-  }, [
-    activeRemoteMessage,
-    petPackages,
-    selectedPetPackage,
-    settings.appearance.peerPetPackageByDeviceId,
-  ]);
   const refreshPetPackages = useCallback(async () => {
     const packages = await petPackageApi.listPetPackages();
     setImportedPetPackages(packages);
@@ -249,6 +195,47 @@ export function App() {
       setVisibleMotion(action);
     },
     [setVisibleMotion],
+  );
+
+  const realtimeCallbacks = useMemo(
+    () => ({
+      onMessage: (message: {
+        id: string;
+        fromDeviceId: string;
+        text: string;
+        at: string;
+      }) => {
+        setSessionMessages((current) => [
+          ...current,
+          {
+            id: message.id,
+            direction: "received",
+            text: message.text,
+            at: message.at,
+          },
+        ]);
+
+        const messageMotionId = selectMotionForTag(
+          selectedPetPackage.motions,
+          "message",
+        );
+
+        if (messageMotionId) {
+          setVisibleMotion(messageMotionId);
+        }
+
+        setRemoteMessages((current) => enqueueRemoteMessage(current, message));
+      },
+    }),
+    [selectedPetPackage.motions, setVisibleMotion],
+  );
+  const realtime = useRealtimeSync(settings.sync, realtimeCallbacks);
+  const syncStatus = useMemo(
+    () => ({
+      ...realtime.state,
+      lastError: syncError ?? realtime.state.lastError,
+    }),
+    [realtime.state, syncError],
   );
 
   useEffect(() => {
@@ -1184,7 +1171,6 @@ export function App() {
         />
         <RemoteMessageLayer
           message={activeRemoteMessage}
-          peerPackage={activePeerPetPackage}
           onAcknowledge={handleRemoteMessageAcknowledge}
         />
         {messageComposerOpen ? (

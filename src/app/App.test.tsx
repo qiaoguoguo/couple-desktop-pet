@@ -1163,7 +1163,7 @@ describe("App", () => {
     expect(await screen.findByText("对方形象正在使用，不能删除")).toBeTruthy();
   });
 
-  it("renders a received message with the selected peer pet package", async () => {
+  it("renders a received message without adding a peer visitor image", async () => {
     const moonPackage = importedPackageSummary();
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -1183,8 +1183,10 @@ describe("App", () => {
       },
     });
     render(<App />);
+    await flushAppEffects();
 
     expect(realtimeSyncMock.callbacks).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
 
     act(() => {
       realtimeSyncMock.callbacks?.onMessage({
@@ -1195,15 +1197,55 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByRole("img", { name: "月亮伙伴来访" })).toBeTruthy();
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
+    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "Q 版小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-message-pair");
   });
 
-  it("falls back remote messages without peer mapping to the built-in pet package", async () => {
-    const moonPackage = importedPackageSummary();
-    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
+  it("plays the selected imported package message motion when a remote message arrives", async () => {
+    const motionPackage = motionPoolPackageSummary({
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-001/",
+          weight: 1,
+          tags: ["idle"],
+        },
+        "motion-message-pair": {
+          fps: 8,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-message-pair/",
+          weight: 1,
+          tags: ["message", "pair", "interaction"],
+        },
+      },
+      motionFramePaths: {
+        "motion-001": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
+        ],
+        "motion-message-pair": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-message-pair/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-message-pair/0002.png",
+        ],
+      },
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       appearance: {
-        selectedPetPackageId: "imported:moon-buddy",
+        selectedPetPackageId: motionPackage.id,
         peerPetPackageByDeviceId: {},
       },
       sync: {
@@ -1218,7 +1260,7 @@ describe("App", () => {
     render(<App />);
 
     await flushAppEffects();
-    expect(screen.getByRole("img", { name: "月亮伙伴" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "动作池小人" })).toBeTruthy();
 
     act(() => {
       realtimeSyncMock.callbacks?.onMessage({
@@ -1229,11 +1271,18 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-message-pair");
+    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
   });
 
-  it("falls back remote messages with a missing peer package mapping to the built-in pet package", async () => {
+  it("does not render a peer visitor for missing peer package mappings", async () => {
     const moonPackage = importedPackageSummary();
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -1266,7 +1315,14 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "月亮伙伴" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("idle-breathe");
+    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
   });
 
@@ -1423,12 +1479,13 @@ describe("App", () => {
 
     const remoteLayer = screen.getByLabelText("对方桌宠消息");
     expect(remoteLayer).toBeTruthy();
-    const visitorImage = screen.getByRole("img", {
-      name: "Q 版小人来访",
-    }) as HTMLImageElement;
-    expect(visitorImage.getAttribute("src")).toContain(
-      "/src/assets/pets/q-girl/frames/motion-message-pair/0001.png",
-    );
+    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(
+      screen
+        .getByRole("img", { name: "Q 版小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-message-pair");
     await advanceTypewriterText("想你啦");
     expect(within(remoteLayer).getByText("想你啦")).toBeTruthy();
 
@@ -1463,7 +1520,8 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getByRole("img", { name: "Q 版小人来访" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
     await advanceTypewriterText("摸摸头");
     fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
     await flushAppEffects();
