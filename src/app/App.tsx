@@ -84,8 +84,8 @@ const bubbleMessage = "我在这里。";
 const contextMenuWidth = 132;
 const contextMenuHeight = 148;
 const contextMenuMargin = 8;
-const interactionMenuWidth = 164;
-const interactionMenuHeight = 112;
+const interactionMenuWidth = 232;
+const interactionMenuHeight = 210;
 const pairCodePollIntervalMs = 2000;
 const remoteMessageDismissDelayMs = 800;
 const sentMessageBubbleDurationMs = 5000;
@@ -1109,12 +1109,12 @@ function clampMenuAxis(position: number, viewportSize: number, menuSize: number)
 function getInteractionMenuPosition() {
   return {
     x: clampMenuAxis(
-      window.innerWidth / 2 - interactionMenuWidth / 2,
+      window.innerWidth / 2,
       window.innerWidth,
       interactionMenuWidth,
     ),
     y: clampMenuAxis(
-      window.innerHeight - interactionMenuHeight - 42,
+      window.innerHeight / 2 + 28,
       window.innerHeight,
       interactionMenuHeight,
     ),

@@ -216,8 +216,6 @@ body {
   pointer-events: none;
 }
 
-.app-shell:hover .settings-toggle.is-hidden,
-.app-shell:focus-within .settings-toggle.is-hidden,
 .settings-toggle.is-visible {
   opacity: 1;
   pointer-events: auto;

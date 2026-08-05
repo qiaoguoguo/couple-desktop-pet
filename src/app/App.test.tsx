@@ -283,6 +283,22 @@ describe("App", () => {
     expect(settingsButton.className).toBe("settings-toggle is-hidden");
   });
 
+  it("does not reveal the settings button through shell hover or focus", async () => {
+    const { container } = render(<App />);
+
+    const settingsButton = await screen.findByRole("button", { name: "设置" });
+    const shell = container.querySelector(".app-shell");
+
+    if (!shell) {
+      throw new Error("app shell missing");
+    }
+
+    fireEvent.mouseOver(shell);
+    fireEvent.focus(settingsButton);
+
+    expect(settingsButton.className).toBe("settings-toggle is-hidden");
+  });
+
   it("opens interaction options when clicking the pet", async () => {
     render(<App />);
 
@@ -290,6 +306,23 @@ describe("App", () => {
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
+  });
+
+  it("opens interaction options with one left click on the pet stage", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("img", { name: "Q 版小人" });
+    const petStage = container.querySelector(".pet-frame-stage");
+
+    if (!petStage) {
+      throw new Error("pet stage missing");
+    }
+
+    fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.click(petStage);
+
+    expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
   });
 
   it("shows an interaction bubble from the motion scene cue instead of immediately", async () => {
@@ -695,7 +728,7 @@ describe("App", () => {
     );
   });
 
-  it("starts desktop window dragging when pet drag begins", () => {
+  it("starts desktop window dragging only after pet movement crosses the drag threshold", () => {
     const { container } = render(<App />);
     const petStage = container.querySelector(".pet-frame-stage");
 
@@ -704,7 +737,9 @@ describe("App", () => {
     }
 
     fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
 
+    fireEvent.pointerMove(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
   });
 
