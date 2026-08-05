@@ -1,6 +1,8 @@
 import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
 import type { PetSettings } from "./settingsTypes";
 
+export const DEFAULT_RELAY_URL = "http://159.75.175.47:8787";
+
 export const defaultSettings: PetSettings = {
   scale: 1,
   autoMoveEnabled: true,
@@ -13,8 +15,8 @@ export const defaultSettings: PetSettings = {
     peerPetPackageByDeviceId: {},
   },
   sync: {
-    enabled: false,
-    relayUrl: "http://127.0.0.1:8787",
+    enabled: true,
+    relayUrl: DEFAULT_RELAY_URL,
     deviceId: null,
     deviceSecret: null,
     pairId: null,

@@ -1142,7 +1142,6 @@ export function App() {
             onSyncChange={handleSyncChange}
             onCreatePairCode={handleCreatePairCode}
             onAcceptPairCode={handleAcceptPairCode}
-            onSendMessage={handleSendMessage}
             onUnpair={handleUnpair}
           />
         </div>

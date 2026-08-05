@@ -3,6 +3,10 @@ import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
 
 const LEGACY_BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper";
+const LEGACY_LOCAL_RELAY_URLS = new Set([
+  "http://127.0.0.1:8787",
+  "http://localhost:8787",
+]);
 
 export type { MovementRange, PetSettings } from "./settingsTypes";
 
@@ -76,12 +80,19 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
 
   return {
     enabled: readBoolean(value.enabled, defaultSettings.sync.enabled),
-    relayUrl: readNonEmptyString(value.relayUrl, defaultSettings.sync.relayUrl),
+    relayUrl: normalizeRelayUrl(value.relayUrl),
     deviceId: readNullableString(value.deviceId),
     deviceSecret: readNullableString(value.deviceSecret),
     pairId: readNullableString(value.pairId),
     peerDeviceId: readNullableString(value.peerDeviceId),
   };
+}
+
+export function normalizeRelayUrl(value: unknown): string {
+  const relayUrl = readNonEmptyString(value, defaultSettings.sync.relayUrl);
+  return LEGACY_LOCAL_RELAY_URLS.has(relayUrl)
+    ? defaultSettings.sync.relayUrl
+    : relayUrl;
 }
 
 function readAppearanceSettings(value: unknown): PetSettings["appearance"] {

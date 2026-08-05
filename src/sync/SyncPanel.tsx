@@ -10,7 +10,6 @@ export interface SyncPanelProps {
   onSyncChange(patch: Partial<SyncSettings>): void;
   onCreatePairCode(): void;
   onAcceptPairCode(code: string): void;
-  onSendMessage(text: string): void;
   onUnpair(): void;
 }
 
@@ -19,25 +18,11 @@ export function SyncPanel({
   status,
   messages,
   pairCode,
-  onSyncChange,
   onCreatePairCode,
   onAcceptPairCode,
-  onSendMessage,
   onUnpair,
 }: SyncPanelProps) {
   const [acceptCode, setAcceptCode] = useState("");
-  const [messageText, setMessageText] = useState("");
-  const controlsDisabled = !sync.enabled;
-  const canSend =
-    sync.enabled &&
-    Boolean(sync.pairId) &&
-    status.status === "connected" &&
-    status.peerPresence === "online";
-  const sendDisabled = !canSend;
-  const peerUnavailableMessage =
-    sync.enabled && sync.pairId && !canSend
-      ? "对方当前不在线"
-      : null;
   const pairStatusText = sync.pairId
     ? "已绑定"
     : pairCode
@@ -53,15 +38,6 @@ export function SyncPanel({
     }
   }
 
-  function handleSend(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = messageText.trim();
-    if (text) {
-      onSendMessage(text);
-      setMessageText("");
-    }
-  }
-
   return (
     <section className="sync-panel" aria-label="远程互动">
       <div className="sync-panel-header">
@@ -69,29 +45,10 @@ export function SyncPanel({
         <span>{readPresenceLabel(status)}</span>
       </div>
 
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={sync.enabled}
-          onChange={(event) => onSyncChange({ enabled: event.currentTarget.checked })}
-        />
-        <span>启用远程互动</span>
-      </label>
-
-      <label className="sync-field">
-        <span>中继地址</span>
-        <input
-          type="url"
-          value={sync.relayUrl}
-          disabled={controlsDisabled}
-          onChange={(event) => onSyncChange({ relayUrl: event.currentTarget.value })}
-        />
-      </label>
-
       <div className="sync-pair-actions">
         <button
           type="button"
-          disabled={controlsDisabled || Boolean(sync.pairId)}
+          disabled={Boolean(sync.pairId)}
           onClick={onCreatePairCode}
         >
           生成绑定码
@@ -116,11 +73,10 @@ export function SyncPanel({
             type="text"
             inputMode="numeric"
             value={acceptCode}
-            disabled={controlsDisabled}
             onChange={(event) => setAcceptCode(event.currentTarget.value)}
           />
         </label>
-        <button type="submit" disabled={controlsDisabled}>
+        <button type="submit">
           绑定
         </button>
       </form>
@@ -133,24 +89,6 @@ export function SyncPanel({
         ))}
       </div>
 
-      <form className="sync-inline-form" onSubmit={handleSend}>
-        <label className="sync-field">
-          <span>发送消息</span>
-          <textarea
-            rows={2}
-            value={messageText}
-            disabled={sendDisabled}
-            onChange={(event) => setMessageText(event.currentTarget.value)}
-          />
-        </label>
-        <button type="submit" disabled={sendDisabled}>
-          发送
-        </button>
-      </form>
-
-      {peerUnavailableMessage ? (
-        <p className="sync-error">{peerUnavailableMessage}</p>
-      ) : null}
       {status.lastError ? <p className="sync-error">{status.lastError}</p> : null}
     </section>
   );

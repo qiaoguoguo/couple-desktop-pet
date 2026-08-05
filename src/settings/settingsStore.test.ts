@@ -23,8 +23,8 @@ describe("settings defaults", () => {
 
   it("uses disabled sync defaults", () => {
     expect(defaultSettings.sync).toEqual({
-      enabled: false,
-      relayUrl: "http://127.0.0.1:8787",
+      enabled: true,
+      relayUrl: "http://159.75.175.47:8787",
       deviceId: null,
       deviceSecret: null,
       pairId: null,
@@ -165,6 +165,18 @@ describe("mergeSettings", () => {
         peerDeviceId: "dev_b",
       },
     });
+  });
+
+  it.each([
+    undefined,
+    "",
+    "http://127.0.0.1:8787",
+    "http://localhost:8787",
+  ])("uses the cloud relay for legacy relay url %s", (relayUrl) => {
+    const settings = mergeSettings({ sync: { relayUrl } as never });
+
+    expect(settings.sync.enabled).toBe(true);
+    expect(settings.sync.relayUrl).toBe("http://159.75.175.47:8787");
   });
 
   it("sanitizes invalid sync settings", () => {

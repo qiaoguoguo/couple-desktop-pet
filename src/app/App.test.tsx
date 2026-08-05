@@ -1090,7 +1090,7 @@ describe("App", () => {
     expect(within(secondRemoteLayer).getByText("第二条")).toBeTruthy();
   });
 
-  it("does not send messages while the peer is offline", async () => {
+  it("does not expose inline sending from settings while the peer is offline", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "offline";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -1106,22 +1106,16 @@ describe("App", () => {
     render(<App />);
 
     await openSettingsFromContextMenu();
-    await waitFor(() =>
-      expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
-        true,
-      ),
-    );
+    expect(screen.queryByLabelText("启用远程互动")).toBeNull();
+    expect(screen.queryByLabelText("中继地址")).toBeNull();
 
-    expect(screen.getByText("对方当前不在线")).toBeTruthy();
-    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
-      true,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.queryByLabelText("发送消息")).toBeNull();
+    expect(screen.queryByRole("button", { name: "发送" })).toBeNull();
 
     expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("does not send messages while disconnected with stale online presence", async () => {
+  it("does not expose inline sending while disconnected with stale online presence", async () => {
     realtimeSyncMock.state.status = "disconnected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -1137,18 +1131,11 @@ describe("App", () => {
     render(<App />);
 
     await openSettingsFromContextMenu();
-    await waitFor(() =>
-      expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
-        true,
-      ),
-    );
 
     expect(screen.getByText("未连接")).toBeTruthy();
     expect(screen.queryByText("对方在线")).toBeNull();
-    expect((screen.getByLabelText("发送消息") as HTMLTextAreaElement).disabled).toBe(
-      true,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.queryByLabelText("发送消息")).toBeNull();
+    expect(screen.queryByRole("button", { name: "发送" })).toBeNull();
 
     expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
   });
@@ -1184,9 +1171,7 @@ describe("App", () => {
       await Promise.resolve();
     });
     await openSettingsFromContextMenu();
-    expect((screen.getByLabelText("启用远程互动") as HTMLInputElement).checked).toBe(
-      true,
-    );
+    expect(screen.queryByLabelText("启用远程互动")).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
       await Promise.resolve();
