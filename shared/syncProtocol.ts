@@ -118,12 +118,16 @@ export interface PeerOnlineServerMessage {
   type: "peer.online";
   pairId: string;
   peerDeviceId: string;
+  changedAt?: string;
+  lastSeenAt?: string;
 }
 
 export interface PeerOfflineServerMessage {
   type: "peer.offline";
   pairId: string;
   peerDeviceId: string;
+  changedAt?: string;
+  lastSeenAt?: string;
 }
 
 export interface MessageReceivedServerMessage {
@@ -232,7 +236,13 @@ function readPeerPresence(
     return null;
   }
 
-  return { type, pairId: input.pairId, peerDeviceId: input.peerDeviceId };
+  return {
+    type,
+    pairId: input.pairId,
+    peerDeviceId: input.peerDeviceId,
+    changedAt: typeof input.changedAt === "string" ? input.changedAt : undefined,
+    lastSeenAt: typeof input.lastSeenAt === "string" ? input.lastSeenAt : undefined,
+  };
 }
 
 function readMessageReceived(input: Record<string, unknown>): MessageReceivedServerMessage | null {

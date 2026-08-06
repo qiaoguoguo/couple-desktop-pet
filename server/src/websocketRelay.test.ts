@@ -15,6 +15,7 @@ let relay: RelayServer;
 let baseUrl = "";
 let wsUrl = "";
 const inboxes = new WeakMap<WebSocket, SocketInbox>();
+const readTimeoutMs = 500;
 
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-ws-"));
@@ -37,15 +38,25 @@ describe("websocket relay", () => {
   it("authenticates paired devices and forwards an online message", async () => {
     const pair = await createPair();
     const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+
     const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
 
     await expect(readJson(bob)).resolves.toMatchObject({
       type: "peer.online",
       peerDeviceId: "dev_a",
+      changedAt: "2026-08-03T12:00:00.000Z",
     });
     await expect(readJson(alice)).resolves.toMatchObject({
       type: "peer.online",
       peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
     });
 
     alice.send(
@@ -71,12 +82,39 @@ describe("websocket relay", () => {
     });
 
     alice.close();
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
     bob.close();
+  });
+
+  it("reports the peer as offline immediately after auth when the peer is absent", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+
+    alice.close();
   });
 
   it("rejects sends when the peer is offline", async () => {
     const pair = await createPair();
     const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
 
     alice.send(
       JSON.stringify({
@@ -154,8 +192,20 @@ function readJson(socket: WebSocket): Promise<unknown> {
     return Promise.resolve(next);
   }
 
-  return new Promise((resolve) => {
-    inbox.waiters.push(resolve);
+  return new Promise((resolve, reject) => {
+    const waiter = (message: unknown) => {
+      clearTimeout(timeout);
+      resolve(message);
+    };
+    const timeout = setTimeout(() => {
+      const waiterIndex = inbox.waiters.indexOf(waiter);
+      if (waiterIndex >= 0) {
+        inbox.waiters.splice(waiterIndex, 1);
+      }
+      reject(new Error("Timed out waiting for websocket message"));
+    }, readTimeoutMs);
+
+    inbox.waiters.push(waiter);
   });
 }
 

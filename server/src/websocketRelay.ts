@@ -17,6 +17,7 @@ import type { RelayRepository } from "./repository.js";
 export function attachWebSocketRelay(
   server: Server,
   repository: RelayRepository,
+  now: () => Date = () => new Date(),
 ): WebSocketServer {
   const registry = new ConnectionRegistry();
   const webSocketServer = new WebSocketServer({ server, path: "/ws" });
@@ -29,7 +30,13 @@ export function attachWebSocketRelay(
         const message = parseClientMessage(data);
 
         if (!connection) {
-          connection = authenticateSocket(repository, registry, socket, message);
+          connection = authenticateSocket(
+            repository,
+            registry,
+            socket,
+            message,
+            now,
+          );
           return;
         }
 
@@ -45,11 +52,12 @@ export function attachWebSocketRelay(
       }
 
       const peer = registry.get(connection.peerDeviceId);
-      if (peer) {
+      if (peer && peer.pairId === connection.pairId) {
         sendJson(peer.socket, {
           type: "peer.offline",
           pairId: connection.pairId,
           peerDeviceId: connection.deviceId,
+          changedAt: createPresenceChangedAt(now),
         });
       }
     });
@@ -63,6 +71,7 @@ function authenticateSocket(
   registry: ConnectionRegistry,
   socket: WebSocket,
   message: ClientToServerMessage,
+  now: () => Date,
 ): AuthenticatedConnection {
   if (message.type !== "auth") {
     throw new RelayError("auth_failed", 401, "Authentication is required");
@@ -86,21 +95,35 @@ function authenticateSocket(
     pairId: authenticated.pairId,
   });
 
+  const changedAt = createPresenceChangedAt(now);
   const peer = registry.get(authenticated.peerDeviceId);
   if (peer && peer.pairId === authenticated.pairId) {
     sendJson(socket, {
       type: "peer.online",
       pairId: authenticated.pairId,
       peerDeviceId: authenticated.peerDeviceId,
+      changedAt,
     });
     sendJson(peer.socket, {
       type: "peer.online",
       pairId: authenticated.pairId,
       peerDeviceId: authenticated.deviceId,
+      changedAt,
+    });
+  } else {
+    sendJson(socket, {
+      type: "peer.offline",
+      pairId: authenticated.pairId,
+      peerDeviceId: authenticated.peerDeviceId,
+      changedAt,
     });
   }
 
   return connection;
+}
+
+function createPresenceChangedAt(now: () => Date): string {
+  return now().toISOString();
 }
 
 function handleAuthenticatedMessage(

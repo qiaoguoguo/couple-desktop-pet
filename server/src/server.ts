@@ -23,7 +23,7 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
   initializeRelayDatabase(db);
   const repository = new RelayRepository(db, options.now ?? (() => new Date()));
   const server = createServer(createRelayRequestHandler(repository));
-  const webSocketServer = attachWebSocketRelay(server, repository);
+  const webSocketServer = attachWebSocketRelay(server, repository, options.now);
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, resolve);
