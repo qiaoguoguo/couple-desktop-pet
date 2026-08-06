@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod commands;
+mod companion_windows;
 mod pet_packages;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
