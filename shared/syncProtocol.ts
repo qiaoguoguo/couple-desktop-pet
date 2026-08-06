@@ -1,7 +1,7 @@
 import {
   isNullableActivityStatus,
   type ActivityStatus,
-} from "./activityStatus";
+} from "./activityStatus.js";
 
 export const MESSAGE_TEXT_MAX_LENGTH = 300;
 export const PAIR_CODE_LENGTH = 6;

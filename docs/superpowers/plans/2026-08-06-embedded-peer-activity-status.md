@@ -705,8 +705,11 @@ Use the existing SSH identity and deployment layout. Back up the current deploym
 
 ```powershell
 ssh root@159.75.175.47 'backup=/opt/couple-pet-relay-backup-$(date +%Y%m%d%H%M%S); cp -a /opt/couple-pet-relay "$backup"; printf "%s\n" "$backup"'
-ssh root@159.75.175.47 "mkdir -p /opt/couple-pet-relay"
-scp -r server shared package.json pnpm-lock.yaml pnpm-workspace.yaml deploy/couple-pet-relay root@159.75.175.47:/opt/couple-pet-relay/
+ssh root@159.75.175.47 "mkdir -p /opt/couple-pet-relay/platform-api /opt/couple-pet-relay/platform-web"
+scp -r server shared deploy root@159.75.175.47:/opt/couple-pet-relay/
+scp package.json pnpm-lock.yaml pnpm-workspace.yaml root@159.75.175.47:/opt/couple-pet-relay/
+scp platform-api/package.json root@159.75.175.47:/opt/couple-pet-relay/platform-api/package.json
+scp platform-web/package.json root@159.75.175.47:/opt/couple-pet-relay/platform-web/package.json
 ssh root@159.75.175.47 "cd /opt/couple-pet-relay && docker compose -f deploy/couple-pet-relay/compose.yaml up -d --build"
 ssh root@159.75.175.47 "cd /opt/couple-pet-relay && docker compose -f deploy/couple-pet-relay/compose.yaml ps"
 ```
