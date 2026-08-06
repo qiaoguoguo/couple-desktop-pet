@@ -8,6 +8,7 @@ mod pet_packages;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(companion_windows::CompanionWindowCoordinator::default())
         .setup(|app| {
             setup_tray(app)?;
             if let Err(error) = commands::restore_saved_window_position(app.handle()) {
@@ -30,6 +31,10 @@ pub fn run() {
             commands::restore_window_from_edge_peek,
             commands::open_message_composer_surface,
             commands::close_message_composer_surface,
+            commands::update_companion_scene,
+            commands::read_companion_scene,
+            commands::hide_companion_scene,
+            commands::request_open_message_composer,
             commands::show_window,
             commands::hide_window,
             commands::quit_app,

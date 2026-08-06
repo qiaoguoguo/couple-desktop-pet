@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the main desktop pet window.",
-  "windows": ["main"],
+  "windows": ["main", "peer-presence", "peer-link", "offline-nest"],
   "permissions": [
     "core:window:allow-start-dragging",
     "core:window:allow-close",
