@@ -18,7 +18,7 @@ describe("InteractionMenu", () => {
     expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
   });
 
-  it("renders six function buttons without a separate send-message item", () => {
+  it("renders six function buttons with message and status slots", () => {
     render(
       <InteractionMenu
         open
@@ -33,7 +33,9 @@ describe("InteractionMenu", () => {
     expect(screen.getAllByRole("menuitem")).toHaveLength(6);
     expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "我的状态" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "发消息" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "困困打盹" })).toBeNull();
   });
 
   it("renders Q sticker buttons with icon containers and stagger variables", () => {
@@ -76,7 +78,7 @@ describe("InteractionMenu", () => {
     expect(onSelect).toHaveBeenCalledWith("act-cute");
   });
 
-  it("selects the typing function via callback", () => {
+  it("selects the message function via callback", () => {
     const onSelect = vi.fn();
     render(
       <InteractionMenu
@@ -90,6 +92,23 @@ describe("InteractionMenu", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
 
-    expect(onSelect).toHaveBeenCalledWith("act-typing");
+    expect(onSelect).toHaveBeenCalledWith("send-message");
+  });
+
+  it("selects the status function via callback", () => {
+    const onSelect = vi.fn();
+    render(
+      <InteractionMenu
+        open
+        x={10}
+        y={20}
+        options={interactionOptions}
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
+
+    expect(onSelect).toHaveBeenCalledWith("open-status");
   });
 });

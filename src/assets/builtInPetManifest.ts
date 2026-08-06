@@ -42,14 +42,18 @@ export interface PetMotionDefinition {
   tags: readonly string[];
 }
 
-export interface PetInteractionActionOption {
-  id: InteractionActionName;
-  kind: "action";
+export type InteractionFunctionId = "send-message" | "open-status";
+
+export type InteractionMenuSelection =
+  | InteractionActionName
+  | InteractionFunctionId;
+
+export interface PetInteractionOption {
+  id: InteractionMenuSelection;
+  iconAction: InteractionActionName;
   label: string;
   bubble: string;
 }
-
-export type PetInteractionOption = PetInteractionActionOption;
 
 export interface BuiltInPetManifest {
   id: string;
@@ -71,17 +75,42 @@ export interface BuiltInPetManifest {
 }
 
 export const interactionOptions = [
-  { id: "act-cute", kind: "action", label: "撒娇卖萌", bubble: "陪我一会儿嘛。" },
   {
-    id: "act-typing",
-    kind: "action",
-    label: "敲电脑",
-    bubble: "我也在努力敲代码。",
+    id: "act-cute",
+    iconAction: "act-cute",
+    label: "撒娇卖萌",
+    bubble: "陪我一会儿嘛。",
   },
-  { id: "act-wave", kind: "action", label: "打招呼", bubble: "嗨，我在这里！" },
-  { id: "act-hug", kind: "action", label: "求抱抱", bubble: "可以抱一下吗？" },
-  { id: "act-pout", kind: "action", label: "生气鼓脸", bubble: "哼，快哄我。" },
-  { id: "act-drowsy", kind: "action", label: "困困打盹", bubble: "有点困啦。" },
+  {
+    id: "send-message",
+    iconAction: "act-typing",
+    label: "敲电脑",
+    bubble: "",
+  },
+  {
+    id: "act-wave",
+    iconAction: "act-wave",
+    label: "打招呼",
+    bubble: "嗨，我在这里！",
+  },
+  {
+    id: "act-hug",
+    iconAction: "act-hug",
+    label: "求抱抱",
+    bubble: "可以抱一下吗？",
+  },
+  {
+    id: "act-pout",
+    iconAction: "act-pout",
+    label: "生气鼓脸",
+    bubble: "哼，快哄我。",
+  },
+  {
+    id: "open-status",
+    iconAction: "act-drowsy",
+    label: "我的状态",
+    bubble: "",
+  },
 ] as const satisfies readonly PetInteractionOption[];
 
 const frameSequence = (action: PetActionName) =>

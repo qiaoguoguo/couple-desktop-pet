@@ -1011,6 +1011,63 @@ button.companion-presence-surface {
   white-space: nowrap;
 }
 
+.activity-status-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 42;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  box-sizing: border-box;
+  padding: 0 16px 18px;
+  background: transparent;
+}
+
+.status-picker-panel {
+  box-sizing: border-box;
+  width: 184px;
+  padding: 8px;
+  border: 1px solid rgba(91, 57, 39, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.98);
+  box-shadow: 0 10px 22px rgba(76, 47, 32, 0.14);
+}
+
+.status-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.status-picker-grid button {
+  box-sizing: border-box;
+  height: 32px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(91, 57, 39, 0.22);
+  border-radius: 7px;
+  background: #fff4e3;
+  color: #3a261c;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-picker-grid button[aria-pressed="true"] {
+  border-color: rgba(90, 63, 28, 0.46);
+  background: #ffe08b;
+  color: #35240f;
+  font-weight: 700;
+}
+
+.status-picker-grid button:focus-visible,
+.status-picker-grid button:hover {
+  outline: 2px solid rgba(78, 111, 133, 0.32);
+  outline-offset: 1px;
+}
+
 @keyframes pet-interaction-pop {
   from {
     opacity: 0;

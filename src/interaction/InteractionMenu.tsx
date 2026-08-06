@@ -6,9 +6,12 @@ import actPoutIconUrl from "../assets/ui/interaction-buttons/act-pout.png";
 import actTypingIconUrl from "../assets/ui/interaction-buttons/act-typing.png";
 import actWaveIconUrl from "../assets/ui/interaction-buttons/act-wave.png";
 import type { InteractionActionName } from "../assets/petActionNames";
-import type { PetInteractionOption } from "../assets/builtInPetManifest";
+import type {
+  InteractionMenuSelection,
+  PetInteractionOption,
+} from "../assets/builtInPetManifest";
 
-export type InteractionMenuSelection = InteractionActionName;
+export type { InteractionMenuSelection };
 
 interface InteractionMenuProps {
   open: boolean;
@@ -18,7 +21,7 @@ interface InteractionMenuProps {
   onSelect(selection: InteractionMenuSelection): void;
 }
 
-const optionIcons: Record<InteractionMenuSelection, string> = {
+const optionIcons: Record<InteractionActionName, string> = {
   "act-cute": actCuteIconUrl,
   "act-typing": actTypingIconUrl,
   "act-wave": actWaveIconUrl,
@@ -27,17 +30,14 @@ const optionIcons: Record<InteractionMenuSelection, string> = {
   "act-drowsy": actDrowsyIconUrl,
 };
 
-const optionPositions: Record<
-  InteractionMenuSelection,
-  { x: number; y: number }
-> = {
-  "act-cute": { x: -76, y: -88 },
-  "act-typing": { x: 0, y: -112 },
-  "act-wave": { x: 76, y: -88 },
-  "act-hug": { x: -92, y: -12 },
-  "act-pout": { x: 92, y: -12 },
-  "act-drowsy": { x: 0, y: 62 },
-};
+const optionPositions = [
+  { x: -76, y: -88 },
+  { x: 0, y: -112 },
+  { x: 76, y: -88 },
+  { x: -92, y: -12 },
+  { x: 92, y: -12 },
+  { x: 0, y: 62 },
+] as const;
 
 export function InteractionMenu({
   open,
@@ -58,7 +58,7 @@ export function InteractionMenu({
       style={{ left: x, top: y }}
     >
       {options.map((option, index) => {
-        const position = optionPositions[option.id];
+        const position = optionPositions[index] ?? { x: 0, y: 0 };
 
         return (
           <button
@@ -76,7 +76,7 @@ export function InteractionMenu({
             onClick={() => onSelect(option.id)}
           >
             <span className="pet-interaction-icon" aria-hidden="true">
-              <img src={optionIcons[option.id]} alt="" />
+              <img src={optionIcons[option.iconAction]} alt="" />
             </span>
             <span className="pet-interaction-label">{option.label}</span>
           </button>

@@ -9,6 +9,7 @@ import {
   idleActionNames,
   interactionOptions,
   type InteractionActionName,
+  type InteractionMenuSelection,
   type PetActionName,
 } from "./builtInPetManifest";
 
@@ -58,6 +59,14 @@ describe("builtInPetManifest", () => {
   it("defines exactly six radial function buttons", () => {
     expect(interactionOptions.map((option) => option.id)).toEqual([
       "act-cute",
+      "send-message",
+      "act-wave",
+      "act-hug",
+      "act-pout",
+      "open-status",
+    ] satisfies InteractionMenuSelection[]);
+    expect(interactionOptions.map((option) => option.iconAction)).toEqual([
+      "act-cute",
       "act-typing",
       "act-wave",
       "act-hug",
@@ -70,14 +79,14 @@ describe("builtInPetManifest", () => {
       "打招呼",
       "求抱抱",
       "生气鼓脸",
-      "困困打盹",
+      "我的状态",
     ]);
   });
 
   it("keeps every idle and interaction action at least five seconds long", () => {
     const longActionIds = [
       ...idleActionNames,
-      ...interactionOptions.map((option) => option.id),
+      ...interactionOptions.map((option) => option.iconAction),
     ];
 
     for (const actionId of longActionIds) {
