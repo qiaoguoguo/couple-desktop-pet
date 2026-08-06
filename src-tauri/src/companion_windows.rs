@@ -37,6 +37,13 @@ pub struct Rect {
     pub height: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CompanionLayoutInput {
+    pub work_area: Rect,
+    pub main: Rect,
+    pub monitor_scale_factor: f64,
+}
+
 impl Rect {
     pub const fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
         Self {
@@ -150,17 +157,29 @@ impl Default for CompanionWindowState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompanionLayout {
     pub side: CompanionSide,
     pub compact: bool,
+    pub monitor_scale_factor: f64,
     pub presence: Option<Rect>,
     pub link: Option<Rect>,
     pub offline_nest: Option<Rect>,
 }
 
+#[cfg(test)]
 pub fn calculate_layout(work_area: Rect, main: Rect, scene_scale: f64) -> CompanionLayout {
-    let scale = scene_scale.clamp(MIN_SCENE_SCALE, MAX_SCENE_SCALE);
+    calculate_layout_for_monitor(work_area, main, 1.0, scene_scale)
+}
+
+pub fn calculate_layout_for_monitor(
+    work_area: Rect,
+    main: Rect,
+    monitor_scale_factor: f64,
+    scene_scale: f64,
+) -> CompanionLayout {
+    let monitor_scale_factor = normalize_monitor_scale_factor(monitor_scale_factor);
+    let scale = monitor_scale_factor * clamp_user_scene_scale(scene_scale);
     let presence_size = scaled_size(PRESENCE_WIDTH, PRESENCE_HEIGHT, scale);
     let link_size = scaled_size(LINK_WIDTH, LINK_HEIGHT, scale);
     let nest_size = scaled_size(OFFLINE_NEST_WIDTH, OFFLINE_NEST_HEIGHT, scale);
@@ -188,6 +207,7 @@ pub fn calculate_layout(work_area: Rect, main: Rect, scene_scale: f64) -> Compan
     CompanionLayout {
         side,
         compact,
+        monitor_scale_factor,
         presence,
         link: (!compact).then(|| build_link_rect(work_area, main, side, link_size, scale)),
         offline_nest: (!compact)
@@ -200,10 +220,10 @@ pub fn update_scene<R: Runtime>(
     coordinator: &CompanionWindowCoordinator,
     content: CompanionSceneContentState,
 ) -> Result<CompanionSceneViewState, String> {
-    let (work_area, main) = read_main_window_layout(app)?;
+    let layout_input = read_main_window_layout(app)?;
     let previous_revision = coordinator.view()?.revision;
-    let view = reduce_scene_state(content.clone(), work_area, main, previous_revision);
-    let layout = calculate_layout(work_area, main, view.scene_scale);
+    let view = reduce_scene_state(content.clone(), layout_input, previous_revision);
+    let layout = calculate_layout_for_input(layout_input, view.scene_scale);
 
     coordinator.replace(content, view.clone())?;
     apply_companion_windows(app, &view, &layout)?;
@@ -234,14 +254,9 @@ pub fn sync_companion_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         return Ok(());
     };
     let content = coordinator.content()?;
-    let (work_area, main) = read_main_window_layout(app)?;
-    let view = reduce_scene_state(
-        content.clone(),
-        work_area,
-        main,
-        coordinator.view()?.revision,
-    );
-    let layout = calculate_layout(work_area, main, view.scene_scale);
+    let layout_input = read_main_window_layout(app)?;
+    let view = reduce_scene_state(content.clone(), layout_input, coordinator.view()?.revision);
+    let layout = calculate_layout_for_input(layout_input, view.scene_scale);
 
     coordinator.replace(content, view.clone())?;
     apply_companion_windows(app, &view, &layout)
@@ -265,12 +280,11 @@ pub fn hide_companion_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
 
 pub fn reduce_scene_state(
     content: CompanionSceneContentState,
-    work_area: Rect,
-    main: Rect,
+    layout_input: CompanionLayoutInput,
     previous_revision: u64,
 ) -> CompanionSceneViewState {
-    let scene_scale = content.scene_scale.clamp(MIN_SCENE_SCALE, MAX_SCENE_SCALE);
-    let layout = calculate_layout(work_area, main, scene_scale);
+    let scene_scale = clamp_user_scene_scale(content.scene_scale);
+    let layout = calculate_layout_for_input(layout_input, scene_scale);
     let presence = if layout.presence.is_some() {
         content.presence
     } else {
@@ -311,6 +325,27 @@ fn normalize_url(value: Option<String>) -> Option<String> {
 
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     })
+}
+
+fn calculate_layout_for_input(input: CompanionLayoutInput, scene_scale: f64) -> CompanionLayout {
+    calculate_layout_for_monitor(
+        input.work_area,
+        input.main,
+        input.monitor_scale_factor,
+        scene_scale,
+    )
+}
+
+fn clamp_user_scene_scale(scene_scale: f64) -> f64 {
+    scene_scale.clamp(MIN_SCENE_SCALE, MAX_SCENE_SCALE)
+}
+
+fn normalize_monitor_scale_factor(monitor_scale_factor: f64) -> f64 {
+    if monitor_scale_factor.is_finite() && monitor_scale_factor > 0.0 {
+        monitor_scale_factor
+    } else {
+        1.0
+    }
 }
 
 impl CompanionWindowCoordinator {
@@ -370,6 +405,7 @@ fn apply_companion_windows<R: Runtime>(
                 PEER_PRESENCE_WINDOW_LABEL,
                 PEER_PRESENCE_WINDOW_ROUTE,
                 rect,
+                layout.monitor_scale_factor,
                 false,
             )?;
         } else {
@@ -386,6 +422,7 @@ fn apply_companion_windows<R: Runtime>(
                 PEER_LINK_WINDOW_LABEL,
                 PEER_LINK_WINDOW_ROUTE,
                 rect,
+                layout.monitor_scale_factor,
                 true,
             )?;
         } else {
@@ -402,6 +439,7 @@ fn apply_companion_windows<R: Runtime>(
                 OFFLINE_NEST_WINDOW_LABEL,
                 OFFLINE_NEST_WINDOW_ROUTE,
                 rect,
+                layout.monitor_scale_factor,
                 true,
             )?;
         } else {
@@ -419,9 +457,11 @@ fn show_companion_window<R: Runtime>(
     label: &'static str,
     route: &'static str,
     rect: Rect,
+    monitor_scale_factor: f64,
     click_through: bool,
 ) -> Result<(), String> {
-    let window = ensure_companion_window(app, label, route, rect, click_through)?;
+    let window =
+        ensure_companion_window(app, label, route, rect, monitor_scale_factor, click_through)?;
 
     window
         .set_size(Size::Physical(PhysicalSize::new(rect.width, rect.height)))
@@ -439,14 +479,20 @@ fn ensure_companion_window<R: Runtime>(
     label: &'static str,
     route: &'static str,
     rect: Rect,
+    monitor_scale_factor: f64,
     click_through: bool,
 ) -> Result<WebviewWindow<R>, String> {
     if let Some(window) = app.get_webview_window(label) {
         return Ok(window);
     }
+    let (logical_width, logical_height) =
+        physical_rect_to_logical_inner_size(rect, monitor_scale_factor);
 
+    // Tauri builders take logical dimensions. The final set_size call uses
+    // Physical pixels as the source of truth, so the WebView CSS viewport stays
+    // at the designed logical size on high-DPI monitors.
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(route.into()))
-        .inner_size(rect.width as f64, rect.height as f64)
+        .inner_size(logical_width, logical_height)
         .transparent(true)
         .decorations(false)
         .shadow(false)
@@ -494,7 +540,7 @@ fn emit_scene_update<R: Runtime>(
     Ok(())
 }
 
-fn read_main_window_layout<R: Runtime>(app: &AppHandle<R>) -> Result<(Rect, Rect), String> {
+fn read_main_window_layout<R: Runtime>(app: &AppHandle<R>) -> Result<CompanionLayoutInput, String> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| format!("window `{MAIN_WINDOW_LABEL}` not found"))?;
@@ -511,20 +557,21 @@ fn read_main_window_layout<R: Runtime>(app: &AppHandle<R>) -> Result<(Rect, Rect
         .outer_size()
         .map_err(|error| format!("failed to read main window size for companion scene: {error}"))?;
 
-    Ok((
-        Rect::new(
+    Ok(CompanionLayoutInput {
+        work_area: Rect::new(
             work_area.position.x,
             work_area.position.y,
             work_area.size.width,
             work_area.size.height,
         ),
-        Rect::new(
+        main: Rect::new(
             outer_position.x,
             outer_position.y,
             outer_size.width,
             outer_size.height,
         ),
-    ))
+        monitor_scale_factor: monitor.scale_factor(),
+    })
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
@@ -565,6 +612,12 @@ fn build_presence_rect(
         size.0,
         size.1,
     )
+}
+
+fn physical_rect_to_logical_inner_size(rect: Rect, monitor_scale_factor: f64) -> (f64, f64) {
+    let scale = normalize_monitor_scale_factor(monitor_scale_factor);
+
+    (rect.width as f64 / scale, rect.height as f64 / scale)
 }
 
 fn build_compact_presence_rect(
@@ -703,7 +756,8 @@ fn clamp_axis(value: i32, min: i32, max: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        calculate_layout, reduce_scene_state, visible_windows, CompanionPresence,
+        calculate_layout, calculate_layout_for_monitor, physical_rect_to_logical_inner_size,
+        reduce_scene_state, visible_windows, CompanionLayoutInput, CompanionPresence,
         CompanionSceneContentState, CompanionSide, Rect,
     };
 
@@ -825,6 +879,35 @@ mod tests {
     }
 
     #[test]
+    fn combines_monitor_dpi_and_user_scene_scale_for_physical_window_sizes() {
+        let dpi_only = calculate_layout_for_monitor(
+            Rect::new(0, 0, 1920, 1080),
+            Rect::new(400, 500, 320, 360),
+            1.25,
+            1.0,
+        );
+        let dpi_and_user = calculate_layout_for_monitor(
+            Rect::new(0, 0, 1920, 1080),
+            Rect::new(400, 500, 320, 360),
+            1.25,
+            1.1,
+        );
+
+        assert_eq!(dpi_only.presence.unwrap().width, 210);
+        assert_eq!(dpi_only.presence.unwrap().height, 220);
+        assert_eq!(dpi_and_user.presence.unwrap().width, 231);
+        assert_eq!(dpi_and_user.presence.unwrap().height, 242);
+    }
+
+    #[test]
+    fn converts_physical_rect_to_logical_builder_size_for_high_dpi() {
+        let (width, height) = physical_rect_to_logical_inner_size(Rect::new(0, 0, 210, 220), 1.25);
+
+        assert_eq!(width, 168.0);
+        assert_eq!(height, 176.0);
+    }
+
+    #[test]
     fn clamps_scene_scale_to_supported_range() {
         let low = calculate_layout(
             Rect::new(0, 0, 1920, 1080),
@@ -849,8 +932,11 @@ mod tests {
     fn reducer_hides_all_windows_while_suspended() {
         let view = reduce_scene_state(
             default_content(CompanionPresence::Online, true),
-            Rect::new(0, 0, 1920, 1080),
-            Rect::new(400, 500, 320, 360),
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.0,
+            ),
             4,
         );
         let visibility = visible_windows(&view);
@@ -865,14 +951,20 @@ mod tests {
     fn reducer_shows_expected_windows_for_presence_states() {
         let online = reduce_scene_state(
             default_content(CompanionPresence::Online, false),
-            Rect::new(0, 0, 1920, 1080),
-            Rect::new(400, 500, 320, 360),
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.0,
+            ),
             0,
         );
         let offline = reduce_scene_state(
             default_content(CompanionPresence::Offline, false),
-            Rect::new(0, 0, 1920, 1080),
-            Rect::new(400, 500, 320, 360),
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.0,
+            ),
             1,
         );
 
@@ -889,8 +981,7 @@ mod tests {
     fn reducer_compact_layout_only_keeps_presence_window() {
         let view = reduce_scene_state(
             default_content(CompanionPresence::Online, false),
-            Rect::new(0, 0, 500, 720),
-            Rect::new(90, 260, 320, 360),
+            layout_input(Rect::new(0, 0, 500, 720), Rect::new(90, 260, 320, 360), 1.0),
             0,
         );
         let visibility = visible_windows(&view);
@@ -905,8 +996,7 @@ mod tests {
     fn reducer_hides_presence_when_compact_layout_has_no_safe_space() {
         let view = reduce_scene_state(
             default_content(CompanionPresence::Online, false),
-            Rect::new(0, 0, 500, 360),
-            Rect::new(90, 0, 320, 360),
+            layout_input(Rect::new(0, 0, 500, 360), Rect::new(90, 0, 320, 360), 1.0),
             0,
         );
         let visibility = visible_windows(&view);
@@ -917,6 +1007,24 @@ mod tests {
         assert!(!visibility.offline_nest);
     }
 
+    #[test]
+    fn reducer_preserves_user_scene_scale_in_view_when_dpi_scales_physical_layout() {
+        let mut content = default_content(CompanionPresence::Online, false);
+        content.scene_scale = 1.1;
+        let view = reduce_scene_state(
+            content,
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.25,
+            ),
+            0,
+        );
+
+        assert_eq!(view.scene_scale, 1.1);
+        assert_eq!(view.presence, CompanionPresence::Online);
+    }
+
     fn default_content(presence: CompanionPresence, suspended: bool) -> CompanionSceneContentState {
         CompanionSceneContentState {
             presence,
@@ -924,6 +1032,18 @@ mod tests {
             offline_portrait_url: Some("asset://offline.png".to_string()),
             scene_scale: 1.0,
             suspended,
+        }
+    }
+
+    fn layout_input(
+        work_area: Rect,
+        main: Rect,
+        monitor_scale_factor: f64,
+    ) -> CompanionLayoutInput {
+        CompanionLayoutInput {
+            work_area,
+            main,
+            monitor_scale_factor,
         }
     }
 }
