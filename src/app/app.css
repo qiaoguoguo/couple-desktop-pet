@@ -18,6 +18,117 @@ body {
   background: transparent;
 }
 
+.peer-status-card {
+  position: absolute;
+  top: 16px;
+  right: 14px;
+  z-index: 18;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  width: 164px;
+  height: 60px;
+  padding: 8px 9px;
+  overflow: hidden;
+  border: 1px solid rgba(137, 96, 73, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 252, 246, 0.96);
+  box-shadow: 0 8px 18px rgba(76, 47, 32, 0.14);
+  color: #402920;
+  pointer-events: none;
+}
+
+.peer-status-avatar,
+.peer-status-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.peer-status-avatar {
+  background: #f7e5da;
+  color: #7a5141;
+}
+
+.peer-status-avatar img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  object-position: center 22%;
+}
+
+.peer-status-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.peer-status-copy strong,
+.peer-status-copy span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peer-status-copy strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.peer-status-copy span {
+  color: #72594d;
+  font-size: 10px;
+}
+
+.peer-status-icon {
+  background: #ffd66e;
+  color: #4b3519;
+}
+
+.peer-status-card[data-status-variant="connecting"] .peer-status-icon {
+  background: #cfe0ec;
+  color: #425366;
+}
+
+.peer-status-card[data-status-variant="offline"] .peer-status-icon {
+  background: #d8e1ee;
+  color: #516074;
+}
+
+.peer-status-card[data-status-variant="dazing"] .peer-status-icon {
+  background: #d9ecf4;
+  color: #45606c;
+}
+
+.peer-status-card[data-status-variant="overtime"] .peer-status-icon {
+  background: #f6c7a0;
+  color: #5a341d;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .peer-status-card[data-status-variant="connecting"] .peer-status-icon {
+    animation: peer-status-waiting 1.8s linear infinite;
+  }
+}
+
+@keyframes peer-status-waiting {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .companion-presence-surface,
 .companion-link-surface,
 .companion-offline-nest-surface {
