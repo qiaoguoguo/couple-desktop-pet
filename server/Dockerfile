@@ -1,10 +1,7 @@
-FROM node:22-bookworm-slim AS base
+FROM node:22-alpine AS base
 
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ \
-  && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+RUN corepack enable && corepack prepare pnpm@11.16.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/package.json ./server/package.json

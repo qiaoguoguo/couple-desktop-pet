@@ -1,0 +1,379 @@
+{
+  "pid": 55560,
+  "port": 9337,
+  "target": {
+    "description": "",
+    "devtoolsFrontendUrl": "https://aka.ms/docs-landing-page/serve_rev/@400e1a29bee558c0c1dec28b2d8b3506a7302ce3/inspector.html?ws=127.0.0.1:9337/devtools/page/470C4BDB2E3F6B597E8BB02A8225C96A",
+    "id": "470C4BDB2E3F6B597E8BB02A8225C96A",
+    "title": "情侣桌宠",
+    "type": "page",
+    "url": "http://tauri.localhost/",
+    "webSocketDebuggerUrl": "ws://127.0.0.1:9337/devtools/page/470C4BDB2E3F6B597E8BB02A8225C96A"
+  },
+  "evidence": [
+    {
+      "name": "initial",
+      "at": "2026-08-06T15:20:39.974Z",
+      "state": {
+        "statusCard": true,
+        "statusText": "TA 加班中\n努力搬砖中\n班",
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "TA 加班中\n努力搬砖中\n班",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "TA 加班中\n努力搬砖中\n班"
+      },
+      "screenshot": null
+    },
+    {
+      "name": "radial-menu-card-hidden",
+      "at": "2026-08-06T15:20:42.706Z",
+      "state": {
+        "statusCard": false,
+        "statusText": null,
+        "radialVisible": true,
+        "radialLabels": [
+          "撒娇卖萌",
+          "敲电脑",
+          "打招呼",
+          "求抱抱",
+          "生气鼓脸",
+          "我的状态"
+        ],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "情侣桌宠 MVP",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "撒娇卖萌\n敲电脑\n打招呼\n求抱抱\n生气鼓脸\n我的状态"
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\06-radial-menu-card-hidden.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\06-radial-menu-card-hidden.png",
+          "PrintWindowOk": true,
+          "X": 1576,
+          "Y": 340,
+          "Width": 320,
+          "Height": 360,
+          "Length": 46796
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "activity-status-picker",
+      "at": "2026-08-06T15:20:44.493Z",
+      "state": {
+        "statusCard": false,
+        "statusText": null,
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": true,
+        "pickerLabels": [
+          "心\n在线",
+          "鱼\n摸鱼中",
+          "云\n发呆中",
+          "班\n加班中"
+        ],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "心\n在线",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "心\n在线\n鱼\n摸鱼中\n云\n发呆中\n班\n加班中"
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\07-activity-status-picker.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\07-activity-status-picker.png",
+          "PrintWindowOk": true,
+          "X": 1576,
+          "Y": 340,
+          "Width": 320,
+          "Height": 360,
+          "Length": 18072
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "picker-right-click-context-menu",
+      "at": "2026-08-06T15:20:46.054Z",
+      "state": {
+        "statusCard": true,
+        "statusText": "TA 加班中\n努力搬砖中\n班",
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": true,
+        "contextLabels": [
+          "设置",
+          "重置位置",
+          "隐藏",
+          "退出"
+        ],
+        "activeText": "设置",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "TA 加班中\n努力搬砖中\n班\n设置重置位置隐藏退出"
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\context-menu-picker-right-click-cdp.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\context-menu-picker-right-click-cdp.png",
+          "PrintWindowOk": true,
+          "X": 1576,
+          "Y": 340,
+          "Width": 320,
+          "Height": 360,
+          "Length": 26060
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "settings-card-hidden",
+      "at": "2026-08-06T15:20:48.225Z",
+      "state": {
+        "statusCard": false,
+        "statusText": null,
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": true,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "设置\n设置\n关闭\n形象管理\n\nQ版女孩完整互动版\n\n当前形象\nQ 版小人\nQ版女孩完整互动版\nQ版眼镜男孩完整互动版\n对方形象\n未指定\nQ 版小人\nQ版女孩完整互动版\nQ版眼镜男孩完整互动版\n导入形象资源包\n删除当前导入形象\n缩放\n0.5x\n自动移动\n活动范围\n底部\n当前屏幕\n自由\n气泡\n置顶\n点击穿透\n重置位置\n远程互动\n对方在线\n生成绑定码\n已绑定\n取消绑定\n输入绑定码\n绑定",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "设置\n设置\n关闭\n形象管理\n\nQ版女孩完整互动版\n\n当前形象\nQ 版小人\nQ版女孩完整互动版\nQ版眼镜男孩完整互动版\n对方形象\n未指定\nQ 版小人\nQ版女孩完整互动版\nQ版眼镜男孩完整互动版\n导入形象资源包\n删除当前导入形象\n缩放\n0.5x\n自动移动\n活动范围\n底部\n当前屏幕\n自由\n气泡\n置顶\n点击穿透\n重置位置\n远程互动\n对方在线\n生成绑定码\n已绑定\n取消绑定\n输入绑定码\n绑定"
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\09-settings-card-hidden.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\09-settings-card-hidden.png",
+          "PrintWindowOk": true,
+          "X": 1576,
+          "Y": 340,
+          "Width": 320,
+          "Height": 360,
+          "Length": 25301
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "message-composer-card-hidden",
+      "at": "2026-08-06T15:20:50.838Z",
+      "state": {
+        "statusCard": false,
+        "statusText": null,
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": true,
+        "settingsVisible": false,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "消息内容",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "发送消息\n\n写给对方桌宠的一句话\n\n0/280\n取消\n发送"
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\08-message-composer-card-hidden.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\08-message-composer-card-hidden.png",
+          "PrintWindowOk": true,
+          "X": 740,
+          "Y": 390,
+          "Width": 440,
+          "Height": 260,
+          "Length": 10791
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "edge-peek-card-hidden",
+      "at": "2026-08-06T15:20:55.817Z",
+      "moved": {
+        "Hwnd": {
+          "value": 11213178
+        },
+        "X": 1608,
+        "Y": 340,
+        "Width": 320,
+        "Height": 360
+      },
+      "state": {
+        "statusCard": false,
+        "statusText": null,
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": false,
+        "contextLabels": [],
+        "activeText": "情侣桌宠 MVP",
+        "edgePeek": true,
+        "edgeSide": "right",
+        "bodyText": ""
+      },
+      "screenshot": {
+        "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\10-edge-peek-card-hidden.png",
+        "capture": {
+          "Path": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\10-edge-peek-card-hidden.png",
+          "PrintWindowOk": true,
+          "X": 1600,
+          "Y": 340,
+          "Width": 320,
+          "Height": 360,
+          "Length": 107367
+        },
+        "attempts": 1
+      }
+    },
+    {
+      "name": "transparency-alpha-proof-cdp",
+      "at": "2026-08-06T15:20:55.872Z",
+      "file": "C:\\Users\\14567\\.codex\\worktrees\\6515\\情侣桌宠\\.superpowers\\sdd\\2026-08-06-embedded-peer-activity-status\\qa\\transparency-alpha-proof-cdp.png",
+      "note": "CDP capture with transparent background override; QA-only alpha evidence.",
+      "screenshot": null
+    },
+    {
+      "name": "edge-peek-right-click-before-quit",
+      "at": "2026-08-06T15:20:56.221Z",
+      "state": {
+        "statusCard": true,
+        "statusText": "TA 加班中\n努力搬砖中\n班",
+        "radialVisible": false,
+        "radialLabels": [],
+        "pickerVisible": false,
+        "pickerLabels": [],
+        "composerVisible": false,
+        "settingsVisible": false,
+        "contextMenuVisible": true,
+        "contextLabels": [
+          "设置",
+          "重置位置",
+          "隐藏",
+          "退出"
+        ],
+        "activeText": "设置",
+        "edgePeek": false,
+        "edgeSide": null,
+        "bodyText": "TA 加班中\n努力搬砖中\n班\n设置重置位置隐藏退出"
+      },
+      "screenshot": null
+    },
+    {
+      "name": "quit-clicked",
+      "at": "2026-08-06T15:20:56.572Z",
+      "state": {
+        "clicked": true
+      },
+      "screenshot": null
+    }
+  ],
+  "transparencyPixelEvidence": {
+    "printWindowRadial": {
+      "width": 320,
+      "height": 360,
+      "pixels": [
+        {
+          "x": 0,
+          "y": 0,
+          "a": 255,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 10,
+          "y": 10,
+          "a": 255,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 319,
+          "y": 0,
+          "a": 255,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 0,
+          "y": 359,
+          "a": 255,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        }
+      ]
+    },
+    "cdpAlphaProof": {
+      "width": 320,
+      "height": 360,
+      "pixels": [
+        {
+          "x": 0,
+          "y": 0,
+          "a": 0,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 10,
+          "y": 10,
+          "a": 0,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 319,
+          "y": 0,
+          "a": 0,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        },
+        {
+          "x": 0,
+          "y": 359,
+          "a": 0,
+          "r": 0,
+          "g": 0,
+          "b": 0
+        }
+      ]
+    }
+  }
+}

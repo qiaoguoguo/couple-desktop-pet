@@ -21,7 +21,7 @@ describe("couple pet relay compose config", () => {
     expect(relay.ports).toEqual(["8787:8787"]);
     expect(relay.environment?.RELAY_HOST).toBe("0.0.0.0");
     expect(relay.environment?.RELAY_PORT).toBe(8787);
-    expect(relay.environment?.RELAY_DB_PATH).toBe(
+    expect(relay.environment?.RELAY_DATABASE_PATH).toBe(
       "/app/server/.data/relay.sqlite",
     );
     expect(relay.volumes).toContain("relay-data:/app/server/.data");

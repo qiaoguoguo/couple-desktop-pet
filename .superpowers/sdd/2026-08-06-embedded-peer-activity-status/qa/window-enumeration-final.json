@@ -1,0 +1,57 @@
+{
+  "Pid": 29336,
+  "Port": 9340,
+  "Windows": [
+    {
+      "Hwnd": 2039718,
+      "Visible": true,
+      "Title": "情侣桌宠",
+      "Class": "Tauri Window",
+      "X": 1330,
+      "Y": 438,
+      "Width": 320,
+      "Height": 360
+    },
+    {
+      "Hwnd": 2169782,
+      "Visible": false,
+      "Title": "",
+      "Class": "tray_icon_app",
+      "X": 26,
+      "Y": 26,
+      "Width": 1440,
+      "Height": 759
+    },
+    {
+      "Hwnd": 2038748,
+      "Visible": true,
+      "Title": "",
+      "Class": "Tao Thread Event Target",
+      "X": 0,
+      "Y": 0,
+      "Width": 16,
+      "Height": 16
+    },
+    {
+      "Hwnd": 990204,
+      "Visible": false,
+      "Title": "MSCTFIME UI",
+      "Class": "MSCTFIME UI",
+      "X": 0,
+      "Y": 0,
+      "Width": 0,
+      "Height": 0
+    },
+    {
+      "Hwnd": 255267570,
+      "Visible": false,
+      "Title": "Default IME",
+      "Class": "IME",
+      "X": 0,
+      "Y": 0,
+      "Width": 0,
+      "Height": 0
+    }
+  ],
+  "SatelliteMatches": 0
+}
