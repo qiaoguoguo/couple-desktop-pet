@@ -150,6 +150,7 @@ export function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const remoteMessageClickThroughOverrideRef = useRef(false);
   const petSurfaceRef = useRef<HTMLElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const statusPickerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const petPackages = useMemo(
@@ -1082,6 +1083,11 @@ export function App() {
     statusPickerReturnFocusRef.current = null;
   }, []);
 
+  const dismissStatusPicker = useCallback(() => {
+    setStatusPickerOpen(false);
+    statusPickerReturnFocusRef.current = null;
+  }, []);
+
   const openStatusPicker = useCallback(() => {
     statusPickerReturnFocusRef.current =
       document.activeElement instanceof HTMLElement
@@ -1201,7 +1207,9 @@ export function App() {
         setContextMenuPosition(nextPosition);
       }
 
-      closeStatusPicker();
+      if (statusPickerOpen) {
+        dismissStatusPicker();
+      }
 
       if (edgePeekSide) {
         void restoreFromEdgePeekIfNeeded()
@@ -1214,8 +1222,23 @@ export function App() {
 
       openContextMenu();
     },
-    [closeStatusPicker, edgePeekSide, restoreFromEdgePeekIfNeeded],
+    [
+      dismissStatusPicker,
+      edgePeekSide,
+      restoreFromEdgePeekIfNeeded,
+      statusPickerOpen,
+    ],
   );
+
+  useEffect(() => {
+    if (!contextMenuPosition) {
+      return;
+    }
+
+    contextMenuRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
+      ?.focus();
+  }, [contextMenuPosition]);
 
   const handleDragStart = useCallback(() => {
     setInteractionMenuPosition(null);
@@ -1394,6 +1417,7 @@ export function App() {
 
       {contextMenuPosition ? (
         <div
+          ref={contextMenuRef}
           className="pet-context-menu"
           role="menu"
           aria-label="桌宠菜单"

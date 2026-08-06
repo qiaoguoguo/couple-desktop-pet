@@ -388,6 +388,17 @@ async function dragPetPastThresholdAndRelease(container: HTMLElement) {
   await flushAppEffects();
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
@@ -700,9 +711,32 @@ describe("App", () => {
     const card = await screen.findByLabelText("对方状态");
     expect(card.getAttribute("data-status-variant")).toBe("offline");
     expect(screen.getByText("TA 离线")).toBeTruthy();
-    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+    const offlinePortrait = screen.getByRole("img", { name: "对方头像" });
+    expect(offlinePortrait.getAttribute("src")).toBe(
       "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
     );
+
+    fireEvent.error(offlinePortrait);
+    const portrait = screen.getByRole("img", { name: "对方头像" });
+    expect(portrait.getAttribute("src")).toBe(
+      "asset://C:/app/pet-packages/moon-buddy/portrait.png",
+    );
+
+    fireEvent.error(portrait);
+    const preview = screen.getByRole("img", { name: "对方头像" });
+    expect(preview.getAttribute("src")).toBe(
+      "asset://C:/app/pet-packages/moon-buddy/preview.png",
+    );
+
+    fireEvent.error(preview);
+    const motionFallback = screen.getByRole("img", { name: "对方头像" });
+    expect(motionFallback.getAttribute("src")).toContain(
+      "frames/idle-breathe/0001.png",
+    );
+
+    fireEvent.error(motionFallback);
+    expect(screen.queryByRole("img", { name: "对方头像" })).toBeNull();
+    expect(screen.getByText("TA")).toBeTruthy();
   });
 
   it("uses online peer image candidates without the offline portrait", async () => {
@@ -869,9 +903,69 @@ describe("App", () => {
     fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
 
     expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: "设置" })).toBeTruthy();
+    const settingsItem = screen.getByRole("menuitem", { name: "设置" });
+    expect(settingsItem).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(settingsItem));
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+    fireEvent.click(settingsItem);
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+  });
+
+  it("closes the status picker immediately and defers the context menu until edge-peek restore completes", async () => {
+    const snapDeferred = createDeferred<"left">();
+    const restoreDeferred = createDeferred<void>();
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockReturnValueOnce(
+      snapDeferred.promise,
+    );
+    windowCommandsMock.restoreWindowFromEdgePeek.mockReturnValueOnce(
+      restoreDeferred.promise,
+    );
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    const surface = screen.getByRole("region", { name: "情侣桌宠 MVP" });
+    await dragPetPastThresholdAndRelease(surface);
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
+    expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
+
+    await act(async () => {
+      snapDeferred.resolve("left");
+      await snapDeferred.promise;
+    });
+    await flushAppEffects();
+
+    fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
+
+    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+
+    await act(async () => {
+      restoreDeferred.resolve();
+      await restoreDeferred.promise;
+    });
+    await flushAppEffects();
+
+    const settingsItem = screen.getByRole("menuitem", { name: "设置" });
+    await waitFor(() => expect(document.activeElement).toBe(settingsItem));
+    fireEvent.click(settingsItem);
+
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock",
     );
