@@ -15,7 +15,8 @@ let relay: RelayServer;
 let baseUrl = "";
 let wsUrl = "";
 const inboxes = new WeakMap<WebSocket, SocketInbox>();
-const readTimeoutMs = 500;
+const readTimeoutMs = 1500;
+const noMessageTimeoutMs = 150;
 
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-ws-"));
@@ -135,6 +136,56 @@ describe("websocket relay", () => {
 
     alice.close();
   });
+
+  it("does not rebroadcast presence when a device replaces its own socket", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.online",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.online",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+
+    const aliceReplacement = await connectAndAuth(
+      "dev_a",
+      "secret_a",
+      pair.pairId,
+    );
+
+    await expect(readJson(aliceReplacement)).resolves.toMatchObject({
+      type: "peer.online",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expectNoJson(bob);
+
+    aliceReplacement.close();
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.offline",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    bob.close();
+  });
 });
 
 async function createPair(): Promise<{ pairId: string }> {
@@ -181,7 +232,10 @@ function onceOpen(socket: WebSocket): Promise<void> {
   });
 }
 
-function readJson(socket: WebSocket): Promise<unknown> {
+function readJson(
+  socket: WebSocket,
+  timeoutMs: number = readTimeoutMs,
+): Promise<unknown> {
   const inbox = inboxes.get(socket);
   if (!inbox) {
     throw new Error("Socket is not tracked");
@@ -203,10 +257,16 @@ function readJson(socket: WebSocket): Promise<unknown> {
         inbox.waiters.splice(waiterIndex, 1);
       }
       reject(new Error("Timed out waiting for websocket message"));
-    }, readTimeoutMs);
+    }, timeoutMs);
 
     inbox.waiters.push(waiter);
   });
+}
+
+async function expectNoJson(socket: WebSocket): Promise<void> {
+  await expect(readJson(socket, noMessageTimeoutMs)).rejects.toThrow(
+    "Timed out waiting for websocket message",
+  );
 }
 
 function trackSocket(socket: WebSocket): void {

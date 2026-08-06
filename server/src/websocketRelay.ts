@@ -85,6 +85,7 @@ function authenticateSocket(
     peerDeviceId: authenticated.peerDeviceId,
   };
   const previous = registry.replace(connection);
+  const isPresenceTransition = !previous;
   if (previous && previous.socket !== socket) {
     previous.socket.close();
   }
@@ -104,12 +105,14 @@ function authenticateSocket(
       peerDeviceId: authenticated.peerDeviceId,
       changedAt,
     });
-    sendJson(peer.socket, {
-      type: "peer.online",
-      pairId: authenticated.pairId,
-      peerDeviceId: authenticated.deviceId,
-      changedAt,
-    });
+    if (isPresenceTransition) {
+      sendJson(peer.socket, {
+        type: "peer.online",
+        pairId: authenticated.pairId,
+        peerDeviceId: authenticated.deviceId,
+        changedAt,
+      });
+    }
   } else {
     sendJson(socket, {
       type: "peer.offline",
