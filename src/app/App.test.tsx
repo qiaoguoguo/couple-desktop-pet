@@ -35,6 +35,22 @@ const windowCommandsMock = vi.hoisted(() => ({
   writeSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
+const companionWindowCommandsMock = vi.hoisted(() => ({
+  openMessageComposerHandler: undefined as (() => void) | undefined,
+  openMessageComposerUnlisten: vi.fn(),
+  hideCompanionScene: vi.fn().mockResolvedValue(undefined),
+  updateCompanionScene: vi.fn().mockResolvedValue({
+    presence: "hidden",
+    portraitUrl: null,
+    offlinePortraitUrl: null,
+    sceneScale: 1,
+    suspended: false,
+    side: "right",
+    compact: false,
+    revision: 0,
+  }),
+}));
+
 const realtimeSyncMock = vi.hoisted(() => {
   const mock = {
     callbacks: undefined as
@@ -131,6 +147,15 @@ vi.mock("../desktop/windowCommands", () => ({
   listenForOpenSettings: vi.fn((handler: () => void) => {
     windowCommandsMock.openSettingsHandler = handler;
     return Promise.resolve(windowCommandsMock.openSettingsUnlisten);
+  }),
+}));
+
+vi.mock("../desktop/companionWindowCommands", () => ({
+  hideCompanionScene: companionWindowCommandsMock.hideCompanionScene,
+  updateCompanionScene: companionWindowCommandsMock.updateCompanionScene,
+  listenForOpenMessageComposerRequest: vi.fn((handler: () => void) => {
+    companionWindowCommandsMock.openMessageComposerHandler = handler;
+    return Promise.resolve(companionWindowCommandsMock.openMessageComposerUnlisten);
   }),
 }));
 
@@ -400,6 +425,10 @@ describe("App", () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValue(null);
     windowCommandsMock.startWindowDrag.mockClear();
     windowCommandsMock.writeSettings.mockClear();
+    companionWindowCommandsMock.openMessageComposerHandler = undefined;
+    companionWindowCommandsMock.openMessageComposerUnlisten.mockClear();
+    companionWindowCommandsMock.hideCompanionScene.mockClear();
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
     realtimeSyncMock.callbacks = undefined;
     realtimeSyncMock.client.sendMessage.mockClear();
     realtimeSyncMock.state.status = "disabled";
@@ -616,7 +645,97 @@ describe("App", () => {
     expect(screen.getByLabelText("消息内容")).toBeTruthy();
   });
 
-  it("renders peer presence beside the pet and opens composer from online status", async () => {
+  it("projects an online companion scene with the selected peer portrait", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    const peerPackage = {
+      ...importedPackageSummary("moon-buddy", "月亮伙伴"),
+      portraitPath: "C:/app/pet-packages/moon-buddy/portrait.png",
+      offlinePortraitPath:
+        "C:/app/pet-packages/moon-buddy/portrait-offline.png",
+    };
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([peerPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_b: peerPackage.id,
+        },
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presence: "online",
+          portraitUrl: "asset://C:/app/pet-packages/moon-buddy/portrait.png",
+          offlinePortraitUrl:
+            "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
+          sceneScale: 1,
+          suspended: false,
+        }),
+      ),
+    );
+    expect(screen.queryByLabelText("对方在线状态")).toBeNull();
+    expect(document.querySelector(".peer-presence-layer")).toBeNull();
+  });
+
+  it("projects an offline companion scene while keeping the embedded layer retired", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "offline";
+    const peerPackage = {
+      ...importedPackageSummary("moon-buddy", "月亮伙伴"),
+      portraitPath: "C:/app/pet-packages/moon-buddy/portrait.png",
+      offlinePortraitPath:
+        "C:/app/pet-packages/moon-buddy/portrait-offline.png",
+    };
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([peerPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_b: peerPackage.id,
+        },
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presence: "offline",
+          portraitUrl: "asset://C:/app/pet-packages/moon-buddy/portrait.png",
+          offlinePortraitUrl:
+            "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
+          suspended: false,
+        }),
+      ),
+    );
+    expect(screen.queryByLabelText("对方在线状态")).toBeNull();
+    expect(document.querySelector(".peer-presence-layer")).toBeNull();
+  });
+
+  it("suspends the companion scene while settings, composer, remote message, or edge peek owns focus", async () => {
+    vi.useFakeTimers();
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -632,13 +751,79 @@ describe("App", () => {
     render(<App />);
 
     await flushAppEffects();
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", suspended: false }),
+    );
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
 
-    expect(screen.getByLabelText("对方在线状态")).toBeTruthy();
-    expect(document.querySelector(".peer-presence-orb")).toBeTruthy();
-    expect(document.querySelector(".peer-presence-heart-badge")).toBeTruthy();
-    expect(screen.getByText("TA 在线")).toBeTruthy();
+    await openSettingsFromContextMenu();
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", suspended: true }),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "给在线的TA发消息" }));
+    fireEvent.click(screen.getByLabelText("关闭设置"));
+    await flushAppEffects();
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "我来啦",
+        at: "2026-08-06T08:00:00.000Z",
+      });
+    });
+    await flushAppEffects();
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", suspended: true }),
+    );
+    fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
+    await flushAppEffects();
+    act(() => vi.advanceTimersByTime(800));
+    await flushAppEffects();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
+
+    act(() => {
+      companionWindowCommandsMock.openMessageComposerHandler?.();
+    });
+    await flushAppEffects();
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", suspended: true }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await flushAppEffects();
+    expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalled();
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
+
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    await dragPetPastThresholdAndRelease(screen.getByRole("region", { name: "情侣桌宠 MVP" }));
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", suspended: true }),
+    );
+  });
+
+  it("opens the existing message composer from the companion satellite event", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(companionWindowCommandsMock.openMessageComposerHandler).toBeTruthy();
+
+    act(() => {
+      companionWindowCommandsMock.openMessageComposerHandler?.();
+    });
 
     expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();

@@ -31,13 +31,18 @@ import {
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
 import {
+  hideCompanionScene,
+  listenForOpenMessageComposerRequest,
+  updateCompanionScene,
+} from "../desktop/companionWindowCommands";
+import {
   builtInEdgePeekImages,
   type EdgePeekSide,
 } from "../desktop/edgePeek";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
 import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
-import { PeerPresenceLayer } from "../sync/PeerPresenceLayer";
+import type { CompanionSceneContentState } from "../sync/companion/companionSceneTypes";
 import {
   completeRemoteMessageDismissal,
   createEmptyRemoteMessageQueue,
@@ -173,11 +178,6 @@ export function App() {
         : null,
     [petPackages, selectedPeerPetPackageId],
   );
-  const peerPresenceImageUrl =
-    selectedPeerPetPackage?.previewUrl ??
-    selectedPeerPetPackage?.motions[selectedPeerPetPackage.defaultMotionId]
-      ?.frames[0] ??
-    null;
   const activeMotion = useMemo(
     () =>
       selectedPetPackage.motions[
@@ -255,6 +255,46 @@ export function App() {
     }),
     [realtime.state, syncError],
   );
+  const companionScene = useMemo<CompanionSceneContentState>(() => {
+    const isPaired = Boolean(settings.sync.pairId && settings.sync.peerDeviceId);
+    const presence =
+      isPaired &&
+      realtime.state.status === "connected" &&
+      realtime.state.peerPresence !== "unknown"
+        ? realtime.state.peerPresence
+        : "hidden";
+    const portraitUrl =
+      selectedPeerPetPackage?.portraitUrl ??
+      selectedPeerPetPackage?.previewUrl ??
+      null;
+    const offlinePortraitUrl =
+      selectedPeerPetPackage?.offlinePortraitUrl ??
+      selectedPeerPetPackage?.portraitUrl ??
+      selectedPeerPetPackage?.previewUrl ??
+      null;
+
+    return {
+      presence,
+      portraitUrl,
+      offlinePortraitUrl,
+      sceneScale: 1,
+      suspended:
+        settingsOpen ||
+        messageComposerOpen ||
+        Boolean(activeRemoteMessage) ||
+        Boolean(edgePeekSide),
+    };
+  }, [
+    activeRemoteMessage,
+    edgePeekSide,
+    messageComposerOpen,
+    realtime.state.peerPresence,
+    realtime.state.status,
+    selectedPeerPetPackage,
+    settings.sync.pairId,
+    settings.sync.peerDeviceId,
+    settingsOpen,
+  ]);
 
   useEffect(() => {
     const defaultMotion = getDefaultPetMotion(selectedPetPackage);
@@ -309,6 +349,19 @@ export function App() {
   useEffect(() => {
     runDesktopCommand(() => setClickThrough(settings.clickThrough));
   }, [settings.clickThrough]);
+
+  useEffect(() => {
+    runDesktopCommand(() =>
+      updateCompanionScene(companionScene).then(() => undefined),
+    );
+  }, [companionScene]);
+
+  useEffect(
+    () => () => {
+      runDesktopCommand(hideCompanionScene);
+    },
+    [],
+  );
 
   useEffect(() => {
     const shouldDisableClickThroughForRemoteMessage =
@@ -1019,6 +1072,42 @@ export function App() {
     setMessageComposerOpen(true);
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForOpenMessageComposerRequest(() => {
+      const currentSync = settingsRef.current.sync;
+      const sendable =
+        currentSync.enabled &&
+        Boolean(currentSync.pairId) &&
+        realtime.state.status === "connected" &&
+        realtime.state.peerPresence === "online";
+
+      if (sendable) {
+        openMessageComposerPanel();
+      }
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+
+        unlisten = unsubscribe;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [
+    openMessageComposerPanel,
+    realtime.state.peerPresence,
+    realtime.state.status,
+  ]);
+
   const handleInteractionSelect = useCallback((selection: InteractionActionName) => {
     setInteractionMenuPosition(null);
 
@@ -1197,11 +1286,6 @@ export function App() {
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-        />
-        <PeerPresenceLayer
-          status={syncStatus}
-          peerImageUrl={peerPresenceImageUrl}
-          onOpenMessageComposer={openMessageComposerPanel}
         />
         <RemoteMessageLayer
           message={activeRemoteMessage}

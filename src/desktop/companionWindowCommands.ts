@@ -33,3 +33,9 @@ export function listenCompanionScene(
 ): Promise<DesktopEventUnlisten> {
   return listenToDesktopEvent("companion-scene-updated", handler);
 }
+
+export function listenForOpenMessageComposerRequest(
+  handler: () => void,
+): Promise<DesktopEventUnlisten> {
+  return listenToDesktopEvent("open-message-composer", handler);
+}

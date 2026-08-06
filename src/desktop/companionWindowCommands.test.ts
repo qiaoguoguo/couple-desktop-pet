@@ -85,4 +85,21 @@ describe("companion window commands", () => {
     );
     expect(returnedUnlisten).toBe(unlisten);
   });
+
+  it("listens for companion requests to open the main composer", async () => {
+    const { listenForOpenMessageComposerRequest } = await import(
+      "./companionWindowCommands"
+    );
+    const unlisten = vi.fn();
+    const handler = vi.fn();
+    desktopApiMock.listenToDesktopEvent.mockResolvedValueOnce(unlisten);
+
+    const returnedUnlisten = await listenForOpenMessageComposerRequest(handler);
+
+    expect(desktopApiMock.listenToDesktopEvent).toHaveBeenCalledWith(
+      "open-message-composer",
+      handler,
+    );
+    expect(returnedUnlisten).toBe(unlisten);
+  });
 });
