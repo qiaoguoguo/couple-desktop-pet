@@ -5,6 +5,7 @@ import {
   requestOpenMessageComposer,
 } from "../../desktop/companionWindowCommands";
 import type { CompanionPresence, CompanionSceneViewState } from "./companionSceneTypes";
+import { usePresenceMotionDirector } from "./presenceMotionDirector";
 
 export type CompanionSurface = "peer-presence" | "peer-link" | "offline-nest";
 
@@ -85,6 +86,12 @@ function PeerPresenceSurface({
 }: {
   state: CompanionSceneViewState;
 }) {
+  const reducedMotion = usePrefersReducedMotion();
+  const motion = usePresenceMotionDirector({
+    presence: state.presence,
+    suspended: state.suspended,
+    reducedMotion,
+  });
   const imageUrl = usePresencePortraitUrl(state);
   const [imageFailed, setImageFailed] = useState(false);
   const isOnline = state.presence === "online";
@@ -122,8 +129,14 @@ function PeerPresenceSurface({
       <button
         type="button"
         className={`companion-presence-surface is-${state.presence} is-${state.side}`}
+        data-motion-phase={motion.phase}
         aria-label={`${label}，${detail}`}
-        onClick={() => void requestOpenMessageComposer()}
+        onMouseEnter={motion.onHover}
+        onMouseDown={motion.onPress}
+        onClick={() => {
+          motion.onPress();
+          void requestOpenMessageComposer();
+        }}
       >
         {content}
       </button>
@@ -133,11 +146,34 @@ function PeerPresenceSurface({
   return (
     <div
       className={`companion-presence-surface is-${state.presence} is-${state.side}`}
+      data-motion-phase={motion.phase}
       role="status"
     >
       {content}
     </div>
   );
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+
+    if (!media) {
+      return;
+    }
+
+    const handleChange = () => setReducedMotion(media.matches);
+
+    media.addEventListener?.("change", handleChange);
+
+    return () => media.removeEventListener?.("change", handleChange);
+  }, []);
+
+  return reducedMotion;
 }
 
 function PeerLinkSurface({ state }: { state: CompanionSceneViewState }) {
@@ -168,7 +204,7 @@ function OfflineNestSurface({ state }: { state: CompanionSceneViewState }) {
       role="img"
       aria-label="离线留言小窝"
     >
-      <span aria-hidden="true">等TA回来</span>
+      <span className="companion-offline-nest-image" aria-hidden="true" />
     </div>
   );
 }
