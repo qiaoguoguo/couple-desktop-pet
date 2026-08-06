@@ -24,6 +24,11 @@ const MAIN_WINDOW_LABEL: &str = "main";
 pub const PEER_PRESENCE_WINDOW_LABEL: &str = "peer-presence";
 pub const PEER_LINK_WINDOW_LABEL: &str = "peer-link";
 pub const OFFLINE_NEST_WINDOW_LABEL: &str = "offline-nest";
+const COMPANION_WINDOW_LABELS: [&str; 3] = [
+    PEER_PRESENCE_WINDOW_LABEL,
+    PEER_LINK_WINDOW_LABEL,
+    OFFLINE_NEST_WINDOW_LABEL,
+];
 pub const COMPANION_SCENE_UPDATED_EVENT: &str = "companion-scene-updated";
 const PEER_PRESENCE_WINDOW_ROUTE: &str = "index.html";
 const PEER_LINK_WINDOW_ROUTE: &str = "index.html";
@@ -93,6 +98,10 @@ pub struct CompanionSceneContentState {
     pub portrait_url: Option<String>,
     #[serde(default)]
     pub offline_portrait_url: Option<String>,
+    #[serde(default)]
+    pub preview_url: Option<String>,
+    #[serde(default)]
+    pub motion_fallback_url: Option<String>,
     pub scene_scale: f64,
     pub suspended: bool,
 }
@@ -103,6 +112,8 @@ impl Default for CompanionSceneContentState {
             presence: CompanionPresence::Hidden,
             portrait_url: None,
             offline_portrait_url: None,
+            preview_url: None,
+            motion_fallback_url: None,
             scene_scale: 1.0,
             suspended: false,
         }
@@ -115,6 +126,8 @@ pub struct CompanionSceneViewState {
     pub presence: CompanionPresence,
     pub portrait_url: Option<String>,
     pub offline_portrait_url: Option<String>,
+    pub preview_url: Option<String>,
+    pub motion_fallback_url: Option<String>,
     pub scene_scale: f64,
     pub suspended: bool,
     pub side: CompanionSide,
@@ -263,19 +276,11 @@ pub fn sync_companion_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), Stri
 }
 
 pub fn hide_companion_windows<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    for label in [
-        PEER_PRESENCE_WINDOW_LABEL,
-        PEER_LINK_WINDOW_LABEL,
-        OFFLINE_NEST_WINDOW_LABEL,
-    ] {
-        if let Some(window) = app.get_webview_window(label) {
-            window
-                .hide()
-                .map_err(|error| format!("failed to hide companion window `{label}`: {error}"))?;
-        }
-    }
+    close_companion_windows_best_effort(|label| hide_companion_window(app, label))
+}
 
-    Ok(())
+pub fn companion_window_labels() -> [&'static str; 3] {
+    COMPANION_WINDOW_LABELS
 }
 
 pub fn reduce_scene_state(
@@ -295,6 +300,8 @@ pub fn reduce_scene_state(
         presence,
         portrait_url: normalize_url(content.portrait_url),
         offline_portrait_url: normalize_url(content.offline_portrait_url),
+        preview_url: normalize_url(content.preview_url),
+        motion_fallback_url: normalize_url(content.motion_fallback_url),
         scene_scale,
         suspended: content.suspended,
         side: layout.side,
@@ -383,6 +390,8 @@ fn default_view_state() -> CompanionSceneViewState {
         presence: CompanionPresence::Hidden,
         portrait_url: None,
         offline_portrait_url: None,
+        preview_url: None,
+        motion_fallback_url: None,
         scene_scale: 1.0,
         suspended: false,
         side: CompanionSide::Right,
@@ -406,7 +415,7 @@ fn apply_companion_windows<R: Runtime>(
                 PEER_PRESENCE_WINDOW_ROUTE,
                 rect,
                 layout.monitor_scale_factor,
-                false,
+                companion_window_click_through(PEER_PRESENCE_WINDOW_LABEL, view),
             )?;
         } else {
             hide_companion_window(app, PEER_PRESENCE_WINDOW_LABEL)?;
@@ -423,7 +432,7 @@ fn apply_companion_windows<R: Runtime>(
                 PEER_LINK_WINDOW_ROUTE,
                 rect,
                 layout.monitor_scale_factor,
-                true,
+                companion_window_click_through(PEER_LINK_WINDOW_LABEL, view),
             )?;
         } else {
             hide_companion_window(app, PEER_LINK_WINDOW_LABEL)?;
@@ -440,7 +449,7 @@ fn apply_companion_windows<R: Runtime>(
                 OFFLINE_NEST_WINDOW_ROUTE,
                 rect,
                 layout.monitor_scale_factor,
-                true,
+                companion_window_click_through(OFFLINE_NEST_WINDOW_LABEL, view),
             )?;
         } else {
             hide_companion_window(app, OFFLINE_NEST_WINDOW_LABEL)?;
@@ -460,12 +469,12 @@ fn show_companion_window<R: Runtime>(
     monitor_scale_factor: f64,
     click_through: bool,
 ) -> Result<(), String> {
-    let window =
-        ensure_companion_window(app, label, route, rect, monitor_scale_factor, click_through)?;
+    let window = ensure_companion_window(app, label, route, rect, monitor_scale_factor)?;
 
     window
         .set_size(Size::Physical(PhysicalSize::new(rect.width, rect.height)))
         .map_err(|error| format!("failed to resize companion window `{label}`: {error}"))?;
+    set_window_click_through(&window, click_through)?;
     window
         .set_position(PhysicalPosition::new(rect.x, rect.y))
         .map_err(|error| format!("failed to move companion window `{label}`: {error}"))?;
@@ -481,7 +490,6 @@ fn ensure_companion_window<R: Runtime>(
     route: &'static str,
     rect: Rect,
     monitor_scale_factor: f64,
-    click_through: bool,
 ) -> Result<WebviewWindow<R>, String> {
     if let Some(window) = app.get_webview_window(label) {
         return Ok(window);
@@ -508,10 +516,6 @@ fn ensure_companion_window<R: Runtime>(
         .build()
         .map_err(|error| format!("failed to create companion window `{label}`: {error}"))?;
 
-    if click_through {
-        set_window_click_through(&window, true)?;
-    }
-
     Ok(window)
 }
 
@@ -525,15 +529,38 @@ fn hide_companion_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<
     Ok(())
 }
 
+fn close_companion_windows_best_effort<F>(mut close_window: F) -> Result<(), String>
+where
+    F: FnMut(&str) -> Result<(), String>,
+{
+    let mut errors = Vec::new();
+
+    for label in companion_window_labels() {
+        if let Err(error) = close_window(label) {
+            errors.push(error);
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn companion_window_click_through(label: &str, view: &CompanionSceneViewState) -> bool {
+    match label {
+        PEER_PRESENCE_WINDOW_LABEL => view.presence != CompanionPresence::Online,
+        PEER_LINK_WINDOW_LABEL | OFFLINE_NEST_WINDOW_LABEL => true,
+        _ => true,
+    }
+}
+
 fn emit_scene_update<R: Runtime>(
     app: &AppHandle<R>,
     view: &CompanionSceneViewState,
 ) -> Result<(), String> {
-    for label in [
-        PEER_PRESENCE_WINDOW_LABEL,
-        PEER_LINK_WINDOW_LABEL,
-        OFFLINE_NEST_WINDOW_LABEL,
-    ] {
+    for label in companion_window_labels() {
         if app.get_webview_window(label).is_some() {
             app.emit_to(label, COMPANION_SCENE_UPDATED_EVENT, view)
                 .map_err(|error| {
@@ -761,10 +788,12 @@ fn clamp_axis(value: i32, min: i32, max: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        calculate_layout, calculate_layout_for_monitor, physical_rect_to_logical_inner_size,
-        reduce_scene_state, visible_windows, CompanionLayoutInput, CompanionPresence,
-        CompanionSceneContentState, CompanionSide, Rect, OFFLINE_NEST_WINDOW_ROUTE,
-        PEER_LINK_WINDOW_ROUTE, PEER_PRESENCE_WINDOW_ROUTE,
+        calculate_layout, calculate_layout_for_monitor, close_companion_windows_best_effort,
+        companion_window_click_through, companion_window_labels,
+        physical_rect_to_logical_inner_size, reduce_scene_state, visible_windows,
+        CompanionLayoutInput, CompanionPresence, CompanionSceneContentState, CompanionSide, Rect,
+        OFFLINE_NEST_WINDOW_LABEL, OFFLINE_NEST_WINDOW_ROUTE, PEER_LINK_WINDOW_LABEL,
+        PEER_LINK_WINDOW_ROUTE, PEER_PRESENCE_WINDOW_LABEL, PEER_PRESENCE_WINDOW_ROUTE,
     };
 
     #[test]
@@ -778,6 +807,82 @@ mod tests {
             assert!(!route.contains('?'));
             assert!(!route.contains('#'));
         }
+    }
+
+    #[test]
+    fn lifecycle_close_targets_all_companion_window_labels() {
+        assert_eq!(
+            companion_window_labels(),
+            [
+                PEER_PRESENCE_WINDOW_LABEL,
+                PEER_LINK_WINDOW_LABEL,
+                OFFLINE_NEST_WINDOW_LABEL,
+            ],
+        );
+    }
+
+    #[test]
+    fn lifecycle_close_attempts_every_companion_window_even_after_errors() {
+        let mut visited = Vec::new();
+
+        let result = close_companion_windows_best_effort(|label| {
+            visited.push(label.to_string());
+
+            if label == PEER_PRESENCE_WINDOW_LABEL {
+                Err("presence close failed".to_string())
+            } else {
+                Ok(())
+            }
+        });
+
+        assert_eq!(
+            visited,
+            vec![
+                PEER_PRESENCE_WINDOW_LABEL,
+                PEER_LINK_WINDOW_LABEL,
+                OFFLINE_NEST_WINDOW_LABEL,
+            ],
+        );
+        assert_eq!(result, Err("presence close failed".to_string()));
+    }
+
+    #[test]
+    fn peer_presence_click_through_depends_on_presence_state() {
+        let online = reduce_scene_state(
+            default_content(CompanionPresence::Online, false),
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.0,
+            ),
+            0,
+        );
+        let offline = reduce_scene_state(
+            default_content(CompanionPresence::Offline, false),
+            layout_input(
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(400, 500, 320, 360),
+                1.0,
+            ),
+            1,
+        );
+
+        assert!(!companion_window_click_through(
+            PEER_PRESENCE_WINDOW_LABEL,
+            &online
+        ));
+        assert!(companion_window_click_through(
+            PEER_PRESENCE_WINDOW_LABEL,
+            &offline
+        ));
+        assert!(companion_window_click_through(
+            PEER_LINK_WINDOW_LABEL,
+            &online
+        ));
+        assert!(companion_window_click_through(
+            OFFLINE_NEST_WINDOW_LABEL,
+            &offline
+        ));
     }
 
     #[test]
@@ -1049,6 +1154,8 @@ mod tests {
             presence,
             portrait_url: Some("asset://portrait.png".to_string()),
             offline_portrait_url: Some("asset://offline.png".to_string()),
+            preview_url: Some("asset://preview.png".to_string()),
+            motion_fallback_url: Some("asset://motion.png".to_string()),
             scene_scale: 1.0,
             suspended,
         }

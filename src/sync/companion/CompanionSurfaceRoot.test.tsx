@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionSceneViewState } from "./companionSceneTypes";
 import {
@@ -23,6 +25,8 @@ vi.mock("../../desktop/companionWindowCommands", () => ({
 describe("CompanionSurfaceRoot", () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it("parses supported surface query values only", () => {
@@ -80,6 +84,11 @@ describe("CompanionSurfaceRoot", () => {
     expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
       "asset://portrait.png",
     );
+    expect(document.querySelector(".companion-presence-orb")).toBeTruthy();
+    expect(document.querySelector(".companion-presence-badge")).toBeTruthy();
+    expect(document.querySelectorAll(".companion-presence-chips span")).toHaveLength(
+      2,
+    );
     expect(companionCommandsMock.listenCompanionScene).toHaveBeenCalledTimes(1);
 
     fireEvent.click(button);
@@ -136,6 +145,99 @@ describe("CompanionSurfaceRoot", () => {
     ).toBeTruthy();
   });
 
+  it("retries scene listener startup once when registration initially fails", async () => {
+    vi.useFakeTimers();
+    const listeners: Array<(state: CompanionSceneViewState) => void> = [];
+
+    companionCommandsMock.readCompanionScene.mockRejectedValue(
+      new Error("read unavailable"),
+    );
+    companionCommandsMock.listenCompanionScene
+      .mockRejectedValueOnce(new Error("listen unavailable"))
+      .mockImplementationOnce(async (handler: (state: CompanionSceneViewState) => void) => {
+        listeners.push(handler);
+
+        return vi.fn();
+      });
+
+    render(<CompanionSurfaceRoot surface="peer-presence" />);
+
+    expect(companionCommandsMock.listenCompanionScene).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(160);
+    });
+    expect(companionCommandsMock.listenCompanionScene).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      listeners[0](onlineState());
+    });
+
+    expect(
+      screen.getByRole("button", {
+        name: "TA 在线，正在陪你",
+      }),
+    ).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("falls through online portrait candidates before showing the text fallback", async () => {
+    companionCommandsMock.readCompanionScene.mockResolvedValueOnce({
+      ...onlineState(),
+      portraitUrl: "asset://portrait.png",
+      previewUrl: "asset://preview.png",
+      motionFallbackUrl: "asset://motion.png",
+    });
+    companionCommandsMock.listenCompanionScene.mockResolvedValueOnce(vi.fn());
+
+    render(<CompanionSurfaceRoot surface="peer-presence" />);
+
+    const image = await screen.findByAltText("对方桌宠头像");
+    expect(image.getAttribute("src")).toBe("asset://portrait.png");
+
+    fireEvent.error(image);
+    expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
+      "asset://preview.png",
+    );
+
+    fireEvent.error(screen.getByAltText("对方桌宠头像"));
+    expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
+      "asset://motion.png",
+    );
+
+    fireEvent.error(screen.getByAltText("对方桌宠头像"));
+    expect(screen.queryByAltText("对方桌宠头像")).toBeNull();
+    expect(screen.getByText("TA")).toBeTruthy();
+  });
+
+  it("falls through offline portrait candidates in the documented order", async () => {
+    companionCommandsMock.readCompanionScene.mockResolvedValueOnce({
+      ...offlineState(),
+      offlinePortraitUrl: "asset://offline.png",
+      portraitUrl: "asset://portrait.png",
+      previewUrl: "asset://preview.png",
+      motionFallbackUrl: "asset://motion.png",
+    });
+    companionCommandsMock.listenCompanionScene.mockResolvedValueOnce(vi.fn());
+
+    render(<CompanionSurfaceRoot surface="peer-presence" />);
+
+    expect((await screen.findByAltText("对方桌宠头像")).getAttribute("src")).toBe(
+      "asset://offline.png",
+    );
+    fireEvent.error(screen.getByAltText("对方桌宠头像"));
+    expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
+      "asset://portrait.png",
+    );
+    fireEvent.error(screen.getByAltText("对方桌宠头像"));
+    expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
+      "asset://preview.png",
+    );
+    fireEvent.error(screen.getByAltText("对方桌宠头像"));
+    expect(screen.getByAltText("对方桌宠头像").getAttribute("src")).toBe(
+      "asset://motion.png",
+    );
+  });
+
   it("renders offline presence as non-interactive status", async () => {
     companionCommandsMock.readCompanionScene.mockResolvedValueOnce(
       offlineState(),
@@ -146,6 +248,14 @@ describe("CompanionSurfaceRoot", () => {
 
     expect((await screen.findByRole("status")).textContent).toContain(
       "TA 离线",
+    );
+    expect(document.querySelector(".companion-presence-orb")).toBeTruthy();
+    expect(document.querySelector(".companion-presence-badge")).toBeTruthy();
+    expect(document.querySelectorAll(".companion-presence-chips span")).toHaveLength(
+      2,
+    );
+    expect(document.querySelector(".companion-presence-surface")?.className).toContain(
+      "is-offline",
     );
     expect(screen.queryByRole("button")).toBeNull();
   });
@@ -159,7 +269,44 @@ describe("CompanionSurfaceRoot", () => {
     render(<CompanionSurfaceRoot surface="peer-link" />);
 
     expect(await screen.findByRole("img", { name: "心动连线" })).toBeTruthy();
+    expect(document.querySelectorAll(".companion-link-heart")).toHaveLength(1);
     expect(screen.queryByText("TA 在线")).toBeNull();
+  });
+
+  it("renders the offline moonlight link without online heart particles", async () => {
+    companionCommandsMock.readCompanionScene.mockResolvedValueOnce(
+      offlineState(),
+    );
+    companionCommandsMock.listenCompanionScene.mockResolvedValueOnce(vi.fn());
+
+    render(<CompanionSurfaceRoot surface="peer-link" />);
+
+    expect(await screen.findByRole("img", { name: "月光连线" })).toBeTruthy();
+    expect(document.querySelector(".companion-link-surface")?.className).toContain(
+      "is-offline",
+    );
+    expect(document.querySelectorAll(".companion-link-heart")).toHaveLength(0);
+  });
+
+  it("applies a left-side mirror class and CSS transform to the link path", async () => {
+    companionCommandsMock.readCompanionScene.mockResolvedValueOnce({
+      ...onlineState(),
+      side: "left",
+    });
+    companionCommandsMock.listenCompanionScene.mockResolvedValueOnce(vi.fn());
+
+    render(<CompanionSurfaceRoot surface="peer-link" />);
+
+    expect(await screen.findByRole("img", { name: "心动连线" })).toBeTruthy();
+    expect(document.querySelector(".companion-link-surface")?.className).toContain(
+      "is-left",
+    );
+    const css = readFileSync(join(process.cwd(), "src/app/app.css"), "utf8");
+    expect(css).toContain(".companion-link-surface.is-left .companion-link-visual");
+    expect(css).toContain("scaleX(-1)");
+    expect(css).toContain("offset-path: path(");
+    expect(css).not.toContain(".companion-link-surface[data-motion-phase");
+    expect(css).not.toContain("~ .companion-link-surface");
   });
 
   it("renders the offline nest surface only for offline state", async () => {
@@ -182,6 +329,8 @@ function onlineState(): CompanionSceneViewState {
     presence: "online",
     portraitUrl: "asset://portrait.png",
     offlinePortraitUrl: "asset://offline.png",
+    previewUrl: null,
+    motionFallbackUrl: null,
     sceneScale: 1,
     suspended: false,
     side: "right",

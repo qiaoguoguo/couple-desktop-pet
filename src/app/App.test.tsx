@@ -43,6 +43,8 @@ const companionWindowCommandsMock = vi.hoisted(() => ({
     presence: "hidden",
     portraitUrl: null,
     offlinePortraitUrl: null,
+    previewUrl: null,
+    motionFallbackUrl: null,
     sceneScale: 1,
     suspended: false,
     side: "right",
@@ -682,6 +684,10 @@ describe("App", () => {
           portraitUrl: "asset://C:/app/pet-packages/moon-buddy/portrait.png",
           offlinePortraitUrl:
             "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
+          previewUrl: "asset://C:/app/pet-packages/moon-buddy/preview.png",
+          motionFallbackUrl: expect.stringContaining(
+            "frames/idle-breathe/0001.png",
+          ),
           sceneScale: 1,
           suspended: false,
         }),
@@ -718,6 +724,8 @@ describe("App", () => {
           presence: "online",
           portraitUrl: expect.stringContaining("portrait"),
           offlinePortraitUrl: expect.stringContaining("portrait-offline"),
+          previewUrl: expect.stringContaining("preview"),
+          motionFallbackUrl: expect.stringContaining("frames/idle-breathe"),
           suspended: false,
         }),
       ),
@@ -731,6 +739,8 @@ describe("App", () => {
         presence: "hidden",
         portraitUrl: null,
         offlinePortraitUrl: null,
+        previewUrl: null,
+        motionFallbackUrl: null,
         sceneScale: 1,
         suspended: false,
         side: "right",
@@ -742,6 +752,8 @@ describe("App", () => {
         presence: "online",
         portraitUrl: null,
         offlinePortraitUrl: null,
+        previewUrl: null,
+        motionFallbackUrl: null,
         sceneScale: 1,
         suspended: false,
         side: "right",
@@ -816,6 +828,10 @@ describe("App", () => {
           portraitUrl: "asset://C:/app/pet-packages/moon-buddy/portrait.png",
           offlinePortraitUrl:
             "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
+          previewUrl: "asset://C:/app/pet-packages/moon-buddy/preview.png",
+          motionFallbackUrl: expect.stringContaining(
+            "frames/idle-breathe/0001.png",
+          ),
           suspended: false,
         }),
       ),
@@ -890,6 +906,34 @@ describe("App", () => {
     await dragPetPastThresholdAndRelease(screen.getByRole("region", { name: "情侣桌宠 MVP" }));
     expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
       expect.objectContaining({ presence: "online", suspended: true }),
+    );
+  });
+
+  it("suspends the companion scene while a local interaction animation is active", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    companionWindowCommandsMock.updateCompanionScene.mockClear();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "打招呼" }));
+
+    await waitFor(() =>
+      expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+        expect.objectContaining({ presence: "online", suspended: true }),
+      ),
     );
   });
 

@@ -5,6 +5,8 @@ export interface CompanionSceneContentState {
   presence: CompanionPresence;
   portraitUrl: string | null;
   offlinePortraitUrl: string | null;
+  previewUrl: string | null;
+  motionFallbackUrl: string | null;
   sceneScale: number;
   suspended: boolean;
 }

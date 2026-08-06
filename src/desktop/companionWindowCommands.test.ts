@@ -13,6 +13,8 @@ describe("companion window commands", () => {
     presence: "online",
     portraitUrl: "asset://portrait.png",
     offlinePortraitUrl: null,
+    previewUrl: null,
+    motionFallbackUrl: null,
     sceneScale: 1,
     suspended: false,
   };
@@ -64,6 +66,55 @@ describe("companion window commands", () => {
     );
   });
 
+  it("normalizes read companion scene payloads from the desktop bridge", async () => {
+    const { readCompanionScene } = await import("./companionWindowCommands");
+    desktopApiMock.invokeCommand.mockResolvedValueOnce({
+      ...scene,
+      side: "left",
+      compact: "false",
+      revision: 7,
+      sceneScale: 9,
+    });
+
+    await expect(readCompanionScene()).resolves.toMatchObject({
+      side: "left",
+      compact: false,
+      sceneScale: 1.25,
+      revision: 7,
+    });
+  });
+
+  it("drops malformed companion scene listener payloads", async () => {
+    const { listenCompanionScene } = await import("./companionWindowCommands");
+    const unlisten = vi.fn();
+    const handler = vi.fn();
+    desktopApiMock.listenToDesktopEvent.mockImplementationOnce(
+      async (_eventName: string, listener: (payload: unknown) => void) => {
+        listener({
+          ...scene,
+          side: "right",
+          compact: false,
+          revision: 3,
+        });
+        listener({
+          presence: "offline",
+          side: "sideways",
+          compact: false,
+          revision: 4,
+        });
+
+        return unlisten;
+      },
+    );
+
+    await listenCompanionScene(handler);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ presence: "online", revision: 3 }),
+    );
+  });
+
   it("requests composer and listens for scene updates", async () => {
     const { listenCompanionScene, requestOpenMessageComposer } = await import(
       "./companionWindowCommands"
@@ -81,7 +132,7 @@ describe("companion window commands", () => {
     );
     expect(desktopApiMock.listenToDesktopEvent).toHaveBeenCalledWith(
       "companion-scene-updated",
-      handler,
+      expect.any(Function),
     );
     expect(returnedUnlisten).toBe(unlisten);
   });

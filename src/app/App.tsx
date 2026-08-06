@@ -276,22 +276,28 @@ export function App() {
       companionPortraitPetPackage.portraitUrl ??
       companionPortraitPetPackage.previewUrl ??
       null;
+    const motionFallbackUrl =
+      getDefaultPetMotion(companionPortraitPetPackage).frames[0] ?? null;
 
     return {
       presence,
       portraitUrl,
       offlinePortraitUrl,
+      previewUrl: companionPortraitPetPackage.previewUrl,
+      motionFallbackUrl,
       sceneScale: 1,
       suspended:
         settingsOpen ||
         messageComposerOpen ||
         Boolean(activeRemoteMessage) ||
-        Boolean(edgePeekSide),
+        Boolean(edgePeekSide) ||
+        petState.name === "interacting",
     };
   }, [
     activeRemoteMessage,
     edgePeekSide,
     messageComposerOpen,
+    petState.name,
     realtime.state.peerPresence,
     realtime.state.status,
     companionPortraitPetPackage,
@@ -1153,6 +1159,14 @@ export function App() {
 
     if (selectedPetPackage.motions[selection]) {
       setVisibleMotion(selection);
+      setPetState((currentState) =>
+        transitionPetState(currentState, {
+          type: "INTERACTION_SELECTED",
+          action: selection,
+          returnTo: "idle-breathe",
+          at: Date.now(),
+        }),
+      );
       return;
     }
 
@@ -1167,6 +1181,14 @@ export function App() {
         motions: selectedPetPackage.motions,
         defaultMotionId: selectedPetPackage.defaultMotionId,
         history: motionHistoryRef.current,
+      }),
+    );
+    setPetState((currentState) =>
+      transitionPetState(currentState, {
+        type: "INTERACTION_SELECTED",
+        action: selection,
+        returnTo: "idle-breathe",
+        at: Date.now(),
       }),
     );
   }, [

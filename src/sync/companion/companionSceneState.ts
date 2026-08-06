@@ -21,6 +21,8 @@ export function normalizeCompanionSceneState(
     presence,
     portraitUrl: normalizeUrl(input.portraitUrl),
     offlinePortraitUrl: normalizeUrl(input.offlinePortraitUrl),
+    previewUrl: normalizeUrl(input.previewUrl),
+    motionFallbackUrl: normalizeUrl(input.motionFallbackUrl),
     sceneScale: clampSceneScale(input.sceneScale),
     suspended: readBoolean(input.suspended),
   };

@@ -14,6 +14,8 @@ const SUPPORTED_SURFACES = new Set<CompanionSurface>([
   "peer-link",
   "offline-nest",
 ]);
+const LISTEN_RETRY_DELAY_MS = 140;
+const READ_RETRY_DELAY_MS = 120;
 
 export function readCompanionSurfaceFromSearch(
   search = window.location.search,
@@ -72,6 +74,7 @@ function useCompanionSceneState(): CompanionSceneViewState | null {
     let active = true;
     let unlisten: (() => void) | null = null;
     let retryTimer: number | null = null;
+    let listenRetryTimer: number | null = null;
 
     const applyState = (nextState: CompanionSceneViewState) => {
       if (active) {
@@ -87,27 +90,40 @@ function useCompanionSceneState(): CompanionSceneViewState | null {
             retryTimer = window.setTimeout(() => {
               retryTimer = null;
               readCurrentState(false);
-            }, 120);
+            }, READ_RETRY_DELAY_MS);
           }
         });
     };
 
-    void listenCompanionScene(applyState)
-      .then((nextUnlisten) => {
-        if (active) {
-          unlisten = nextUnlisten;
-        } else {
-          nextUnlisten();
-        }
-      })
-      .catch(() => undefined);
+    const listenForUpdates = (allowRetry: boolean) => {
+      void listenCompanionScene(applyState)
+        .then((nextUnlisten) => {
+          if (active) {
+            unlisten = nextUnlisten;
+          } else {
+            nextUnlisten();
+          }
+        })
+        .catch(() => {
+          if (active && allowRetry) {
+            listenRetryTimer = window.setTimeout(() => {
+              listenRetryTimer = null;
+              listenForUpdates(false);
+            }, LISTEN_RETRY_DELAY_MS);
+          }
+        });
+    };
 
+    listenForUpdates(true);
     readCurrentState(true);
 
     return () => {
       active = false;
       if (retryTimer !== null) {
         window.clearTimeout(retryTimer);
+      }
+      if (listenRetryTimer !== null) {
+        window.clearTimeout(listenRetryTimer);
       }
       unlisten?.();
     };
@@ -127,16 +143,19 @@ function PeerPresenceSurface({
     suspended: state.suspended,
     reducedMotion,
   });
-  const imageUrl = usePresencePortraitUrl(state);
-  const [imageFailed, setImageFailed] = useState(false);
+  const imageCandidates = usePresencePortraitCandidates(state);
+  const [imageCandidateIndex, setImageCandidateIndex] = useState(0);
+  const imageUrl = imageCandidates[imageCandidateIndex] ?? null;
   const isOnline = state.presence === "online";
   const label = isOnline ? "TA 在线" : "TA 离线";
   const detail = isOnline ? "正在陪你" : "等TA回来";
-  const image = imageUrl && !imageFailed ? (
+  const image = imageUrl ? (
     <img
       src={imageUrl}
       alt="对方桌宠头像"
-      onError={() => setImageFailed(true)}
+      onError={() => {
+        setImageCandidateIndex((current) => current + 1);
+      }}
     />
   ) : (
     <span className="companion-presence-placeholder" aria-hidden="true">
@@ -145,8 +164,15 @@ function PeerPresenceSurface({
   );
 
   useEffect(() => {
-    setImageFailed(false);
-  }, [imageUrl, state.revision]);
+    setImageCandidateIndex(0);
+  }, [
+    state.offlinePortraitUrl,
+    state.portraitUrl,
+    state.previewUrl,
+    state.motionFallbackUrl,
+    state.presence,
+    state.revision,
+  ]);
 
   const content = (
     <>
@@ -212,18 +238,25 @@ function usePrefersReducedMotion(): boolean {
 }
 
 function PeerLinkSurface({ state }: { state: CompanionSceneViewState }) {
-  if (state.presence !== "online" || state.compact) {
+  if (state.compact || state.presence === "hidden") {
     return null;
   }
+  const isOnline = state.presence === "online";
 
   return (
     <div
-      className={`companion-link-surface is-${state.side}`}
+      className={`companion-link-surface is-${state.presence} is-${state.side}`}
       role="img"
-      aria-label="心动连线"
+      aria-label={isOnline ? "心动连线" : "月光连线"}
     >
-      <span className="companion-link-line" aria-hidden="true" />
-      <span className="companion-link-heart" aria-hidden="true" />
+      <span className="companion-link-visual" aria-hidden="true">
+        <span className="companion-link-path" />
+        {isOnline ? (
+          <span className="companion-link-heart" />
+        ) : (
+          <span className="companion-link-moon-dot" />
+        )}
+      </span>
     </div>
   );
 }
@@ -244,12 +277,26 @@ function OfflineNestSurface({ state }: { state: CompanionSceneViewState }) {
   );
 }
 
-function usePresencePortraitUrl(state: CompanionSceneViewState): string | null {
+function usePresencePortraitCandidates(
+  state: CompanionSceneViewState,
+): readonly string[] {
   return useMemo(() => {
-    if (state.presence === "offline") {
-      return state.offlinePortraitUrl ?? state.portraitUrl;
-    }
+    const candidates =
+      state.presence === "offline"
+        ? [
+            state.offlinePortraitUrl,
+            state.portraitUrl,
+            state.previewUrl,
+            state.motionFallbackUrl,
+          ]
+        : [state.portraitUrl, state.previewUrl, state.motionFallbackUrl];
 
-    return state.portraitUrl;
-  }, [state.offlinePortraitUrl, state.portraitUrl, state.presence]);
+    return candidates.filter((url): url is string => Boolean(url));
+  }, [
+    state.offlinePortraitUrl,
+    state.portraitUrl,
+    state.previewUrl,
+    state.motionFallbackUrl,
+    state.presence,
+  ]);
 }

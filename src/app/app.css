@@ -42,15 +42,15 @@ button.companion-presence-surface {
 }
 
 .companion-presence-orb {
+  position: relative;
   display: grid;
-  width: 94px;
-  height: 94px;
+  width: 88px;
+  height: 88px;
   place-items: center;
   overflow: hidden;
-  border: 1px solid rgba(255, 197, 190, 0.78);
+  border: 3px solid #ffd6ce;
   border-radius: 50%;
-  background: rgba(255, 246, 241, 0.82);
-  box-shadow: 0 10px 34px rgba(255, 142, 139, 0.24);
+  background: #fff3ee;
 }
 
 .companion-presence-orb img {
@@ -67,15 +67,20 @@ button.companion-presence-surface {
 
 .companion-presence-badge {
   position: absolute;
-  top: 22px;
-  right: 34px;
-  width: 26px;
-  height: 26px;
+  top: 26px;
+  right: 38px;
+  width: 22px;
+  height: 22px;
   background: url("../assets/ui/presence/heart-badge.png") center / contain no-repeat;
 }
 
 .companion-presence-surface.is-offline .companion-presence-badge {
   background-image: url("../assets/ui/presence/moon-badge.png");
+}
+
+.companion-presence-surface.is-offline .companion-presence-orb {
+  border-color: #cbd6ea;
+  background: #e8eef9;
 }
 
 .companion-presence-chips {
@@ -89,10 +94,28 @@ button.companion-presence-surface {
   min-width: 86px;
   padding: 5px 12px;
   border-radius: 999px;
-  background: rgba(255, 252, 248, 0.86);
-  box-shadow: 0 6px 18px rgba(191, 115, 103, 0.16);
+  background: #fffaf4;
   font-size: 13px;
   font-weight: 700;
+}
+
+.companion-presence-chips span:first-child {
+  background: #ef7472;
+  color: #fffdf8;
+}
+
+.companion-presence-chips span:last-child {
+  color: #5f3829;
+}
+
+.companion-presence-surface.is-offline .companion-presence-chips span:first-child {
+  background: #7889a9;
+  color: #f8fbff;
+}
+
+.companion-presence-surface.is-offline .companion-presence-chips span:last-child {
+  background: #f4f8ff;
+  color: #506076;
 }
 
 .companion-link-surface,
@@ -100,22 +123,62 @@ button.companion-presence-surface {
   position: relative;
 }
 
-.companion-link-line {
+.companion-link-visual {
   position: absolute;
-  inset: 46px 18px auto 18px;
-  height: 2px;
-  border-top: 2px dashed rgba(255, 138, 157, 0.78);
-  transform: rotate(-12deg);
-  transform-origin: left center;
+  inset: 0;
+  display: block;
+}
+
+.companion-link-surface.is-left .companion-link-visual {
+  transform: scaleX(-1);
+}
+
+.companion-link-path {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background:
+    radial-gradient(circle at 9% 78%, rgba(255, 144, 155, 0.86) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 17% 62%, rgba(255, 144, 155, 0.8) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 27% 45%, rgba(255, 144, 155, 0.76) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 39% 31%, rgba(255, 144, 155, 0.72) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 53% 23%, rgba(255, 144, 155, 0.68) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 67% 25%, rgba(255, 144, 155, 0.7) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 81% 39%, rgba(255, 144, 155, 0.78) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 91% 56%, rgba(255, 144, 155, 0.84) 0 2.2px, transparent 2.8px);
+}
+
+.companion-link-surface.is-offline .companion-link-path {
+  background:
+    radial-gradient(circle at 9% 78%, rgba(143, 161, 195, 0.72) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 17% 62%, rgba(143, 161, 195, 0.66) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 27% 45%, rgba(143, 161, 195, 0.62) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 39% 31%, rgba(143, 161, 195, 0.58) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 53% 23%, rgba(143, 161, 195, 0.54) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 67% 25%, rgba(143, 161, 195, 0.58) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 81% 39%, rgba(143, 161, 195, 0.66) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 91% 56%, rgba(143, 161, 195, 0.72) 0 2.2px, transparent 2.8px);
 }
 
 .companion-link-heart {
   position: absolute;
-  top: 36px;
-  left: 86px;
-  width: 24px;
-  height: 24px;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
   background: url("../assets/ui/presence/heart-travel.png") center / contain no-repeat;
+  offset-path: path("M 18 86 C 58 26, 128 14, 178 48");
+  offset-rotate: 0deg;
+  transform: translate(-50%, -50%);
+}
+
+.companion-link-moon-dot {
+  position: absolute;
+  left: 132px;
+  top: 18px;
+  width: 34px;
+  height: 34px;
+  background: url("../assets/ui/presence/moon-badge.png") center / contain no-repeat;
 }
 
 .companion-offline-nest-surface {
@@ -124,14 +187,14 @@ button.companion-presence-surface {
 }
 
 .companion-offline-nest-image {
-  width: 116px;
-  height: 96px;
+  width: 130px;
+  height: 108px;
   background: url("../assets/ui/presence/offline-nest.png") center / contain no-repeat;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .companion-presence-surface[data-motion-phase="enter"] .companion-presence-orb {
-    animation: companion-presence-enter 700ms ease-out both;
+    animation: companion-presence-enter 420ms ease-out both;
   }
 
   .companion-presence-surface[data-motion-phase="online-idle"] .companion-presence-orb {
@@ -142,16 +205,20 @@ button.companion-presence-surface {
     animation: companion-presence-hover 180ms ease-out both;
   }
 
-  .companion-presence-surface[data-motion-phase="press"] .companion-presence-badge {
-    animation: companion-presence-press 320ms ease-out both;
+  .companion-presence-surface[data-motion-phase="press"] .companion-presence-chips span:first-child {
+    animation: companion-presence-press 220ms ease-out both;
   }
 
   .companion-presence-surface[data-motion-phase="offline-transition"] {
-    animation: companion-presence-offline 900ms ease-out both;
+    animation: companion-presence-offline 420ms ease-out both;
   }
 
   .companion-presence-surface[data-motion-phase="offline-idle"] .companion-presence-badge {
     animation: companion-presence-moon 6000ms ease-in-out infinite;
+  }
+
+  .companion-link-heart {
+    animation: companion-link-heart-travel 5600ms ease-in-out infinite both;
   }
 }
 
@@ -164,14 +231,9 @@ button.companion-presence-surface {
 @keyframes companion-presence-enter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.82);
-  }
-  72% {
-    transform: translateY(-2px) scale(1.04);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -188,33 +250,31 @@ button.companion-presence-surface {
 @keyframes companion-presence-breathe {
   0%,
   100% {
-    transform: translateY(0);
-    box-shadow: 0 10px 34px rgba(255, 142, 139, 0.22);
+    opacity: 0.96;
   }
   50% {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 42px rgba(255, 142, 139, 0.32);
+    opacity: 1;
   }
 }
 
 @keyframes companion-presence-hover {
   to {
-    transform: translateY(-2px) scale(1.035);
+    opacity: 1;
   }
 }
 
 @keyframes companion-presence-press {
   50% {
-    transform: scale(1.18);
+    opacity: 0.88;
   }
 }
 
 @keyframes companion-presence-offline {
   from {
-    filter: saturate(1);
+    opacity: 0.86;
   }
   to {
-    filter: saturate(0.78) brightness(0.96);
+    opacity: 1;
   }
 }
 
@@ -225,6 +285,23 @@ button.companion-presence-surface {
   }
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes companion-link-heart-travel {
+  0% {
+    opacity: 0;
+    offset-distance: 0%;
+  }
+  16% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    offset-distance: 100%;
   }
 }
 
