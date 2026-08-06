@@ -25,6 +25,16 @@ export function readCompanionSurfaceFromSearch(
     : null;
 }
 
+export function readCompanionSurfaceFromLocation(
+  search = window.location.search,
+  hash = window.location.hash,
+): CompanionSurface | null {
+  return (
+    readCompanionSurfaceFromSearch(hash.startsWith("#") ? hash.slice(1) : hash) ??
+    readCompanionSurfaceFromSearch(search)
+  );
+}
+
 export function CompanionSurfaceRoot({
   surface,
 }: {

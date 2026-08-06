@@ -4,10 +4,10 @@ import { App } from "./app/App";
 import "./app/app.css";
 import {
   CompanionSurfaceRoot,
-  readCompanionSurfaceFromSearch,
+  readCompanionSurfaceFromLocation,
 } from "./sync/companion/CompanionSurfaceRoot";
 
-const surface = readCompanionSurfaceFromSearch();
+const surface = readCompanionSurfaceFromLocation();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

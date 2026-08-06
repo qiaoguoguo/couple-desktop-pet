@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionSceneViewState } from "./companionSceneTypes";
 import {
   CompanionSurfaceRoot,
+  readCompanionSurfaceFromLocation,
   readCompanionSurfaceFromSearch,
 } from "./CompanionSurfaceRoot";
 
@@ -35,6 +36,19 @@ describe("CompanionSurfaceRoot", () => {
     );
     expect(readCompanionSurfaceFromSearch("?surface=main")).toBe(null);
     expect(readCompanionSurfaceFromSearch("")).toBe(null);
+  });
+
+  it("parses companion surface mode from stable hash routes", () => {
+    expect(readCompanionSurfaceFromLocation("", "#surface=peer-presence")).toBe(
+      "peer-presence",
+    );
+    expect(readCompanionSurfaceFromLocation("", "#surface=peer-link")).toBe(
+      "peer-link",
+    );
+    expect(readCompanionSurfaceFromLocation("", "#surface=offline-nest")).toBe(
+      "offline-nest",
+    );
+    expect(readCompanionSurfaceFromLocation("", "#surface=main")).toBe(null);
   });
 
   it("reads current state, subscribes to updates, and opens composer when online presence is clicked", async () => {
