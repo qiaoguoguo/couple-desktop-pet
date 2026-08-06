@@ -630,6 +630,8 @@ describe("App", () => {
     await flushAppEffects();
 
     expect(screen.getByLabelText("对方在线状态")).toBeTruthy();
+    expect(document.querySelector(".peer-presence-orb")).toBeTruthy();
+    expect(document.querySelector(".peer-presence-heart-badge")).toBeTruthy();
     expect(screen.getByText("TA 在线")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "给在线的TA发消息" }));

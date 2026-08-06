@@ -1,10 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
-  getPeerPresenceHorizontalBounds,
+  getPeerPresenceLayoutBounds,
   PeerPresenceLayer,
-  PEER_PRESENCE_CARD_WIDTH_PX,
+  PEER_PRESENCE_GROUP_HEIGHT_PX,
+  PEER_PRESENCE_GROUP_WIDTH_PX,
+  PEER_PRESENCE_ORB_SIZE_PX,
   PEER_PRESENCE_RIGHT_PX,
+  PEER_PRESENCE_TOP_PX,
   PEER_PRESENCE_WINDOW_WIDTH_PX,
 } from "./PeerPresenceLayer";
 import type { SyncRuntimeState } from "./syncTypes";
@@ -18,7 +21,32 @@ const baseStatus: SyncRuntimeState = {
 };
 
 describe("PeerPresenceLayer", () => {
-  it("renders warm online companion status", () => {
+  it("renders a warm online companion mini avatar with chips and heartline", () => {
+    const { container } = render(
+      <PeerPresenceLayer
+        status={baseStatus}
+        peerImageUrl="peer.png"
+        onOpenMessageComposer={() => undefined}
+      />,
+    );
+
+    const layer = screen.getByLabelText("对方在线状态") as HTMLElement;
+    const orb = container.querySelector(".peer-presence-orb");
+    const chips = container.querySelectorAll(".peer-presence-chip");
+
+    expect(layer).toBeTruthy();
+    expect(orb).toBeTruthy();
+    expect(container.querySelector(".peer-presence-heart-badge")).toBeTruthy();
+    expect(container.querySelector(".peer-presence-heartline")).toBeTruthy();
+    expect(chips).toHaveLength(2);
+    expect(screen.getByText("TA 在线")).toBeTruthy();
+    expect(screen.getByText("正在陪你")).toBeTruthy();
+    expect(screen.getByAltText("对方头像").getAttribute("src")).toBe(
+      "peer.png",
+    );
+  });
+
+  it("exposes stable layout variables for the companion presence group", () => {
     render(
       <PeerPresenceLayer
         status={baseStatus}
@@ -27,16 +55,26 @@ describe("PeerPresenceLayer", () => {
       />,
     );
 
-    expect(screen.getByLabelText("对方在线状态")).toBeTruthy();
-    expect(screen.getByText("TA 在线")).toBeTruthy();
-    expect(screen.getByText("正在陪你")).toBeTruthy();
-    expect(screen.getByAltText("对方形象").getAttribute("src")).toBe(
-      "peer.png",
+    const layer = screen.getByLabelText("对方在线状态") as HTMLElement;
+    expect(layer.style.getPropertyValue("--peer-presence-top")).toBe(
+      `${PEER_PRESENCE_TOP_PX}px`,
+    );
+    expect(layer.style.getPropertyValue("--peer-presence-right")).toBe(
+      `${PEER_PRESENCE_RIGHT_PX}px`,
+    );
+    expect(layer.style.getPropertyValue("--peer-presence-group-width")).toBe(
+      `${PEER_PRESENCE_GROUP_WIDTH_PX}px`,
+    );
+    expect(layer.style.getPropertyValue("--peer-presence-group-height")).toBe(
+      `${PEER_PRESENCE_GROUP_HEIGHT_PX}px`,
+    );
+    expect(layer.style.getPropertyValue("--peer-presence-orb-size")).toBe(
+      `${PEER_PRESENCE_ORB_SIZE_PX}px`,
     );
   });
 
   it("renders gentle offline waiting status", () => {
-    render(
+    const { container } = render(
       <PeerPresenceLayer
         status={{
           ...baseStatus,
@@ -50,31 +88,20 @@ describe("PeerPresenceLayer", () => {
 
     expect(screen.getByText("TA 离线")).toBeTruthy();
     expect(screen.getByText("等TA回来")).toBeTruthy();
-    expect(screen.getByLabelText("离线留言小窝")).toBeTruthy();
+    expect(container.querySelector(".peer-presence-orb")).toBeTruthy();
+    expect(screen.getByLabelText("离线月亮标记")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByRole("status", { name: "对方离线状态" })).toBeTruthy();
   });
 
-  it("keeps the compact presence card inside the default 320px pet window", () => {
-    const bounds = getPeerPresenceHorizontalBounds();
+  it("keeps the companion presence group and heartline inside the default 320px pet window", () => {
+    const bounds = getPeerPresenceLayoutBounds();
 
-    expect(bounds.left).toBeGreaterThanOrEqual(0);
-    expect(bounds.right).toBeLessThanOrEqual(PEER_PRESENCE_WINDOW_WIDTH_PX);
-
-    render(
-      <PeerPresenceLayer
-        status={baseStatus}
-        peerImageUrl={null}
-        onOpenMessageComposer={() => undefined}
-      />,
-    );
-
-    const layer = screen.getByLabelText("对方在线状态") as HTMLElement;
-    expect(layer.style.getPropertyValue("--peer-presence-right")).toBe(
-      `${PEER_PRESENCE_RIGHT_PX}px`,
-    );
-    expect(layer.style.getPropertyValue("--peer-presence-card-width")).toBe(
-      `${PEER_PRESENCE_CARD_WIDTH_PX}px`,
+    expect(bounds.group.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.group.right).toBeLessThanOrEqual(PEER_PRESENCE_WINDOW_WIDTH_PX);
+    expect(bounds.heartline.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.heartline.right).toBeLessThanOrEqual(
+      PEER_PRESENCE_WINDOW_WIDTH_PX,
     );
   });
 
