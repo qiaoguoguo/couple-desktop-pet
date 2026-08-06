@@ -29,6 +29,7 @@ describe("settings defaults", () => {
       deviceSecret: null,
       pairId: null,
       peerDeviceId: null,
+      activityStatus: null,
     });
   });
 });
@@ -117,6 +118,7 @@ describe("mergeSettings", () => {
           deviceSecret: "secret_a",
           pairId: "pair_a",
           peerDeviceId: "dev_b",
+          activityStatus: null,
         },
       }),
     ).toEqual({
@@ -139,6 +141,7 @@ describe("mergeSettings", () => {
         deviceSecret: "secret_a",
         pairId: "pair_a",
         peerDeviceId: "dev_b",
+        activityStatus: null,
       },
     });
   });
@@ -153,6 +156,7 @@ describe("mergeSettings", () => {
           deviceSecret: "secret_a",
           pairId: "pair_a",
           peerDeviceId: "dev_b",
+          activityStatus: null,
         },
       }),
     ).toMatchObject({
@@ -163,6 +167,53 @@ describe("mergeSettings", () => {
         deviceSecret: "secret_a",
         pairId: "pair_a",
         peerDeviceId: "dev_b",
+        activityStatus: null,
+      },
+    });
+  });
+
+  it("persists valid local activity statuses", () => {
+    expect(
+      mergeSettings({
+        sync: {
+          activityStatus: "dazing",
+        } as never,
+      }),
+    ).toMatchObject({
+      sync: {
+        activityStatus: "dazing",
+      },
+    });
+  });
+
+  it("rejects unknown local activity statuses", () => {
+    expect(
+      mergeSettings({
+        sync: {
+          activityStatus: "gaming",
+        } as never,
+      }),
+    ).toMatchObject({
+      sync: {
+        activityStatus: null,
+      },
+    });
+  });
+
+  it("keeps local activity status when pair fields are cleared", () => {
+    expect(
+      mergeSettings({
+        sync: {
+          pairId: null,
+          peerDeviceId: null,
+          activityStatus: "slacking",
+        } as never,
+      }),
+    ).toMatchObject({
+      sync: {
+        pairId: null,
+        peerDeviceId: null,
+        activityStatus: "slacking",
       },
     });
   });
@@ -201,6 +252,7 @@ describe("mergeSettings", () => {
           deviceSecret: [] as never,
           pairId: 2 as never,
           peerDeviceId: false as never,
+          activityStatus: "gaming" as never,
         },
       }),
     ).toMatchObject({
@@ -232,6 +284,7 @@ describe("settings persistence", () => {
           deviceSecret: "secret_a",
           pairId: "pair_a",
           peerDeviceId: "dev_b",
+          activityStatus: "slacking",
         },
       }),
       writeSettings: async () => undefined,
@@ -257,6 +310,7 @@ describe("settings persistence", () => {
         deviceSecret: "secret_a",
         pairId: "pair_a",
         peerDeviceId: "dev_b",
+        activityStatus: "slacking",
       },
     });
   });
@@ -308,12 +362,20 @@ describe("settings persistence", () => {
       ...defaultSettings,
       scale: 9,
       movementRange: "invalid" as never,
+      sync: {
+        ...defaultSettings.sync,
+        activityStatus: "overtime",
+      } as never,
     });
 
     expect(writtenSettings).toEqual({
       ...defaultSettings,
       scale: 2,
       movementRange: "bottom",
+      sync: {
+        ...defaultSettings.sync,
+        activityStatus: "overtime",
+      },
     });
   });
 });

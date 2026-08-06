@@ -1,3 +1,5 @@
+import type { ActivityStatus } from "../../shared/activityStatus";
+
 export type MovementRange = "bottom" | "active-screen" | "free";
 
 export interface SyncSettings {
@@ -7,6 +9,7 @@ export interface SyncSettings {
   deviceSecret: string | null;
   pairId: string | null;
   peerDeviceId: string | null;
+  activityStatus: ActivityStatus | null;
 }
 
 export interface AppearanceSettings {

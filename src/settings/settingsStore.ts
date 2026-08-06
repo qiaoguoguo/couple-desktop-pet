@@ -1,4 +1,5 @@
 import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
+import { isNullableActivityStatus } from "../../shared/activityStatus";
 import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
 
@@ -85,6 +86,9 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
     deviceSecret: readNullableString(value.deviceSecret),
     pairId: readNullableString(value.pairId),
     peerDeviceId: readNullableString(value.peerDeviceId),
+    activityStatus: isNullableActivityStatus(value.activityStatus)
+      ? value.activityStatus
+      : null,
   };
 }
 

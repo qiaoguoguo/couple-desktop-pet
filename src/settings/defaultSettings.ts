@@ -21,5 +21,6 @@ export const defaultSettings: PetSettings = {
     deviceSecret: null,
     pairId: null,
     peerDeviceId: null,
+    activityStatus: null,
   },
 };
