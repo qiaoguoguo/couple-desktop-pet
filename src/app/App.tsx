@@ -178,6 +178,10 @@ export function App() {
         : null,
     [petPackages, selectedPeerPetPackageId],
   );
+  const companionPortraitPetPackage =
+    selectedPeerPetPackage ??
+    petPackages.find((pkg) => pkg.id === BUILT_IN_PET_PACKAGE_ID) ??
+    selectedPetPackage;
   const activeMotion = useMemo(
     () =>
       selectedPetPackage.motions[
@@ -264,13 +268,13 @@ export function App() {
         ? realtime.state.peerPresence
         : "hidden";
     const portraitUrl =
-      selectedPeerPetPackage?.portraitUrl ??
-      selectedPeerPetPackage?.previewUrl ??
+      companionPortraitPetPackage.portraitUrl ??
+      companionPortraitPetPackage.previewUrl ??
       null;
     const offlinePortraitUrl =
-      selectedPeerPetPackage?.offlinePortraitUrl ??
-      selectedPeerPetPackage?.portraitUrl ??
-      selectedPeerPetPackage?.previewUrl ??
+      companionPortraitPetPackage.offlinePortraitUrl ??
+      companionPortraitPetPackage.portraitUrl ??
+      companionPortraitPetPackage.previewUrl ??
       null;
 
     return {
@@ -290,7 +294,7 @@ export function App() {
     messageComposerOpen,
     realtime.state.peerPresence,
     realtime.state.status,
-    selectedPeerPetPackage,
+    companionPortraitPetPackage,
     settings.sync.pairId,
     settings.sync.peerDeviceId,
     settingsOpen,
@@ -351,9 +355,29 @@ export function App() {
   }, [settings.clickThrough]);
 
   useEffect(() => {
-    runDesktopCommand(() =>
-      updateCompanionScene(companionScene).then(() => undefined),
-    );
+    let disposed = false;
+    let retryTimer: number | null = null;
+
+    const sendScene = (allowRetry: boolean) => {
+      void updateCompanionScene(companionScene).catch(() => {
+        if (!disposed && allowRetry) {
+          retryTimer = window.setTimeout(() => {
+            retryTimer = null;
+            sendScene(false);
+          }, 200);
+        }
+      });
+    };
+
+    sendScene(true);
+
+    return () => {
+      disposed = true;
+
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
   }, [companionScene]);
 
   useEffect(

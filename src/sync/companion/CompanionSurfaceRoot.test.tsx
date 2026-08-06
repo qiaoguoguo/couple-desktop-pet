@@ -91,6 +91,51 @@ describe("CompanionSurfaceRoot", () => {
     await waitFor(() => expect(unlisten).toHaveBeenCalled());
   });
 
+  it("subscribes before reading current state so startup emits are not missed", async () => {
+    companionCommandsMock.readCompanionScene.mockResolvedValueOnce(
+      onlineState(),
+    );
+    companionCommandsMock.listenCompanionScene.mockResolvedValueOnce(vi.fn());
+
+    render(<CompanionSurfaceRoot surface="peer-presence" />);
+
+    await screen.findByRole("button", {
+      name: "TA 在线，正在陪你",
+    });
+
+    expect(
+      companionCommandsMock.listenCompanionScene.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      companionCommandsMock.readCompanionScene.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("renders a later companion scene event when the initial read fails", async () => {
+    const listeners: Array<(state: CompanionSceneViewState) => void> = [];
+
+    companionCommandsMock.readCompanionScene.mockRejectedValueOnce(
+      new Error("read unavailable"),
+    );
+    companionCommandsMock.listenCompanionScene.mockImplementationOnce(
+      async (handler: (state: CompanionSceneViewState) => void) => {
+        listeners.push(handler);
+
+        return vi.fn();
+      },
+    );
+
+    render(<CompanionSurfaceRoot surface="peer-presence" />);
+
+    expect(listeners).toHaveLength(1);
+    listeners[0](onlineState());
+
+    expect(
+      await screen.findByRole("button", {
+        name: "TA 在线，正在陪你",
+      }),
+    ).toBeTruthy();
+  });
+
   it("renders offline presence as non-interactive status", async () => {
     companionCommandsMock.readCompanionScene.mockResolvedValueOnce(
       offlineState(),

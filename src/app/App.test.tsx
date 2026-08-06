@@ -691,6 +691,96 @@ describe("App", () => {
     expect(document.querySelector(".peer-presence-layer")).toBeNull();
   });
 
+  it("falls back to the built-in portrait when no peer pet package is selected", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presence: "online",
+          portraitUrl: expect.stringContaining("portrait"),
+          offlinePortraitUrl: expect.stringContaining("portrait-offline"),
+          suspended: false,
+        }),
+      ),
+    );
+  });
+
+  it("retries companion scene updates once when the desktop command rejects", async () => {
+    vi.useFakeTimers();
+    companionWindowCommandsMock.updateCompanionScene
+      .mockResolvedValueOnce({
+        presence: "hidden",
+        portraitUrl: null,
+        offlinePortraitUrl: null,
+        sceneScale: 1,
+        suspended: false,
+        side: "right",
+        compact: false,
+        revision: 1,
+      })
+      .mockRejectedValueOnce(new Error("surface not ready"))
+      .mockResolvedValue({
+        presence: "online",
+        portraitUrl: null,
+        offlinePortraitUrl: null,
+        sceneScale: 1,
+        suspended: false,
+        side: "right",
+        compact: false,
+        revision: 2,
+      });
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(companionWindowCommandsMock.updateCompanionScene).toHaveBeenCalled();
+    const firstCallCount =
+      companionWindowCommandsMock.updateCompanionScene.mock.calls.length;
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    await flushAppEffects();
+
+    expect(
+      companionWindowCommandsMock.updateCompanionScene.mock.calls.length,
+    ).toBeGreaterThan(firstCallCount);
+  });
+
   it("projects an offline companion scene while keeping the embedded layer retired", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "offline";

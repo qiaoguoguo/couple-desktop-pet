@@ -71,27 +71,44 @@ function useCompanionSceneState(): CompanionSceneViewState | null {
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | null = null;
+    let retryTimer: number | null = null;
 
-    void readCompanionScene().then((currentState) => {
-      if (active) {
-        setState(currentState);
-      }
-    });
-
-    void listenCompanionScene((nextState) => {
+    const applyState = (nextState: CompanionSceneViewState) => {
       if (active) {
         setState(nextState);
       }
-    }).then((nextUnlisten) => {
-      if (active) {
-        unlisten = nextUnlisten;
-      } else {
-        nextUnlisten();
-      }
-    });
+    };
+
+    const readCurrentState = (allowRetry: boolean) => {
+      void readCompanionScene()
+        .then(applyState)
+        .catch(() => {
+          if (active && allowRetry) {
+            retryTimer = window.setTimeout(() => {
+              retryTimer = null;
+              readCurrentState(false);
+            }, 120);
+          }
+        });
+    };
+
+    void listenCompanionScene(applyState)
+      .then((nextUnlisten) => {
+        if (active) {
+          unlisten = nextUnlisten;
+        } else {
+          nextUnlisten();
+        }
+      })
+      .catch(() => undefined);
+
+    readCurrentState(true);
 
     return () => {
       active = false;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
       unlisten?.();
     };
   }, []);
