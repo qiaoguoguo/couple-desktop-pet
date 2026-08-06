@@ -471,7 +471,8 @@ fn show_companion_window<R: Runtime>(
         .map_err(|error| format!("failed to move companion window `{label}`: {error}"))?;
     window
         .show()
-        .map_err(|error| format!("failed to show companion window `{label}`: {error}"))
+        .map_err(|error| format!("failed to show companion window `{label}`: {error}"))?;
+    Ok(())
 }
 
 fn ensure_companion_window<R: Runtime>(
@@ -487,19 +488,23 @@ fn ensure_companion_window<R: Runtime>(
     }
     let (logical_width, logical_height) =
         physical_rect_to_logical_inner_size(rect, monitor_scale_factor);
+    let scale = normalize_monitor_scale_factor(monitor_scale_factor);
+    let logical_x = f64::from(rect.x) / scale;
+    let logical_y = f64::from(rect.y) / scale;
 
     // Tauri builders take logical dimensions. The final set_size call uses
     // Physical pixels as the source of truth, so the WebView CSS viewport stays
     // at the designed logical size on high-DPI monitors.
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(route.into()))
         .inner_size(logical_width, logical_height)
+        .position(logical_x, logical_y)
         .transparent(true)
         .decorations(false)
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .visible(false)
+        .visible(true)
         .build()
         .map_err(|error| format!("failed to create companion window `{label}`: {error}"))?;
 
@@ -513,8 +518,8 @@ fn ensure_companion_window<R: Runtime>(
 fn hide_companion_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(label) {
         window
-            .hide()
-            .map_err(|error| format!("failed to hide companion window `{label}`: {error}"))?;
+            .close()
+            .map_err(|error| format!("failed to close companion window `{label}`: {error}"))?;
     }
 
     Ok(())
