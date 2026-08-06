@@ -22,7 +22,7 @@ export function normalizeCompanionSceneState(
     portraitUrl: normalizeUrl(input.portraitUrl),
     offlinePortraitUrl: normalizeUrl(input.offlinePortraitUrl),
     sceneScale: clampSceneScale(input.sceneScale),
-    suspended: Boolean(input.suspended),
+    suspended: readBoolean(input.suspended),
   };
 }
 
@@ -36,7 +36,7 @@ export function normalizeCompanionSceneViewState(
   return {
     ...normalizeCompanionSceneState(input),
     side: readCompanionSide(input.side),
-    compact: Boolean(input.compact),
+    compact: readBoolean(input.compact),
     revision: readRevision(input.revision),
   };
 }
@@ -85,6 +85,10 @@ function readRevision(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? value
     : 0;
+}
+
+function readBoolean(value: unknown): boolean {
+  return typeof value === "boolean" ? value : false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

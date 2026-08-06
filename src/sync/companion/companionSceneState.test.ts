@@ -68,4 +68,29 @@ describe("companion scene state", () => {
       revision: 3,
     });
   });
+
+  it("uses safe boolean defaults for malformed boolean fields", () => {
+    expect(
+      normalizeCompanionSceneState({
+        presence: "online",
+        portraitUrl: null,
+        offlinePortraitUrl: null,
+        sceneScale: 1,
+        suspended: "false",
+      }).suspended,
+    ).toBe(false);
+
+    expect(
+      normalizeCompanionSceneViewState({
+        presence: "online",
+        portraitUrl: null,
+        offlinePortraitUrl: null,
+        sceneScale: 1,
+        suspended: false,
+        side: "right",
+        compact: "true",
+        revision: 0,
+      }).compact,
+    ).toBe(false);
+  });
 });
