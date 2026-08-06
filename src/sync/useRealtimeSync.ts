@@ -20,6 +20,8 @@ export function useRealtimeSync(
   const [state, setState] = useState<SyncRuntimeState>({
     status: sync.enabled ? "disconnected" : "disabled",
     peerPresence: "unknown",
+    peerPresenceChangedAt: null,
+    peerLastSeenAt: null,
     lastError: null,
   });
 
@@ -49,11 +51,15 @@ export function useRealtimeSync(
         }
 
         if (event.type === "status") {
+          const isConnected = event.status === "connected";
           setState((current) => ({
             ...current,
             status: event.status,
-            peerPresence:
-              event.status === "connected" ? current.peerPresence : "unknown",
+            peerPresence: isConnected ? current.peerPresence : "unknown",
+            peerPresenceChangedAt: isConnected
+              ? current.peerPresenceChangedAt
+              : null,
+            peerLastSeenAt: isConnected ? current.peerLastSeenAt : null,
           }));
           return;
         }
@@ -62,6 +68,8 @@ export function useRealtimeSync(
           setState((current) => ({
             ...current,
             peerPresence: event.peerPresence,
+            peerPresenceChangedAt: event.changedAt,
+            peerLastSeenAt: event.lastSeenAt,
           }));
           return;
         }
@@ -78,6 +86,8 @@ export function useRealtimeSync(
       setState({
         status: sync.enabled ? "disconnected" : "disabled",
         peerPresence: "unknown",
+        peerPresenceChangedAt: null,
+        peerLastSeenAt: null,
         lastError: null,
       });
       return;

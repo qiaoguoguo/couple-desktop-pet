@@ -10,7 +10,13 @@ const reconnectDelaysMs = [1000, 2000, 5000, 10000, 30000] as const;
 
 export type RealtimeClientEvent =
   | { type: "status"; status: SyncConnectionStatus }
-  | { type: "presence"; peerPresence: PeerPresence; peerDeviceId: string }
+  | {
+      type: "presence";
+      peerPresence: PeerPresence;
+      peerDeviceId: string;
+      changedAt: string | null;
+      lastSeenAt: string | null;
+    }
   | { type: "message"; id: string; fromDeviceId: string; text: string; at: string }
   | { type: "delivered"; clientMessageId: string; at: string }
   | { type: "error"; message: string };
@@ -116,6 +122,8 @@ export class RealtimeClient {
           type: "presence",
           peerPresence: "online",
           peerDeviceId: parsed.peerDeviceId,
+          changedAt: parsed.changedAt ?? null,
+          lastSeenAt: parsed.lastSeenAt ?? null,
         });
         return;
       case "peer.offline":
@@ -123,6 +131,8 @@ export class RealtimeClient {
           type: "presence",
           peerPresence: "offline",
           peerDeviceId: parsed.peerDeviceId,
+          changedAt: parsed.changedAt ?? null,
+          lastSeenAt: parsed.lastSeenAt ?? null,
         });
         return;
       case "message.received":

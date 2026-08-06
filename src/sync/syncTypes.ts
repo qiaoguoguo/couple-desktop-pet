@@ -17,5 +17,7 @@ export interface SessionMessage {
 export interface SyncRuntimeState {
   status: SyncConnectionStatus;
   peerPresence: PeerPresence;
+  peerPresenceChangedAt: string | null;
+  peerLastSeenAt: string | null;
   lastError: string | null;
 }

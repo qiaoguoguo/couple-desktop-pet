@@ -2,11 +2,25 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "../settings/defaultSettings";
 import { SyncPanel, type SyncPanelProps } from "./SyncPanel";
+import type { SyncRuntimeState } from "./syncTypes";
+
+function syncStatus(
+  overrides: Partial<SyncRuntimeState> = {},
+): SyncRuntimeState {
+  return {
+    status: "disconnected",
+    peerPresence: "unknown",
+    peerPresenceChangedAt: null,
+    peerLastSeenAt: null,
+    lastError: null,
+    ...overrides,
+  };
+}
 
 function renderSyncPanel(props: Partial<SyncPanelProps> = {}) {
   const mergedProps: SyncPanelProps = {
     sync: defaultSettings.sync,
-    status: { status: "disconnected", peerPresence: "unknown", lastError: null },
+    status: syncStatus(),
     messages: [],
     pairCode: null,
     onSyncChange: vi.fn(),
@@ -44,7 +58,7 @@ describe("SyncPanel", () => {
     const { rerender } = render(
       <SyncPanel
         sync={defaultSettings.sync}
-        status={{ status: "disconnected", peerPresence: "unknown", lastError: null }}
+        status={syncStatus()}
         messages={[]}
         pairCode={{ code: "123456", expiresAt: "2026-08-03T12:10:00.000Z" }}
         onSyncChange={vi.fn()}
@@ -64,7 +78,7 @@ describe("SyncPanel", () => {
           pairId: "pair_1",
           peerDeviceId: "dev_b",
         }}
-        status={{ status: "disconnected", peerPresence: "unknown", lastError: null }}
+        status={syncStatus()}
         messages={[]}
         pairCode={null}
         onSyncChange={vi.fn()}
@@ -86,7 +100,7 @@ describe("SyncPanel", () => {
         pairId: "pair_1",
         peerDeviceId: "dev_b",
       },
-      status: { status: "connected", peerPresence: "online", lastError: null },
+      status: syncStatus({ status: "connected", peerPresence: "online" }),
       onUnpair,
     });
 
@@ -102,7 +116,7 @@ describe("SyncPanel", () => {
         pairId: "pair_1",
         peerDeviceId: "dev_b",
       },
-      status: { status: "connected", peerPresence: "online", lastError: null },
+      status: syncStatus({ status: "connected", peerPresence: "online" }),
       messages: [
         {
           id: "msg_1",

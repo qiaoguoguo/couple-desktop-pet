@@ -111,6 +111,37 @@ describe("RealtimeClient", () => {
     });
   });
 
+  it("emits peer presence timestamps from relay events", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = new RealtimeClient({
+      relayUrl: "http://127.0.0.1:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+      webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+      onEvent: (event) => events.push(event),
+    });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "peer.offline",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-06T08:00:00.000Z",
+      lastSeenAt: "2026-08-06T07:58:00.000Z",
+    });
+
+    expect(events).toContainEqual({
+      type: "presence",
+      peerPresence: "offline",
+      peerDeviceId: "dev_b",
+      changedAt: "2026-08-06T08:00:00.000Z",
+      lastSeenAt: "2026-08-06T07:58:00.000Z",
+    });
+  });
+
   it("reconnects after an unexpected close with bounded backoff", () => {
     vi.useFakeTimers();
     const events: RealtimeClientEvent[] = [];

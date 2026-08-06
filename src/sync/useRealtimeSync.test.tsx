@@ -9,10 +9,12 @@ const realtimeMock = vi.hoisted(() => {
       | {
           onEvent(event: {
             type: string;
-            status?: string;
-            peerPresence?: string;
-            peerDeviceId?: string;
-          }): void;
+          status?: string;
+          peerPresence?: string;
+          peerDeviceId?: string;
+          changedAt?: string | null;
+          lastSeenAt?: string | null;
+        }): void;
         }
       | null,
     connect: vi.fn(),
@@ -69,9 +71,44 @@ describe("useRealtimeSync", () => {
       "disconnected:unknown",
     );
   });
+
+  it("stores peer presence timestamps and clears them on disconnect", async () => {
+    render(<HookProbe includeTimestamps />);
+
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "status",
+        status: "connected",
+      });
+    });
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "presence",
+        peerPresence: "offline",
+        peerDeviceId: "dev_b",
+        changedAt: "2026-08-06T08:00:00.000Z",
+        lastSeenAt: "2026-08-06T07:58:00.000Z",
+      });
+    });
+
+    expect(screen.getByTestId("sync-state").textContent).toBe(
+      "connected:offline:2026-08-06T08:00:00.000Z:2026-08-06T07:58:00.000Z",
+    );
+
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "status",
+        status: "disconnected",
+      });
+    });
+
+    expect(screen.getByTestId("sync-state").textContent).toBe(
+      "disconnected:unknown:none:none",
+    );
+  });
 });
 
-function HookProbe() {
+function HookProbe({ includeTimestamps = false }: { includeTimestamps?: boolean }) {
   const { state } = useRealtimeSync(
     {
       ...defaultSettings.sync,
@@ -83,6 +120,16 @@ function HookProbe() {
     },
     { onMessage: () => undefined },
   );
+
+  if (includeTimestamps) {
+    return (
+      <output data-testid="sync-state">
+        {state.status}:{state.peerPresence}:
+        {state.peerPresenceChangedAt ?? "none"}:
+        {state.peerLastSeenAt ?? "none"}
+      </output>
+    );
+  }
 
   return (
     <output data-testid="sync-state">
