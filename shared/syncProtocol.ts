@@ -1,4 +1,6 @@
 import {
+  ACTIVITY_STATUS_CAPABILITY,
+  type ActivityStatusCapability,
   isNullableActivityStatus,
   type ActivityStatus,
 } from "./activityStatus.js";
@@ -94,6 +96,7 @@ export interface AuthClientMessage {
   deviceId: string;
   deviceSecret: string;
   pairId: string;
+  capabilities?: ActivityStatusCapability[];
 }
 
 export interface SendClientMessage {
@@ -125,6 +128,7 @@ export interface AuthOkServerMessage {
   type: "auth.ok";
   requestId: string;
   pairId: string;
+  capabilities?: ActivityStatusCapability[];
 }
 
 export interface PeerOnlineServerMessage {
@@ -249,7 +253,17 @@ function readAuthOk(input: Record<string, unknown>): AuthOkServerMessage | null 
     return null;
   }
 
-  return { type: "auth.ok", requestId: input.requestId, pairId: input.pairId };
+  const capabilities = readSupportedCapabilities(input.capabilities);
+  if (capabilities === null) {
+    return null;
+  }
+
+  return {
+    type: "auth.ok",
+    requestId: input.requestId,
+    pairId: input.pairId,
+    ...(capabilities === undefined ? {} : { capabilities }),
+  };
 }
 
 function readPeerPresence(
@@ -345,6 +359,22 @@ function readError(input: Record<string, unknown>): ErrorServerMessage | null {
 
 export function isSyncErrorCode(code: string): code is SyncErrorCode {
   return SYNC_ERROR_CODES.has(code);
+}
+
+export function readSupportedCapabilities(
+  value: unknown,
+): ActivityStatusCapability[] | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    return null;
+  }
+
+  return value.includes(ACTIVITY_STATUS_CAPABILITY)
+    ? [ACTIVITY_STATUS_CAPABILITY]
+    : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

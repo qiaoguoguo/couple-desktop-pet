@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
 interface SocketInbox {
@@ -189,6 +190,9 @@ describe("websocket relay", () => {
 
   it("forwards activity status updates only to the paired peer", async () => {
     const pair = await createPair();
+    const otherPair = await createPairFor("dev_c", "secret_c", "dev_d", "secret_d");
+    const charlie = await connectAndAuth("dev_c", "secret_c", otherPair.pairId);
+    await expect(readJson(charlie)).resolves.toMatchObject({ type: "peer.offline" });
     const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
     await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
     const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
@@ -212,6 +216,7 @@ describe("websocket relay", () => {
       changedAt: "2026-08-03T12:00:00.000Z",
     });
     await expectNoJson(alice);
+    await expectNoJson(charlie);
 
     alice.send(
       JSON.stringify({
@@ -233,6 +238,33 @@ describe("websocket relay", () => {
 
     alice.close();
     bob.close();
+    charlie.close();
+  });
+
+  it("does not send peer status events to legacy clients without capability", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const legacyBob = await connectAndAuth("dev_b", "secret_b", pair.pairId, {
+      capabilities: undefined,
+    });
+    await expect(readJson(legacyBob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_for_legacy",
+        pairId: pair.pairId,
+        activityStatus: "slacking",
+      }),
+    );
+
+    await expectNoJson(legacyBob);
+    await expectNoJson(alice);
+
+    alice.close();
+    legacyBob.close();
   });
 
   it("rejects activity status updates for an incorrect pair", async () => {
@@ -256,7 +288,29 @@ describe("websocket relay", () => {
       message: "Pair authentication failed",
     });
 
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+    await expectNoJson(bob);
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_after_wrong_pair",
+        pairId: pair.pairId,
+        activityStatus: "slacking",
+      }),
+    );
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.status",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      activityStatus: "slacking",
+    });
+    await expectNoJson(alice);
+
     alice.close();
+    bob.close();
   });
 
   it("rejects unknown activity status values", async () => {
@@ -316,15 +370,24 @@ describe("websocket relay", () => {
 });
 
 async function createPair(): Promise<{ pairId: string }> {
+  return createPairFor("dev_a", "secret_a", "dev_b", "secret_b");
+}
+
+async function createPairFor(
+  deviceAId: string,
+  deviceASecret: string,
+  deviceBId: string,
+  deviceBSecret: string,
+): Promise<{ pairId: string }> {
   const codeResponse = await postJson(`${baseUrl}/pair-codes`, {
-    deviceId: "dev_a",
-    deviceSecret: "secret_a",
+    deviceId: deviceAId,
+    deviceSecret: deviceASecret,
     displayName: "星星桌宠",
   });
   const code = (await codeResponse.json()) as { code: string };
   const pairResponse = await postJson(`${baseUrl}/pairs/accept`, {
-    deviceId: "dev_b",
-    deviceSecret: "secret_b",
+    deviceId: deviceBId,
+    deviceSecret: deviceBSecret,
     displayName: "星星桌宠",
     code: code.code,
   });
@@ -335,6 +398,9 @@ async function connectAndAuth(
   deviceId: string,
   deviceSecret: string,
   pairId: string,
+  options: { capabilities?: string[] } = {
+    capabilities: [ACTIVITY_STATUS_CAPABILITY],
+  },
 ): Promise<WebSocket> {
   const socket = new WebSocket(wsUrl);
   await onceOpen(socket);
@@ -346,9 +412,16 @@ async function connectAndAuth(
       deviceId,
       deviceSecret,
       pairId,
+      ...(options.capabilities === undefined
+        ? {}
+        : { capabilities: options.capabilities }),
     }),
   );
-  await expect(readJson(socket)).resolves.toMatchObject({ type: "auth.ok", pairId });
+  await expect(readJson(socket)).resolves.toMatchObject({
+    type: "auth.ok",
+    pairId,
+    capabilities: [ACTIVITY_STATUS_CAPABILITY],
+  });
   return socket;
 }
 

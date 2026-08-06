@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACTIVITY_STATUS_CAPABILITY } from "./activityStatus";
 import {
   MESSAGE_TEXT_MAX_LENGTH,
   PAIR_CODE_LENGTH,
@@ -71,6 +72,56 @@ describe("parseServerToClientMessage", () => {
         type: "error",
         code: "not_a_code",
         message: "bad",
+      }),
+    ).toBeNull();
+  });
+
+  it("parses supported auth.ok capabilities and filters unknown ones", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "auth.ok",
+        requestId: "auth_1",
+        pairId: "pair_1",
+        capabilities: [ACTIVITY_STATUS_CAPABILITY, "future-capability"],
+      }),
+    ).toEqual({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    });
+  });
+
+  it("keeps legacy auth.ok messages compatible without capabilities", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "auth.ok",
+        requestId: "auth_1",
+        pairId: "pair_1",
+      }),
+    ).toEqual({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+    });
+  });
+
+  it("rejects auth.ok capabilities that are not string arrays", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "auth.ok",
+        requestId: "auth_1",
+        pairId: "pair_1",
+        capabilities: [ACTIVITY_STATUS_CAPABILITY, 7],
+      }),
+    ).toBeNull();
+
+    expect(
+      parseServerToClientMessage({
+        type: "auth.ok",
+        requestId: "auth_1",
+        pairId: "pair_1",
+        capabilities: ACTIVITY_STATUS_CAPABILITY,
       }),
     ).toBeNull();
   });

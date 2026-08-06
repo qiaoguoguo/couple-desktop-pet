@@ -7,6 +7,7 @@ export interface AuthenticatedConnection {
   pairId: string;
   peerDeviceId: string;
   activityStatus: ActivityStatus | null;
+  supportsActivityStatus: boolean;
 }
 
 export class ConnectionRegistry {

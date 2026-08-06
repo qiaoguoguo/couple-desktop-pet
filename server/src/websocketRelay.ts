@@ -1,12 +1,18 @@
 import type { Server } from "node:http";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
-import { isNullableActivityStatus } from "../../shared/activityStatus.js";
+import {
+  ACTIVITY_STATUS_CAPABILITY,
+  isNullableActivityStatus,
+} from "../../shared/activityStatus.js";
 import type {
   ClientToServerMessage,
   ErrorServerMessage,
   ServerToClientMessage,
 } from "../../shared/syncProtocol.js";
-import { validateMessageText } from "../../shared/syncProtocol.js";
+import {
+  readSupportedCapabilities,
+  validateMessageText,
+} from "../../shared/syncProtocol.js";
 import {
   ConnectionRegistry,
   type AuthenticatedConnection,
@@ -85,6 +91,8 @@ function authenticateSocket(
     pairId: authenticated.pairId,
     peerDeviceId: authenticated.peerDeviceId,
     activityStatus: null,
+    supportsActivityStatus:
+      message.capabilities?.includes(ACTIVITY_STATUS_CAPABILITY) ?? false,
   };
   const previous = registry.replace(connection);
   const isPresenceTransition = !previous;
@@ -96,6 +104,7 @@ function authenticateSocket(
     type: "auth.ok",
     requestId: message.requestId,
     pairId: authenticated.pairId,
+    capabilities: [ACTIVITY_STATUS_CAPABILITY],
   });
 
   const changedAt = createPresenceChangedAt(now);
@@ -107,7 +116,7 @@ function authenticateSocket(
       peerDeviceId: authenticated.peerDeviceId,
       changedAt,
     });
-    sendPeerStatusIfPresent(socket, authenticated.pairId, peer, changedAt);
+    sendPeerStatusIfPresent(connection, authenticated.pairId, peer, changedAt);
     if (isPresenceTransition) {
       sendJson(peer.socket, {
         type: "peer.online",
@@ -116,7 +125,7 @@ function authenticateSocket(
         changedAt,
       });
       sendPeerStatusIfPresent(
-        peer.socket,
+        peer,
         authenticated.pairId,
         connection,
         changedAt,
@@ -135,16 +144,16 @@ function authenticateSocket(
 }
 
 function sendPeerStatusIfPresent(
-  socket: WebSocket,
+  target: AuthenticatedConnection,
   pairId: string,
   peer: AuthenticatedConnection,
   changedAt: string,
 ): void {
-  if (peer.activityStatus === null) {
+  if (!target.supportsActivityStatus || peer.activityStatus === null) {
     return;
   }
 
-  sendJson(socket, {
+  sendJson(target.socket, {
     type: "peer.status",
     pairId,
     peerDeviceId: peer.deviceId,
@@ -255,6 +264,10 @@ function handleStatusUpdate(
     return;
   }
 
+  if (!peer.supportsActivityStatus) {
+    return;
+  }
+
   sendJson(peer.socket, {
     type: "peer.status",
     pairId: connection.pairId,
@@ -281,12 +294,18 @@ function parseClientMessage(data: RawData): ClientToServerMessage {
     typeof parsed.deviceSecret === "string" &&
     typeof parsed.pairId === "string"
   ) {
+    const capabilities = readSupportedCapabilities(parsed.capabilities);
+    if (capabilities === null) {
+      throw new RelayError("malformed_message", 400, "Malformed websocket message");
+    }
+
     return {
       type: "auth",
       requestId: parsed.requestId,
       deviceId: parsed.deviceId,
       deviceSecret: parsed.deviceSecret,
       pairId: parsed.pairId,
+      ...(capabilities === undefined ? {} : { capabilities }),
     };
   }
 

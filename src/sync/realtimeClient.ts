@@ -1,4 +1,7 @@
-import type { ActivityStatus } from "../../shared/activityStatus";
+import {
+  ACTIVITY_STATUS_CAPABILITY,
+  type ActivityStatus,
+} from "../../shared/activityStatus";
 import {
   parseServerToClientMessage,
   validateMessageText,
@@ -43,6 +46,7 @@ export class RealtimeClient {
   private closedByClient = false;
   private authFailed = false;
   private authenticated = false;
+  private serverSupportsActivityStatus = false;
   private localActivityStatus: ActivityStatus | null;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -57,6 +61,7 @@ export class RealtimeClient {
     this.closedByClient = false;
     this.authFailed = false;
     this.authenticated = false;
+    this.serverSupportsActivityStatus = false;
     this.options.onEvent({ type: "status", status: "connecting" });
 
     this.openSocket();
@@ -121,6 +126,7 @@ export class RealtimeClient {
       deviceId: this.options.deviceId,
       deviceSecret: this.options.deviceSecret,
       pairId: this.options.pairId,
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
   }
 
@@ -140,6 +146,8 @@ export class RealtimeClient {
         this.reconnectAttempt = 0;
         this.authFailed = false;
         this.authenticated = true;
+        this.serverSupportsActivityStatus =
+          parsed.capabilities?.includes(ACTIVITY_STATUS_CAPABILITY) ?? false;
         this.sendActivityStatus();
         this.options.onEvent({ type: "status", status: "connected" });
         return;
@@ -205,6 +213,7 @@ export class RealtimeClient {
 
     this.socket = null;
     this.authenticated = false;
+    this.serverSupportsActivityStatus = false;
 
     if (this.closedByClient) {
       this.options.onEvent({ type: "status", status: "disabled" });
@@ -225,7 +234,12 @@ export class RealtimeClient {
   }
 
   private sendActivityStatus(): boolean {
-    if (!this.authenticated || !this.socket || !isSocketOpen(this.socket)) {
+    if (
+      !this.authenticated ||
+      !this.serverSupportsActivityStatus ||
+      !this.socket ||
+      !isSocketOpen(this.socket)
+    ) {
       return false;
     }
 
@@ -281,6 +295,7 @@ export class RealtimeClient {
     const socket = this.socket;
     this.socket = null;
     this.authenticated = false;
+    this.serverSupportsActivityStatus = false;
     socket.close();
   }
 }

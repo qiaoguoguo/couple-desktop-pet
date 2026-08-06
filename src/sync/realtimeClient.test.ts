@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
 
 class FakeWebSocket extends EventTarget {
@@ -72,12 +73,14 @@ describe("RealtimeClient", () => {
       type: "auth",
       deviceId: "dev_a",
       pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
 
     fakeSocket.emitMessage({
       type: "auth.ok",
       requestId: "auth_1",
       pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
     expect(events).toContainEqual({ type: "status", status: "connected" });
     expect(fakeSocket.sentJson[1]).toMatchObject({
@@ -106,6 +109,7 @@ describe("RealtimeClient", () => {
       type: "auth.ok",
       requestId: "auth_1",
       pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
 
     expect(fakeSocket.sentJson[1]).toMatchObject({
@@ -127,6 +131,7 @@ describe("RealtimeClient", () => {
       type: "auth.ok",
       requestId: "auth_1",
       pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
 
     expect(client.setActivityStatus("dazing")).toEqual({ synced: true });
@@ -146,12 +151,43 @@ describe("RealtimeClient", () => {
       type: "auth.ok",
       requestId: "auth_2",
       pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
     });
 
     expect(secondSocket.sentJson[1]).toMatchObject({
       type: "status.update",
       pairId: "pair_1",
       activityStatus: "slacking",
+    });
+  });
+
+  it("does not send activity status to legacy relays that omit the capability", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: "overtime" });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    expect(fakeSocket.sentJson[0]).toMatchObject({
+      type: "auth",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    });
+
+    fakeSocket.emitMessage({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+    });
+
+    expect(events).toContainEqual({ type: "status", status: "connected" });
+    expect(fakeSocket.sentJson).toHaveLength(1);
+
+    const result = client.sendMessage("聊天仍可用");
+    expect(result.ok).toBe(true);
+    expect(fakeSocket.sentJson[1]).toMatchObject({
+      type: "message.send",
+      pairId: "pair_1",
+      text: "聊天仍可用",
     });
   });
 
