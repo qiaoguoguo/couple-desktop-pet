@@ -25,9 +25,9 @@ pub const PEER_PRESENCE_WINDOW_LABEL: &str = "peer-presence";
 pub const PEER_LINK_WINDOW_LABEL: &str = "peer-link";
 pub const OFFLINE_NEST_WINDOW_LABEL: &str = "offline-nest";
 pub const COMPANION_SCENE_UPDATED_EVENT: &str = "companion-scene-updated";
-const PEER_PRESENCE_WINDOW_ROUTE: &str = "index.html#surface=peer-presence";
-const PEER_LINK_WINDOW_ROUTE: &str = "index.html#surface=peer-link";
-const OFFLINE_NEST_WINDOW_ROUTE: &str = "index.html#surface=offline-nest";
+const PEER_PRESENCE_WINDOW_ROUTE: &str = "index.html";
+const PEER_LINK_WINDOW_ROUTE: &str = "index.html";
+const OFFLINE_NEST_WINDOW_ROUTE: &str = "index.html";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -768,14 +768,15 @@ mod tests {
     };
 
     #[test]
-    fn companion_window_routes_use_hash_surface_mode() {
+    fn companion_window_routes_use_plain_index_path() {
         for route in [
             PEER_PRESENCE_WINDOW_ROUTE,
             PEER_LINK_WINDOW_ROUTE,
             OFFLINE_NEST_WINDOW_ROUTE,
         ] {
-            assert!(route.starts_with("index.html#surface="));
+            assert_eq!(route, "index.html");
             assert!(!route.contains('?'));
+            assert!(!route.contains('#'));
         }
     }
 

@@ -181,7 +181,7 @@ pub fn close_message_composer_surface(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn update_companion_scene(
+pub async fn update_companion_scene(
     app: AppHandle,
     coordinator: State<'_, CompanionWindowCoordinator>,
     state: CompanionSceneContentState,

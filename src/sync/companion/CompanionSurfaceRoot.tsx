@@ -35,6 +35,14 @@ export function readCompanionSurfaceFromLocation(
   );
 }
 
+export function readCompanionSurfaceFromLabel(
+  label: string | null | undefined,
+): CompanionSurface | null {
+  return SUPPORTED_SURFACES.has(label as CompanionSurface)
+    ? (label as CompanionSurface)
+    : null;
+}
+
 export function CompanionSurfaceRoot({
   surface,
 }: {
