@@ -31,18 +31,12 @@ import {
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
 import {
-  hideCompanionScene,
-  listenForOpenMessageComposerRequest,
-  updateCompanionScene,
-} from "../desktop/companionWindowCommands";
-import {
   builtInEdgePeekImages,
   type EdgePeekSide,
 } from "../desktop/edgePeek";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
 import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
-import type { CompanionSceneContentState } from "../sync/companion/companionSceneTypes";
 import {
   completeRemoteMessageDismissal,
   createEmptyRemoteMessageQueue,
@@ -83,6 +77,7 @@ import {
   selectNextPetMotion,
 } from "../pet-core/motionPoolDirector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
+import type { ActivityStatus } from "../../shared/activityStatus";
 import {
   BUILT_IN_PET_PACKAGE_ID,
   PET_ACTION_DURATION_MS,
@@ -95,6 +90,9 @@ import {
   resolveSelectedPetPackage,
 } from "../assets/petPackageRegistry";
 import { AppearancePanel } from "../settings/AppearancePanel";
+import { ActivityStatusPicker } from "../status/ActivityStatusPicker";
+import { PeerStatusCard } from "../status/PeerStatusCard";
+import { resolvePeerStatusView } from "../status/peerStatusPresentation";
 
 const bubbleMessage = "我在这里。";
 const placeholderInteractionMessage = "功能开发中，先陪你待一会儿。";
@@ -134,6 +132,7 @@ export function App() {
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [messageComposerOpen, setMessageComposerOpen] = useState(false);
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number;
     y: number;
@@ -150,6 +149,8 @@ export function App() {
   const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
   const [syncError, setSyncError] = useState<string | null>(null);
   const remoteMessageClickThroughOverrideRef = useRef(false);
+  const petSurfaceRef = useRef<HTMLElement | null>(null);
+  const statusPickerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const petPackages = useMemo(
     () =>
@@ -178,7 +179,7 @@ export function App() {
         : null,
     [petPackages, selectedPeerPetPackageId],
   );
-  const companionPortraitPetPackage =
+  const peerStatusPetPackage =
     selectedPeerPetPackage ??
     petPackages.find((pkg) => pkg.id === BUILT_IN_PET_PACKAGE_ID) ??
     selectedPetPackage;
@@ -259,52 +260,50 @@ export function App() {
     }),
     [realtime.state, syncError],
   );
-  const companionScene = useMemo<CompanionSceneContentState>(() => {
-    const isPaired = Boolean(settings.sync.pairId && settings.sync.peerDeviceId);
-    const presence =
-      isPaired &&
-      realtime.state.status === "connected" &&
-      realtime.state.peerPresence !== "unknown"
-        ? realtime.state.peerPresence
-        : "hidden";
-    const portraitUrl =
-      companionPortraitPetPackage.portraitUrl ??
-      companionPortraitPetPackage.previewUrl ??
-      null;
-    const offlinePortraitUrl =
-      companionPortraitPetPackage.offlinePortraitUrl ??
-      companionPortraitPetPackage.portraitUrl ??
-      companionPortraitPetPackage.previewUrl ??
-      null;
+  const peerStatusView = useMemo(
+    () =>
+      resolvePeerStatusView({
+        paired: Boolean(settings.sync.pairId && settings.sync.peerDeviceId),
+        connectionStatus: realtime.state.status,
+        peerPresence: realtime.state.peerPresence,
+        peerActivityStatus: realtime.state.peerActivityStatus,
+      }),
+    [
+      realtime.state.peerActivityStatus,
+      realtime.state.peerPresence,
+      realtime.state.status,
+      settings.sync.pairId,
+      settings.sync.peerDeviceId,
+    ],
+  );
+  const peerStatusImageCandidates = useMemo(() => {
     const motionFallbackUrl =
-      getDefaultPetMotion(companionPortraitPetPackage).frames[0] ?? null;
+      getDefaultPetMotion(peerStatusPetPackage).frames[0] ?? null;
 
-    return {
-      presence,
-      portraitUrl,
-      offlinePortraitUrl,
-      previewUrl: companionPortraitPetPackage.previewUrl,
+    if (peerStatusView?.variant === "offline") {
+      return [
+        peerStatusPetPackage.offlinePortraitUrl,
+        peerStatusPetPackage.portraitUrl,
+        peerStatusPetPackage.previewUrl,
+        motionFallbackUrl,
+      ];
+    }
+
+    return [
+      peerStatusPetPackage.portraitUrl,
+      peerStatusPetPackage.previewUrl,
+      peerStatusPetPackage.offlinePortraitUrl,
       motionFallbackUrl,
-      sceneScale: 1,
-      suspended:
-        settingsOpen ||
-        messageComposerOpen ||
-        Boolean(activeRemoteMessage) ||
-        Boolean(edgePeekSide) ||
-        petState.name === "interacting",
-    };
-  }, [
-    activeRemoteMessage,
-    edgePeekSide,
-    messageComposerOpen,
-    petState.name,
-    realtime.state.peerPresence,
-    realtime.state.status,
-    companionPortraitPetPackage,
-    settings.sync.pairId,
-    settings.sync.peerDeviceId,
-    settingsOpen,
-  ]);
+    ];
+  }, [peerStatusPetPackage, peerStatusView?.variant]);
+  const shouldShowPeerStatus =
+    Boolean(peerStatusView) &&
+    !settingsOpen &&
+    !messageComposerOpen &&
+    !activeRemoteMessage &&
+    !interactionMenuPosition &&
+    !statusPickerOpen &&
+    !edgePeekSide;
 
   useEffect(() => {
     const defaultMotion = getDefaultPetMotion(selectedPetPackage);
@@ -361,39 +360,6 @@ export function App() {
   }, [settings.clickThrough]);
 
   useEffect(() => {
-    let disposed = false;
-    let retryTimer: number | null = null;
-
-    const sendScene = (allowRetry: boolean) => {
-      void updateCompanionScene(companionScene).catch(() => {
-        if (!disposed && allowRetry) {
-          retryTimer = window.setTimeout(() => {
-            retryTimer = null;
-            sendScene(false);
-          }, 200);
-        }
-      });
-    };
-
-    sendScene(true);
-
-    return () => {
-      disposed = true;
-
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-      }
-    };
-  }, [companionScene]);
-
-  useEffect(
-    () => () => {
-      runDesktopCommand(hideCompanionScene);
-    },
-    [],
-  );
-
-  useEffect(() => {
     const shouldDisableClickThroughForRemoteMessage =
       Boolean(remoteMessages.active) && settings.clickThrough;
 
@@ -445,6 +411,7 @@ export function App() {
     }
 
     setSettingsOpen(true);
+    setStatusPickerOpen(false);
   }, [persistSettings]);
 
   const closeSettingsPanel = useCallback(() => {
@@ -1066,6 +1033,7 @@ export function App() {
       return;
     }
 
+    setStatusPickerOpen(false);
     setContextMenuPosition(null);
     setInteractionMenuPosition((current) =>
       current ? null : getInteractionMenuPosition(),
@@ -1096,47 +1064,51 @@ export function App() {
 
   const openMessageComposerPanel = useCallback(() => {
     setInteractionMenuPosition(null);
+    setStatusPickerOpen(false);
     setContextMenuPosition(null);
     runDesktopCommand(openMessageComposerSurface);
     setBubble((current) => hideBubble(current));
     setMessageComposerOpen(true);
   }, []);
 
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
+  const closeStatusPicker = useCallback(() => {
+    setStatusPickerOpen(false);
 
-    void listenForOpenMessageComposerRequest(() => {
-      const currentSync = settingsRef.current.sync;
-      const sendable =
-        currentSync.enabled &&
-        Boolean(currentSync.pairId) &&
-        realtime.state.status === "connected" &&
-        realtime.state.peerPresence === "online";
+    const returnFocusElement = statusPickerReturnFocusRef.current;
+    const focusTarget = returnFocusElement?.isConnected
+      ? returnFocusElement
+      : petSurfaceRef.current;
 
-      if (sendable) {
-        openMessageComposerPanel();
+    focusTarget?.focus();
+    statusPickerReturnFocusRef.current = null;
+  }, []);
+
+  const openStatusPicker = useCallback(() => {
+    statusPickerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setStatusPickerOpen(true);
+    setBubble((current) => hideBubble(current));
+  }, []);
+
+  const handleActivityStatusSelect = useCallback(
+    (activityStatus: ActivityStatus | null) => {
+      closeStatusPicker();
+      handleSyncChange({ activityStatus });
+
+      const result = realtime.client?.setActivityStatus(activityStatus) ?? {
+        synced: false,
+      };
+
+      if (!result.synced && settingsRef.current.bubblesEnabled) {
+        setBubble(
+          showBubble("状态已保存，连接后会同步。", { durationMs: 5000 }),
+        );
       }
-    })
-      .then((unsubscribe) => {
-        if (disposed) {
-          unsubscribe();
-          return;
-        }
-
-        unlisten = unsubscribe;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [
-    openMessageComposerPanel,
-    realtime.state.peerPresence,
-    realtime.state.status,
-  ]);
+    },
+    [closeStatusPicker, handleSyncChange, realtime.client],
+  );
 
   const handleInteractionSelect = useCallback((selection: InteractionMenuSelection) => {
     setInteractionMenuPosition(null);
@@ -1158,11 +1130,7 @@ export function App() {
     }
 
     if (selection === "open-status") {
-      if (settingsRef.current.bubblesEnabled) {
-        setBubble(
-          showBubble(placeholderInteractionMessage, { durationMs: 4000 }),
-        );
-      }
+      openStatusPicker();
       return;
     }
 
@@ -1202,6 +1170,7 @@ export function App() {
     );
   }, [
     openMessageComposerPanel,
+    openStatusPicker,
     realtime.state.peerPresence,
     realtime.state.status,
     selectedPetPackage,
@@ -1249,6 +1218,7 @@ export function App() {
 
   const handleDragStart = useCallback(() => {
     setInteractionMenuPosition(null);
+    setStatusPickerOpen(false);
     setContextMenuPosition(null);
     const startDrag = () => {
       runDesktopCommand(startWindowDrag);
@@ -1298,6 +1268,7 @@ export function App() {
     }
 
     setInteractionMenuPosition(null);
+    setStatusPickerOpen(false);
     openSettingsPanel();
   }, [openSettingsPanel, settingsOpen]);
 
@@ -1324,8 +1295,10 @@ export function App() {
   return (
     <main className="app-shell">
       <section
+        ref={petSurfaceRef}
         className="pet-surface"
         aria-label="情侣桌宠 MVP"
+        tabIndex={-1}
         onContextMenu={handlePetContextMenu}
       >
         <BubbleLayer message={bubble.message} visible={bubble.visible} />
@@ -1346,10 +1319,23 @@ export function App() {
           message={activeRemoteMessage}
           onAcknowledge={handleRemoteMessageAcknowledge}
         />
+        {shouldShowPeerStatus && peerStatusView ? (
+          <PeerStatusCard
+            view={peerStatusView}
+            imageCandidates={peerStatusImageCandidates}
+          />
+        ) : null}
         {messageComposerOpen ? (
           <MessageComposerPanel
             onSubmit={handleMessageComposerSubmit}
             onClose={closeMessageComposerPanel}
+          />
+        ) : null}
+        {statusPickerOpen ? (
+          <ActivityStatusPicker
+            currentStatus={settings.sync.activityStatus}
+            onSelect={handleActivityStatusSelect}
+            onClose={closeStatusPicker}
           />
         ) : null}
       </section>

@@ -6,16 +6,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, State,
-    WebviewWindow, WindowEvent,
-};
-
-use crate::companion_windows::{
-    self, CompanionSceneContentState, CompanionSceneViewState, CompanionWindowCoordinator,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, WebviewWindow,
+    WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
-const OPEN_MESSAGE_COMPOSER_EVENT: &str = "open-message-composer";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
 const DEFAULT_WINDOW_WIDTH_PX: u32 = 320;
@@ -181,36 +176,6 @@ pub fn close_message_composer_surface(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn update_companion_scene(
-    app: AppHandle,
-    coordinator: State<'_, CompanionWindowCoordinator>,
-    state: CompanionSceneContentState,
-) -> Result<CompanionSceneViewState, String> {
-    companion_windows::update_scene(&app, &coordinator, state)
-}
-
-#[tauri::command]
-pub fn read_companion_scene(
-    coordinator: State<'_, CompanionWindowCoordinator>,
-) -> CompanionSceneViewState {
-    companion_windows::read_scene(&coordinator)
-}
-
-#[tauri::command]
-pub fn hide_companion_scene(
-    app: AppHandle,
-    coordinator: State<'_, CompanionWindowCoordinator>,
-) -> Result<(), String> {
-    companion_windows::hide_scene(&app, &coordinator)
-}
-
-#[tauri::command]
-pub fn request_open_message_composer(app: AppHandle) -> Result<(), String> {
-    app.emit_to(MAIN_WINDOW_LABEL, OPEN_MESSAGE_COMPOSER_EVENT, ())
-        .map_err(|error| format!("failed to emit {OPEN_MESSAGE_COMPOSER_EVENT}: {error}"))
-}
-
-#[tauri::command]
 pub fn show_window(app: AppHandle) -> Result<(), String> {
     show_main_window(&app)
 }
@@ -233,20 +198,10 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         .map_err(|error| format!("failed to show main window: {error}"))?;
     window
         .set_focus()
-        .map_err(|error| format!("failed to focus main window: {error}"))?;
-
-    if let Err(error) = companion_windows::sync_companion_windows(app) {
-        eprintln!("{error}");
-    }
-
-    Ok(())
+        .map_err(|error| format!("failed to focus main window: {error}"))
 }
 
 pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    if let Err(error) = companion_windows::hide_companion_windows(app) {
-        eprintln!("{error}");
-    }
-
     main_window(app)?
         .hide()
         .map_err(|error| format!("failed to hide main window: {error}"))
@@ -314,10 +269,6 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
             let position = PhysicalPosition::new(position.x, position.y);
 
             if let Err(error) = save_window_position(&app_handle, position) {
-                eprintln!("{error}");
-            }
-
-            if let Err(error) = companion_windows::sync_companion_windows(&app_handle) {
                 eprintln!("{error}");
             }
         }

@@ -29,7 +29,7 @@ Built-in pets are declared in `builtInPetManifest.ts`.
 The manifest defines:
 - `id`: stable pet package id.
 - `preview`, `portrait`, `offlinePortrait`: repository-relative package preview and
-  companion presence portrait paths.
+  embedded peer status portrait paths.
 - `baseSize`: target render canvas size used by the renderer.
 - `frameSize`: source frame size.
 - `actions`: named animation groups.
