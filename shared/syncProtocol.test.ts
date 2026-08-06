@@ -74,4 +74,44 @@ describe("parseServerToClientMessage", () => {
       }),
     ).toBeNull();
   });
+
+  it("parses paired peer activity status updates", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "peer.status",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+        activityStatus: "slacking",
+        changedAt: "2026-08-06T12:00:00.000Z",
+      }),
+    ).toMatchObject({
+      type: "peer.status",
+      activityStatus: "slacking",
+    });
+
+    expect(
+      parseServerToClientMessage({
+        type: "peer.status",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+        activityStatus: null,
+        changedAt: "2026-08-06T12:00:00.000Z",
+      }),
+    ).toMatchObject({
+      type: "peer.status",
+      activityStatus: null,
+    });
+  });
+
+  it("rejects unknown peer activity status values", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "peer.status",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+        activityStatus: "playing-games",
+        changedAt: "2026-08-06T12:00:00.000Z",
+      }),
+    ).toBeNull();
+  });
 });

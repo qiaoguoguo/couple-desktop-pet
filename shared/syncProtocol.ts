@@ -1,3 +1,8 @@
+import {
+  isNullableActivityStatus,
+  type ActivityStatus,
+} from "./activityStatus";
+
 export const MESSAGE_TEXT_MAX_LENGTH = 300;
 export const PAIR_CODE_LENGTH = 6;
 export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
@@ -99,6 +104,13 @@ export interface SendClientMessage {
   text: string;
 }
 
+export interface StatusUpdateClientMessage {
+  type: "status.update";
+  requestId: string;
+  pairId: string;
+  activityStatus: ActivityStatus | null;
+}
+
 export interface PingClientMessage {
   type: "ping";
 }
@@ -106,6 +118,7 @@ export interface PingClientMessage {
 export type ClientToServerMessage =
   | AuthClientMessage
   | SendClientMessage
+  | StatusUpdateClientMessage
   | PingClientMessage;
 
 export interface AuthOkServerMessage {
@@ -128,6 +141,14 @@ export interface PeerOfflineServerMessage {
   peerDeviceId: string;
   changedAt?: string;
   lastSeenAt?: string;
+}
+
+export interface PeerStatusServerMessage {
+  type: "peer.status";
+  pairId: string;
+  peerDeviceId: string;
+  activityStatus: ActivityStatus | null;
+  changedAt: string;
 }
 
 export interface MessageReceivedServerMessage {
@@ -161,6 +182,7 @@ export type ServerToClientMessage =
   | AuthOkServerMessage
   | PeerOnlineServerMessage
   | PeerOfflineServerMessage
+  | PeerStatusServerMessage
   | MessageReceivedServerMessage
   | MessageDeliveredServerMessage
   | ErrorServerMessage
@@ -207,6 +229,8 @@ export function parseServerToClientMessage(input: unknown): ServerToClientMessag
       return readPeerPresence(input, "peer.online");
     case "peer.offline":
       return readPeerPresence(input, "peer.offline");
+    case "peer.status":
+      return readPeerStatus(input);
     case "message.received":
       return readMessageReceived(input);
     case "message.delivered":
@@ -242,6 +266,25 @@ function readPeerPresence(
     peerDeviceId: input.peerDeviceId,
     changedAt: typeof input.changedAt === "string" ? input.changedAt : undefined,
     lastSeenAt: typeof input.lastSeenAt === "string" ? input.lastSeenAt : undefined,
+  };
+}
+
+function readPeerStatus(input: Record<string, unknown>): PeerStatusServerMessage | null {
+  if (
+    typeof input.pairId !== "string" ||
+    typeof input.peerDeviceId !== "string" ||
+    !isNullableActivityStatus(input.activityStatus) ||
+    typeof input.changedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    type: "peer.status",
+    pairId: input.pairId,
+    peerDeviceId: input.peerDeviceId,
+    activityStatus: input.activityStatus,
+    changedAt: input.changedAt,
   };
 }
 
