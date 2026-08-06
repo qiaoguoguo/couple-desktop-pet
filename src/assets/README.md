@@ -17,6 +17,8 @@ Generation boundary:
 
 Current built-in package:
 - `pets/q-girl/`: transparent PNG frame-sequence assets referenced by `builtInPetManifest.ts`.
+- `pets/q-girl/portrait.png` and `pets/q-girl/portrait-offline.png`: first-party
+  Codex Image Gen presence portraits, processed locally with chroma-key alpha.
 - The current manifest uses twelve actions with thirty frames per action: three idle loops, three movement/sleep actions, and six single-click interaction actions.
 - The committed Q-girl frames are temporary verification assets until the final Image Gen 12 action x 30 frame set passes visual QA.
 
@@ -26,6 +28,8 @@ Built-in pets are declared in `builtInPetManifest.ts`.
 
 The manifest defines:
 - `id`: stable pet package id.
+- `preview`, `portrait`, `offlinePortrait`: repository-relative package preview and
+  companion presence portrait paths.
 - `baseSize`: target render canvas size used by the renderer.
 - `frameSize`: source frame size.
 - `actions`: named animation groups.

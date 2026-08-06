@@ -1,4 +1,7 @@
-import { getBuiltInFrameAssetUrl } from "../renderer/frameAtlas";
+import {
+  getBuiltInFrameAssetUrl,
+  getBuiltInPetAssetUrl,
+} from "../renderer/frameAtlas";
 import {
   builtInPetManifest,
   getActionDefinition,
@@ -85,15 +88,22 @@ function buildBuiltInPackage(): ResolvedPetPackage {
       }),
     };
   });
+  const previewUrl = getBuiltInPetAssetUrl(builtInPetManifest.preview);
+  const portraitUrl =
+    getBuiltInPetAssetUrl(builtInPetManifest.portrait) ?? previewUrl;
+  const offlinePortraitUrl =
+    getBuiltInPetAssetUrl(builtInPetManifest.offlinePortrait) ??
+    portraitUrl ??
+    previewUrl;
 
   return {
     id: BUILT_IN_PET_PACKAGE_ID,
     name: builtInPetManifest.name,
     baseSize: builtInPetManifest.baseSize,
     frameSize: builtInPetManifest.frameSize,
-    previewUrl: null,
-    portraitUrl: null,
-    offlinePortraitUrl: null,
+    previewUrl,
+    portraitUrl,
+    offlinePortraitUrl,
     source: "built-in",
     scenes: builtInPetManifest.scenes,
     defaultMotionId: "idle-breathe",

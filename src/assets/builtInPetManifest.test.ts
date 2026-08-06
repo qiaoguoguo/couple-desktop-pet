@@ -41,6 +41,14 @@ describe("builtInPetManifest", () => {
     expect(builtInPetManifest.id).toBe(BUILT_IN_PET_PACKAGE_ID);
   });
 
+  it("declares dedicated presence portrait assets", () => {
+    expect(builtInPetManifest.preview).toBe("pets/q-girl/preview.png");
+    expect(builtInPetManifest.portrait).toBe("pets/q-girl/portrait.png");
+    expect(builtInPetManifest.offlinePortrait).toBe(
+      "pets/q-girl/portrait-offline.png",
+    );
+  });
+
   it("defines the expected long animation action set", () => {
     expect(Object.keys(builtInPetManifest.actions)).toEqual([
       ...expectedActionNames,

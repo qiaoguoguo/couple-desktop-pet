@@ -31,6 +31,11 @@ describe("pet package registry", () => {
     expect(builtIn.actions["act-cute"].frames[0]).toContain(
       "pets/q-girl/frames/act-cute/0001.png",
     );
+    expect(builtIn.previewUrl).toContain("pets/q-girl/preview.png");
+    expect(builtIn.portraitUrl).toContain("pets/q-girl/portrait.png");
+    expect(builtIn.offlinePortraitUrl).toContain(
+      "pets/q-girl/portrait-offline.png",
+    );
     expect(builtIn.scenes["remote-message"].waitForAcknowledge).toBe(true);
   });
 

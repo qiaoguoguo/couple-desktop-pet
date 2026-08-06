@@ -54,6 +54,9 @@ export type PetInteractionOption = PetInteractionActionOption;
 export interface BuiltInPetManifest {
   id: string;
   name: string;
+  preview: string;
+  portrait: string;
+  offlinePortrait: string;
   baseSize: {
     width: number;
     height: number;
@@ -107,6 +110,9 @@ const actionDefinition = (action: PetActionName): PetActionDefinition => ({
 export const builtInPetManifest = {
   id: BUILT_IN_PET_PACKAGE_ID,
   name: "Q 版小人",
+  preview: "pets/q-girl/preview.png",
+  portrait: "pets/q-girl/portrait.png",
+  offlinePortrait: "pets/q-girl/portrait-offline.png",
   baseSize: { width: 256, height: 320 },
   frameSize: { width: 768, height: 960 },
   actions: Object.fromEntries(

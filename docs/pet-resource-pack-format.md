@@ -12,6 +12,8 @@
 my-pet.cdpet
 ├─ pet.json
 ├─ preview.png
+├─ portrait.png              # 可选，在线陪伴头像
+├─ portrait-offline.png      # 可选，离线陪伴头像
 └─ motions/
    ├─ motion-001/
    │  ├─ 0001.png
@@ -105,12 +107,13 @@ v3 不再要求资源包提供固定的 12 个动作名，也不要求生成 `ac
 - 每个 motion 的 `tags` 建议提供非空字符串数组；省略时前端会按 `idle` 处理，但新生成器应显式写出。
 - 每个 motion 目录必须包含 `0001.png` 到 `NNNN.png` 的连续 PNG 帧，数量和 `frameCount` 一致。
 - `preview.png` 必须存在且为 PNG。
+- `portrait.png` 和 `portrait-offline.png` 可选，存在时用于多窗口陪伴在线/离线头像；缺失时客户端回退到 `preview.png`。
 - PNG 签名必须合法，建议使用 RGBA 透明背景。
 - 文件数量不超过 500 个。
 - 每个单文件不超过 8 MiB。
 - 原始 `.cdpet` 不超过 80 MiB，解压后总量不超过 160 MiB。
 - zip 路径安全，不允许绝对路径、`..`、反斜杠路径或任意嵌套逃逸。
-- 只允许 `pet.json`、`preview.png` 和 `motions/<motion-id>/<NNNN>.png` 这类文件落盘。
+- 只允许 `pet.json`、`preview.png`、可选根目录 `portrait.png` / `portrait-offline.png` 和 `motions/<motion-id>/<NNNN>.png` 这类文件落盘。
 
 ## v2 过渡兼容
 
@@ -125,6 +128,7 @@ v3 不再要求资源包提供固定的 12 个动作名，也不要求生成 `ac
 - 最低成本包可以只生成一个 motion，例如 `motion-001`，只要帧数和 `pet.json` 一致即可。
 - 推荐生成多个短 motion，例如呼吸、张望、挥手、打盹等，并用 `weight` 控制出现频率。
 - 远程消息来访想有专属表现时，可以额外生成一个带 `message` 标签的 motion。
+- 如果资源包要参与对方在线/离线陪伴窗口，建议额外提供 512x512 RGBA 透明 `portrait.png` 和 `portrait-offline.png`，胸部以上构图，头部约占画面 68%，不要包含文字、边框或额外人物。
 - PNG 建议使用透明背景，画布尺寸和角色落点在所有帧中保持稳定。
 - 角色在小尺寸显示时仍应能看清动作意图，不要只做整体缩放或静态重复帧。
 - 不要放入版权不明的角色、图片、模型、字体或音频。
