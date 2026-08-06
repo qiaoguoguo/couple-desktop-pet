@@ -22,6 +22,7 @@ const MAX_EXTRACTED_SIZE_BYTES: u64 = 160 * 1024 * 1024;
 const MAX_SINGLE_FILE_SIZE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_ARCHIVE_FILES: usize = 500;
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+const PRESENCE_PORTRAIT_FILES: [&str; 2] = ["portrait.png", "portrait-offline.png"];
 
 const REQUIRED_ACTIONS: [&str; 12] = [
     "idle-breathe",
@@ -135,6 +136,10 @@ pub struct ImportedPetPackageSummary {
     pub frame_size: PackageSize,
     #[serde(rename = "previewPath")]
     pub preview_path: String,
+    #[serde(rename = "portraitPath")]
+    pub portrait_path: Option<String>,
+    #[serde(rename = "offlinePortraitPath")]
+    pub offline_portrait_path: Option<String>,
     pub actions: BTreeMap<String, PackageAction>,
     pub scenes: BTreeMap<String, PackageScene>,
     #[serde(rename = "framePaths")]
@@ -351,7 +356,7 @@ fn validate_allowed_archive_dir(name: &str, manifest: &PetPackageManifest) -> Re
 }
 
 fn validate_allowed_archive_file(name: &str, manifest: &PetPackageManifest) -> Result<(), String> {
-    if name == "pet.json" || name == "preview.png" {
+    if name == "pet.json" || name == "preview.png" || PRESENCE_PORTRAIT_FILES.contains(&name) {
         return Ok(());
     }
 
@@ -637,6 +642,11 @@ fn validate_required_frames<R: Read + std::io::Seek>(
             .map_err(|_| "缺少 preview.png".to_string())?;
         validate_png_file(&mut preview, "preview.png")?;
     }
+    for portrait_file in PRESENCE_PORTRAIT_FILES {
+        if let Ok(mut portrait) = archive.by_name(portrait_file) {
+            validate_png_file(&mut portrait, portrait_file)?;
+        }
+    }
 
     if manifest.format_version == 3 {
         return validate_v3_motion_frames(archive, manifest);
@@ -757,6 +767,8 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
     if !preview_path.exists() {
         return Err("缺少 preview.png".to_string());
     }
+    let portrait_path = optional_asset_path(package_dir, "portrait.png");
+    let offline_portrait_path = optional_asset_path(package_dir, "portrait-offline.png");
 
     Ok(ImportedPetPackageSummary {
         id: format!("{IMPORTED_PREFIX}{}", manifest.id),
@@ -767,6 +779,8 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
         base_size: manifest.base_size,
         frame_size: manifest.frame_size,
         preview_path: preview_path.to_string_lossy().to_string(),
+        portrait_path,
+        offline_portrait_path,
         actions: manifest.actions,
         scenes: manifest.scenes,
         frame_paths,
@@ -774,6 +788,12 @@ fn read_package_summary(package_dir: &Path) -> Result<ImportedPetPackageSummary,
         motions,
         motion_frame_paths,
     })
+}
+
+fn optional_asset_path(package_dir: &Path, file_name: &str) -> Option<String> {
+    let path = package_dir.join(file_name);
+
+    path.exists().then(|| path.to_string_lossy().to_string())
 }
 
 fn read_v2_frame_paths(package_dir: &Path) -> Result<BTreeMap<String, Vec<String>>, String> {
@@ -910,6 +930,38 @@ mod tests {
         let packages = list_pet_packages_from_root(&root).unwrap();
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].id, "imported:moon-buddy");
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    #[test]
+    fn imports_optional_presence_portraits_and_reports_paths() {
+        let temp = unique_temp_dir("presence-portraits");
+        let source = temp.join("moon.cdpet");
+        let root = temp.join("packages");
+
+        write_test_package_with_portraits(&source, "moon-buddy");
+
+        let imported = import_pet_package_from_path(&source, &root).unwrap();
+
+        assert!(imported
+            .portrait_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("portrait.png")));
+        assert!(imported
+            .offline_portrait_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("portrait-offline.png")));
+
+        let packages = list_pet_packages_from_root(&root).unwrap();
+        assert!(packages[0]
+            .portrait_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("portrait.png")));
+        assert!(packages[0]
+            .offline_portrait_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("portrait-offline.png")));
 
         let _ = fs::remove_dir_all(temp);
     }
@@ -1105,6 +1157,8 @@ mod tests {
             ("extra-frame", "frames/extra.png"),
             ("unknown-action", "frames/unknown/0001.png"),
             ("overflow-index", "frames/act-cute/0031.png"),
+            ("nested-portrait", "assets/portrait.png"),
+            ("jpg-portrait", "portrait.jpg"),
         ] {
             let temp = unique_temp_dir(case_name);
             let source = temp.join("bad.cdpet");
@@ -1262,6 +1316,21 @@ mod tests {
             zip.start_file("../escape.png", options).unwrap();
             zip.write_all(&PNG_SIGNATURE).unwrap();
         }
+
+        zip.finish().unwrap();
+    }
+
+    fn write_test_package_with_portraits(source: &Path, manifest_id: &str) {
+        let file = fs::File::create(source).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+
+        write_standard_entries(&mut zip, options, manifest_id, true);
+
+        zip.start_file("portrait.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
+        zip.start_file("portrait-offline.png", options).unwrap();
+        zip.write_all(&PNG_SIGNATURE).unwrap();
 
         zip.finish().unwrap();
     }

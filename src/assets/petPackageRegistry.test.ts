@@ -70,6 +70,33 @@ describe("pet package registry", () => {
     );
   });
 
+  it("resolves imported presence portraits before falling back to preview", () => {
+    const importedWithPortraits = {
+      ...importedPackageSummary(),
+      portraitPath: "C:/pets/moon/portrait.png",
+      offlinePortraitPath: "C:/pets/moon/portrait-offline.png",
+    };
+    const legacyImported = importedPackageSummary({
+      id: "imported:moon-buddy-old",
+      manifestId: "moon-buddy-old",
+      previewPath: "C:/pets/moon-old/preview.png",
+    });
+
+    const packages = buildPetPackageRegistry(
+      [importedWithPortraits, legacyImported],
+      (path) => `asset://${path}`,
+    );
+    const withPortraits = packages.find((pkg) => pkg.id === "imported:moon-buddy");
+    const legacy = packages.find((pkg) => pkg.id === "imported:moon-buddy-old");
+
+    expect(withPortraits?.portraitUrl).toBe("asset://C:/pets/moon/portrait.png");
+    expect(withPortraits?.offlinePortraitUrl).toBe(
+      "asset://C:/pets/moon/portrait-offline.png",
+    );
+    expect(legacy?.portraitUrl).toBe(legacy?.previewUrl);
+    expect(legacy?.offlinePortraitUrl).toBe(legacy?.previewUrl);
+  });
+
   it("exposes imported v2 actions as runtime motions", () => {
     const imported = importedPackageSummary();
     const packages = buildPetPackageRegistry(
@@ -155,7 +182,9 @@ describe("pet package registry", () => {
   });
 });
 
-function importedPackageSummary(): ImportedPetPackageSummary {
+function importedPackageSummary(
+  overrides: Partial<ImportedPetPackageSummary> = {},
+): ImportedPetPackageSummary {
   return {
     id: "imported:moon-buddy",
     manifestId: "moon-buddy",
@@ -163,6 +192,8 @@ function importedPackageSummary(): ImportedPetPackageSummary {
     baseSize: { width: 256, height: 320 },
     frameSize: { width: 768, height: 960 },
     previewPath: "C:/pets/moon/preview.png",
+    portraitPath: null,
+    offlinePortraitPath: null,
     actions: Object.fromEntries(
       REQUIRED_PET_ACTIONS.map((action) => [
         action,
@@ -239,6 +270,7 @@ function importedPackageSummary(): ImportedPetPackageSummary {
         ),
       ]),
     ) as ImportedPetPackageSummary["motionFramePaths"],
+    ...overrides,
   };
 }
 
@@ -254,6 +286,8 @@ function motionPoolPackageSummary(
     baseSize: { width: 256, height: 320 },
     frameSize: { width: 768, height: 960 },
     previewPath: "C:/pets/moon/preview.png",
+    portraitPath: null,
+    offlinePortraitPath: null,
     defaultMotion: "motion-001",
     motions: {
       "motion-001": {

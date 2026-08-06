@@ -24,6 +24,8 @@ const importedPackage: ResolvedPetPackage = {
   baseSize: { width: 256, height: 320 },
   frameSize: { width: 768, height: 960 },
   previewUrl: "asset://moon/preview.png",
+  portraitUrl: "asset://moon/preview.png",
+  offlinePortraitUrl: "asset://moon/preview.png",
   source: "imported",
   actions: importedActionsRecord,
   defaultMotionId: "idle-breathe",

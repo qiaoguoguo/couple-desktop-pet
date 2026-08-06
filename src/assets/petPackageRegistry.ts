@@ -32,6 +32,8 @@ export interface ResolvedPetPackage {
   baseSize: { width: number; height: number };
   frameSize: { width: number; height: number };
   previewUrl: string | null;
+  portraitUrl: string | null;
+  offlinePortraitUrl: string | null;
   source: "built-in" | "imported";
   defaultMotionId: string;
   motions: Record<string, ResolvedPetMotion>;
@@ -90,6 +92,8 @@ function buildBuiltInPackage(): ResolvedPetPackage {
     baseSize: builtInPetManifest.baseSize,
     frameSize: builtInPetManifest.frameSize,
     previewUrl: null,
+    portraitUrl: null,
+    offlinePortraitUrl: null,
     source: "built-in",
     scenes: builtInPetManifest.scenes,
     defaultMotionId: "idle-breathe",
@@ -139,7 +143,14 @@ function buildImportedPackage(
     name: pkg.name,
     baseSize: pkg.baseSize,
     frameSize: pkg.frameSize,
-    previewUrl: convertFileSrc(normalizeImportedAssetPath(pkg.previewPath)),
+    previewUrl: resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
+    portraitUrl:
+      resolveImportedOptionalAssetUrl(pkg.portraitPath, convertFileSrc) ??
+      resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
+    offlinePortraitUrl:
+      resolveImportedOptionalAssetUrl(pkg.offlinePortraitPath, convertFileSrc) ??
+      resolveImportedOptionalAssetUrl(pkg.portraitPath, convertFileSrc) ??
+      resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
     source: "imported",
     defaultMotionId: "idle-breathe",
     motions: buildMotionsFromActions(
@@ -190,7 +201,14 @@ function buildImportedMotionPoolPackage(
     name: pkg.name,
     baseSize: pkg.baseSize,
     frameSize: pkg.frameSize,
-    previewUrl: convertFileSrc(normalizeImportedAssetPath(pkg.previewPath)),
+    previewUrl: resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
+    portraitUrl:
+      resolveImportedOptionalAssetUrl(pkg.portraitPath, convertFileSrc) ??
+      resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
+    offlinePortraitUrl:
+      resolveImportedOptionalAssetUrl(pkg.offlinePortraitPath, convertFileSrc) ??
+      resolveImportedOptionalAssetUrl(pkg.portraitPath, convertFileSrc) ??
+      resolveImportedAssetUrl(pkg.previewPath, convertFileSrc),
     source: "imported",
     defaultMotionId: pkg.defaultMotion,
     motions,
@@ -274,4 +292,18 @@ function buildActionRecord(
 
 function normalizeImportedAssetPath(path: string): string {
   return path.replaceAll("\\", "/");
+}
+
+function resolveImportedAssetUrl(
+  path: string,
+  convertFileSrc: (path: string) => string,
+): string {
+  return convertFileSrc(normalizeImportedAssetPath(path));
+}
+
+function resolveImportedOptionalAssetUrl(
+  path: string | null,
+  convertFileSrc: (path: string) => string,
+): string | null {
+  return path ? resolveImportedAssetUrl(path, convertFileSrc) : null;
 }

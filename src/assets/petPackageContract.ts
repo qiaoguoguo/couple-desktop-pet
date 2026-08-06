@@ -99,6 +99,8 @@ export interface ImportedPetPackageSummary {
   baseSize: PetPackageSize;
   frameSize: PetPackageSize;
   previewPath: string;
+  portraitPath: string | null;
+  offlinePortraitPath: string | null;
   actions: Record<PetActionName, PetPackageActionManifest>;
   scenes: Record<string, PetPackageSceneManifest>;
   framePaths: Record<PetActionName, string[]>;

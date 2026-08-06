@@ -13,6 +13,8 @@ describe("pet package commands", () => {
       baseSize: { width: 256, height: 320 },
       frameSize: { width: 768, height: 960 },
       previewPath: "C:/app/pet-packages/moon-buddy/preview.png",
+      portraitPath: null,
+      offlinePortraitPath: null,
       actions: {} as ImportedPetPackageSummary["actions"],
       scenes: {} as ImportedPetPackageSummary["scenes"],
       framePaths: {} as ImportedPetPackageSummary["framePaths"],
