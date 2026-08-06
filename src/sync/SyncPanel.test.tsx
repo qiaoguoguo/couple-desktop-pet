@@ -10,6 +10,7 @@ function syncStatus(
   return {
     status: "disconnected",
     peerPresence: "unknown",
+    peerActivityStatus: null,
     peerPresenceChangedAt: null,
     peerLastSeenAt: null,
     lastError: null,

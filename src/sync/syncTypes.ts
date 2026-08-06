@@ -1,3 +1,5 @@
+import type { ActivityStatus } from "../../shared/activityStatus";
+
 export type SyncConnectionStatus =
   | "disabled"
   | "connecting"
@@ -17,6 +19,7 @@ export interface SessionMessage {
 export interface SyncRuntimeState {
   status: SyncConnectionStatus;
   peerPresence: PeerPresence;
+  peerActivityStatus: ActivityStatus | null;
   peerPresenceChangedAt: string | null;
   peerLastSeenAt: string | null;
   lastError: string | null;

@@ -20,6 +20,7 @@ export function useRealtimeSync(
   const [state, setState] = useState<SyncRuntimeState>({
     status: sync.enabled ? "disconnected" : "disabled",
     peerPresence: "unknown",
+    peerActivityStatus: null,
     peerPresenceChangedAt: null,
     peerLastSeenAt: null,
     lastError: null,
@@ -39,6 +40,7 @@ export function useRealtimeSync(
       deviceId: sync.deviceId,
       deviceSecret: sync.deviceSecret,
       pairId: sync.pairId,
+      activityStatus: sync.activityStatus,
       onEvent: (event: RealtimeClientEvent) => {
         if (event.type === "message") {
           callbacksRef.current.onMessage({
@@ -56,6 +58,7 @@ export function useRealtimeSync(
             ...current,
             status: event.status,
             peerPresence: isConnected ? current.peerPresence : "unknown",
+            peerActivityStatus: isConnected ? current.peerActivityStatus : null,
             peerPresenceChangedAt: isConnected
               ? current.peerPresenceChangedAt
               : null,
@@ -68,8 +71,18 @@ export function useRealtimeSync(
           setState((current) => ({
             ...current,
             peerPresence: event.peerPresence,
+            peerActivityStatus:
+              event.peerPresence === "online" ? null : current.peerActivityStatus,
             peerPresenceChangedAt: event.changedAt,
             peerLastSeenAt: event.lastSeenAt,
+          }));
+          return;
+        }
+
+        if (event.type === "peerStatus") {
+          setState((current) => ({
+            ...current,
+            peerActivityStatus: event.peerActivityStatus,
           }));
           return;
         }
@@ -86,6 +99,7 @@ export function useRealtimeSync(
       setState({
         status: sync.enabled ? "disconnected" : "disabled",
         peerPresence: "unknown",
+        peerActivityStatus: null,
         peerPresenceChangedAt: null,
         peerLastSeenAt: null,
         lastError: null,

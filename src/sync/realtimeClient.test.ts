@@ -58,6 +58,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: (event) => events.push(event),
     });
@@ -79,13 +80,101 @@ describe("RealtimeClient", () => {
       pairId: "pair_1",
     });
     expect(events).toContainEqual({ type: "status", status: "connected" });
+    expect(fakeSocket.sentJson[1]).toMatchObject({
+      type: "status.update",
+      pairId: "pair_1",
+      activityStatus: null,
+    });
 
     const result = client.sendMessage("  想你啦  ");
     expect(result.ok).toBe(true);
-    expect(fakeSocket.sentJson[1]).toMatchObject({
+    expect(fakeSocket.sentJson[2]).toMatchObject({
       type: "message.send",
       pairId: "pair_1",
       text: "想你啦",
+    });
+  });
+
+  it("sends the configured activity status after authentication", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: "overtime" });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+    });
+
+    expect(fakeSocket.sentJson[1]).toMatchObject({
+      type: "status.update",
+      pairId: "pair_1",
+      activityStatus: "overtime",
+    });
+  });
+
+  it("sends live activity status changes and resends the latest value after reconnect", () => {
+    vi.useFakeTimers();
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+
+    client.connect();
+    const firstSocket = expectLatestSocket();
+    firstSocket.emitOpen();
+    firstSocket.emitMessage({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+    });
+
+    expect(client.setActivityStatus("dazing")).toEqual({ synced: true });
+    expect(firstSocket.sentJson.at(-1)).toMatchObject({
+      type: "status.update",
+      pairId: "pair_1",
+      activityStatus: "dazing",
+    });
+
+    firstSocket.emitClose();
+    expect(client.setActivityStatus("slacking")).toEqual({ synced: false });
+
+    vi.advanceTimersByTime(1000);
+    const secondSocket = expectLatestSocket();
+    secondSocket.emitOpen();
+    secondSocket.emitMessage({
+      type: "auth.ok",
+      requestId: "auth_2",
+      pairId: "pair_1",
+    });
+
+    expect(secondSocket.sentJson[1]).toMatchObject({
+      type: "status.update",
+      pairId: "pair_1",
+      activityStatus: "slacking",
+    });
+  });
+
+  it("emits peer activity status events from relay messages", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "peer.status",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      activityStatus: "slacking",
+      changedAt: "2026-08-06T12:00:00.000Z",
+    });
+
+    expect(events).toContainEqual({
+      type: "peerStatus",
+      peerDeviceId: "dev_b",
+      peerActivityStatus: "slacking",
+      changedAt: "2026-08-06T12:00:00.000Z",
     });
   });
 
@@ -96,6 +185,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: (event) => events.push(event),
     });
@@ -118,6 +208,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: (event) => events.push(event),
     });
@@ -150,6 +241,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: (event) => events.push(event),
     });
@@ -177,6 +269,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: () => undefined,
     });
@@ -198,6 +291,7 @@ describe("RealtimeClient", () => {
       deviceId: "dev_a",
       deviceSecret: "wrong_secret",
       pairId: "pair_1",
+      activityStatus: null,
       webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
       onEvent: (event) => events.push(event),
     });
@@ -219,6 +313,21 @@ describe("RealtimeClient", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
+
+function newRealtimeClient(
+  events: RealtimeClientEvent[],
+  overrides: { activityStatus: "slacking" | "dazing" | "overtime" | null },
+): RealtimeClient {
+  return new RealtimeClient({
+    relayUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_a",
+    deviceSecret: "secret_a",
+    pairId: "pair_1",
+    webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+    onEvent: (event) => events.push(event),
+    ...overrides,
+  });
+}
 
 function expectLatestSocket(): FakeWebSocket {
   if (!FakeWebSocket.latest) {

@@ -1,3 +1,4 @@
+import type { ActivityStatus } from "../../shared/activityStatus";
 import {
   parseServerToClientMessage,
   validateMessageText,
@@ -17,6 +18,12 @@ export type RealtimeClientEvent =
       changedAt: string | null;
       lastSeenAt: string | null;
     }
+  | {
+      type: "peerStatus";
+      peerDeviceId: string;
+      peerActivityStatus: ActivityStatus | null;
+      changedAt: string;
+    }
   | { type: "message"; id: string; fromDeviceId: string; text: string; at: string }
   | { type: "delivered"; clientMessageId: string; at: string }
   | { type: "error"; message: string };
@@ -26,6 +33,7 @@ export interface RealtimeClientOptions {
   deviceId: string;
   deviceSecret: string;
   pairId: string;
+  activityStatus: ActivityStatus | null;
   webSocketFactory?: (url: string) => WebSocket;
   onEvent(event: RealtimeClientEvent): void;
 }
@@ -34,16 +42,21 @@ export class RealtimeClient {
   private socket: WebSocket | null = null;
   private closedByClient = false;
   private authFailed = false;
+  private authenticated = false;
+  private localActivityStatus: ActivityStatus | null;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly options: RealtimeClientOptions) {}
+  constructor(private readonly options: RealtimeClientOptions) {
+    this.localActivityStatus = options.activityStatus;
+  }
 
   connect(): void {
     this.closeCurrentSocket();
     this.clearReconnectTimer();
     this.closedByClient = false;
     this.authFailed = false;
+    this.authenticated = false;
     this.options.onEvent({ type: "status", status: "connecting" });
 
     this.openSocket();
@@ -53,7 +66,7 @@ export class RealtimeClient {
     const socket = this.createWebSocket(toWebSocketRelayUrl(this.options.relayUrl));
     this.socket = socket;
     socket.addEventListener("open", () => this.handleOpen(socket));
-    socket.addEventListener("message", (event) => this.handleMessage(event));
+    socket.addEventListener("message", (event) => this.handleMessage(socket, event));
     socket.addEventListener("close", () => this.handleClose(socket));
     socket.addEventListener("error", () => {
       this.options.onEvent({ type: "error", message: "Relay connection error" });
@@ -90,11 +103,18 @@ export class RealtimeClient {
     return { ok: true, clientMessageId };
   }
 
+  setActivityStatus(activityStatus: ActivityStatus | null): { synced: boolean } {
+    this.localActivityStatus = activityStatus;
+
+    return { synced: this.sendActivityStatus() };
+  }
+
   private handleOpen(socket: WebSocket): void {
     if (socket !== this.socket) {
       return;
     }
 
+    this.authenticated = false;
     this.send({
       type: "auth",
       requestId: createRequestId("auth"),
@@ -104,7 +124,11 @@ export class RealtimeClient {
     });
   }
 
-  private handleMessage(event: MessageEvent): void {
+  private handleMessage(socket: WebSocket, event: MessageEvent): void {
+    if (socket !== this.socket) {
+      return;
+    }
+
     const parsed = parseIncomingMessage(event.data);
     if (!parsed) {
       this.options.onEvent({ type: "error", message: "Malformed relay message" });
@@ -115,6 +139,8 @@ export class RealtimeClient {
       case "auth.ok":
         this.reconnectAttempt = 0;
         this.authFailed = false;
+        this.authenticated = true;
+        this.sendActivityStatus();
         this.options.onEvent({ type: "status", status: "connected" });
         return;
       case "peer.online":
@@ -133,6 +159,14 @@ export class RealtimeClient {
           peerDeviceId: parsed.peerDeviceId,
           changedAt: parsed.changedAt ?? null,
           lastSeenAt: parsed.lastSeenAt ?? null,
+        });
+        return;
+      case "peer.status":
+        this.options.onEvent({
+          type: "peerStatus",
+          peerDeviceId: parsed.peerDeviceId,
+          peerActivityStatus: parsed.activityStatus,
+          changedAt: parsed.changedAt,
         });
         return;
       case "message.received":
@@ -170,6 +204,7 @@ export class RealtimeClient {
     }
 
     this.socket = null;
+    this.authenticated = false;
 
     if (this.closedByClient) {
       this.options.onEvent({ type: "status", status: "disabled" });
@@ -187,6 +222,20 @@ export class RealtimeClient {
 
   private send(message: ClientToServerMessage): void {
     this.socket?.send(JSON.stringify(message));
+  }
+
+  private sendActivityStatus(): boolean {
+    if (!this.authenticated || !this.socket || !isSocketOpen(this.socket)) {
+      return false;
+    }
+
+    this.send({
+      type: "status.update",
+      requestId: createRequestId("status"),
+      pairId: this.options.pairId,
+      activityStatus: this.localActivityStatus,
+    });
+    return true;
   }
 
   private createWebSocket(url: string): WebSocket {
@@ -231,6 +280,7 @@ export class RealtimeClient {
 
     const socket = this.socket;
     this.socket = null;
+    this.authenticated = false;
     socket.close();
   }
 }
