@@ -47,4 +47,66 @@ describe("PeerStatusCard", () => {
     expect(screen.queryByRole("img", { name: "对方头像" })).toBeNull();
     expect(screen.getByText("TA")).toBeTruthy();
   });
+
+  it("does not reset to a failed image when rerendered with an equivalent candidate array", () => {
+    const { rerender } = render(
+      <PeerStatusCard
+        view={slackingView}
+        imageCandidates={["failed.png", "good.png"]}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "对方头像" }));
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+
+    rerender(
+      <PeerStatusCard
+        view={slackingView}
+        imageCandidates={["failed.png", "good.png"]}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+  });
+
+  it("deduplicates image candidates before falling back", () => {
+    render(
+      <PeerStatusCard
+        view={slackingView}
+        imageCandidates={["failed.png", "failed.png", "good.png"]}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "对方头像" }));
+
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+  });
+
+  it("resets fallback state when the candidate content changes", () => {
+    const { rerender } = render(
+      <PeerStatusCard
+        view={slackingView}
+        imageCandidates={["failed.png", "good.png"]}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "对方头像" }));
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+
+    rerender(
+      <PeerStatusCard view={slackingView} imageCandidates={["fresh.png"]} />,
+    );
+
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "fresh.png",
+    );
+  });
 });

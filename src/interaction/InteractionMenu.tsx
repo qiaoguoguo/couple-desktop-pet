@@ -18,7 +18,7 @@ interface InteractionMenuProps {
   x: number;
   y: number;
   options: readonly PetInteractionOption[];
-  onSelect(selection: InteractionMenuSelection): void;
+  onSelect: (selection: InteractionMenuSelection) => void;
 }
 
 const optionIcons: Record<InteractionActionName, string> = {

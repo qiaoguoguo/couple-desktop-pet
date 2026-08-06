@@ -11,15 +11,28 @@ export function PeerStatusCard({
   imageCandidates = [],
 }: PeerStatusCardProps) {
   const usableImageCandidates = useMemo(
-    () => imageCandidates.filter((candidate): candidate is string => Boolean(candidate)),
+    () => normalizeImageCandidates(imageCandidates),
     [imageCandidates],
   );
-  const [imageIndex, setImageIndex] = useState(0);
+  const imageCandidatesKey = useMemo(
+    () => JSON.stringify(usableImageCandidates),
+    [usableImageCandidates],
+  );
+  const [imageState, setImageState] = useState({
+    key: imageCandidatesKey,
+    index: 0,
+  });
+  const imageIndex =
+    imageState.key === imageCandidatesKey ? imageState.index : 0;
   const imageUrl = usableImageCandidates[imageIndex] ?? null;
 
   useEffect(() => {
-    setImageIndex(0);
-  }, [usableImageCandidates]);
+    setImageState((current) =>
+      current.key === imageCandidatesKey
+        ? current
+        : { key: imageCandidatesKey, index: 0 },
+    );
+  }, [imageCandidatesKey]);
 
   return (
     <aside
@@ -34,19 +47,45 @@ export function PeerStatusCard({
             width={28}
             height={28}
             alt="对方头像"
-            onError={() => setImageIndex((current) => current + 1)}
+            onError={() =>
+              setImageState({
+                key: imageCandidatesKey,
+                index: imageIndex + 1,
+              })
+            }
           />
         ) : (
           "TA"
         )}
       </span>
       <span className="peer-status-copy">
-        <strong>{view.title}</strong>
-        <span>{view.detail}</span>
+        <span className="peer-status-title">
+          <span className="peer-status-dot" aria-hidden="true" />
+          <strong>{view.title}</strong>
+        </span>
+        <span className="peer-status-detail">{view.detail}</span>
       </span>
       <span className="peer-status-icon" aria-hidden="true">
         {view.iconText}
       </span>
     </aside>
   );
+}
+
+function normalizeImageCandidates(
+  imageCandidates: readonly (string | null | undefined)[],
+) {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const candidate of imageCandidates) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+
+    seen.add(candidate);
+    normalized.push(candidate);
+  }
+
+  return normalized;
 }

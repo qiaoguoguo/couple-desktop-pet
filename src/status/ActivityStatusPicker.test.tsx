@@ -12,15 +12,24 @@ describe("ActivityStatusPicker", () => {
       />,
     );
 
-    expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "我的状态" });
+    expect(dialog).toBeTruthy();
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
     expect(screen.getByRole("button", { name: "在线" }).getAttribute("aria-pressed")).toBe(
       "false",
     );
-    expect(screen.getByRole("button", { name: "摸鱼中" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "摸鱼中" }).textContent).toContain(
+      "鱼",
+    );
     expect(
       screen.getByRole("button", { name: "发呆中" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByRole("button", { name: "加班中" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "发呆中" }).textContent).toContain(
+      "云",
+    );
+    expect(screen.getByRole("button", { name: "加班中" }).textContent).toContain(
+      "班",
+    );
   });
 
   it("emits nullable activity status values", () => {
@@ -58,5 +67,30 @@ describe("ActivityStatusPicker", () => {
 
     fireEvent.mouseDown(screen.getByTestId("activity-status-picker-backdrop"));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("focuses the current option on mount and cycles focus with Tab", () => {
+    render(
+      <ActivityStatusPicker
+        currentStatus="dazing"
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const online = screen.getByRole("button", { name: "在线" });
+    const dazing = screen.getByRole("button", { name: "发呆中" });
+    const overtime = screen.getByRole("button", { name: "加班中" });
+
+    expect(document.activeElement).toBe(dazing);
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(overtime);
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(online);
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(overtime);
   });
 });

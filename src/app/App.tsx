@@ -71,10 +71,10 @@ import {
 import type { PetSettings, SyncSettings } from "../settings/settingsTypes";
 import {
   interactionOptions,
+  type InteractionMenuSelection,
 } from "../assets/builtInPetManifest";
 import {
   idleActionNames,
-  type InteractionActionName,
   type PetActionName,
 } from "../assets/petActionNames";
 import { selectNextIdleBehavior } from "../pet-core/idleBehaviorSelector";
@@ -1138,10 +1138,10 @@ export function App() {
     realtime.state.status,
   ]);
 
-  const handleInteractionSelect = useCallback((selection: InteractionActionName) => {
+  const handleInteractionSelect = useCallback((selection: InteractionMenuSelection) => {
     setInteractionMenuPosition(null);
 
-    if (selection === "act-typing") {
+    if (selection === "send-message") {
       const sendable =
         settingsRef.current.sync.enabled &&
         Boolean(settingsRef.current.sync.pairId) &&
@@ -1154,6 +1154,15 @@ export function App() {
       }
 
       openMessageComposerPanel();
+      return;
+    }
+
+    if (selection === "open-status") {
+      if (settingsRef.current.bubblesEnabled) {
+        setBubble(
+          showBubble(placeholderInteractionMessage, { durationMs: 4000 }),
+        );
+      }
       return;
     }
 

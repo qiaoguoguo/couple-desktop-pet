@@ -72,8 +72,23 @@ body {
   gap: 2px;
 }
 
+.peer-status-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.peer-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #2f9e6e;
+}
+
 .peer-status-copy strong,
-.peer-status-copy span {
+.peer-status-detail {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -87,7 +102,7 @@ body {
   font-weight: 700;
 }
 
-.peer-status-copy span {
+.peer-status-detail {
   color: #72594d;
   font-size: 10px;
 }
@@ -102,14 +117,44 @@ body {
   color: #425366;
 }
 
+.peer-status-card[data-status-variant="connecting"] .peer-status-dot {
+  background: #648da3;
+}
+
+.peer-status-card[data-status-variant="online"] .peer-status-icon {
+  background: #d7f2de;
+  color: #225c3d;
+}
+
+.peer-status-card[data-status-variant="online"] .peer-status-dot {
+  background: #2f9e6e;
+}
+
+.peer-status-card[data-status-variant="slacking"] .peer-status-icon {
+  background: #ffd66e;
+  color: #4b3519;
+}
+
+.peer-status-card[data-status-variant="slacking"] .peer-status-dot {
+  background: #d79d1c;
+}
+
 .peer-status-card[data-status-variant="offline"] .peer-status-icon {
   background: #d8e1ee;
   color: #516074;
 }
 
+.peer-status-card[data-status-variant="offline"] .peer-status-dot {
+  background: #7b8798;
+}
+
 .peer-status-card[data-status-variant="dazing"] .peer-status-icon {
-  background: #d9ecf4;
-  color: #45606c;
+  background: #e7ddff;
+  color: #5b3fa3;
+}
+
+.peer-status-card[data-status-variant="dazing"] .peer-status-dot {
+  background: #8a65d6;
 }
 
 .peer-status-card[data-status-variant="overtime"] .peer-status-icon {
@@ -117,7 +162,15 @@ body {
   color: #5a341d;
 }
 
+.peer-status-card[data-status-variant="overtime"] .peer-status-dot {
+  background: #c96a2f;
+}
+
 @media (prefers-reduced-motion: no-preference) {
+  .peer-status-card:not([data-status-variant="connecting"]) {
+    animation: peer-status-card-settle 220ms ease-out both;
+  }
+
   .peer-status-card[data-status-variant="connecting"] .peer-status-icon {
     animation: peer-status-waiting 1.8s linear infinite;
   }
@@ -126,6 +179,18 @@ body {
 @keyframes peer-status-waiting {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes peer-status-card-settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1041,6 +1106,10 @@ button.companion-presence-surface {
 
 .status-picker-grid button {
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   height: 32px;
   min-width: 0;
   overflow: hidden;
@@ -1053,6 +1122,20 @@ button.companion-presence-surface {
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-picker-icon {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 214, 110, 0.72);
+  color: #4b3519;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .status-picker-grid button[aria-pressed="true"] {

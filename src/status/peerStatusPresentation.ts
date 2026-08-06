@@ -6,6 +6,7 @@ import type {
   PeerPresence,
   SyncConnectionStatus,
 } from "../sync/syncTypes";
+import { readActivityStatusIconText } from "./activityStatusDisplay";
 
 export type PeerStatusVariant = "connecting" | "online" | "offline" | ActivityStatus;
 
@@ -40,25 +41,25 @@ const statusViews: Record<PeerStatusVariant, PeerStatusView> = {
     variant: "online",
     title: "TA 在线",
     detail: "正在陪你",
-    iconText: "心",
+    iconText: readActivityStatusIconText(null),
   },
   slacking: {
     variant: "slacking",
     title: "TA 摸鱼中",
     detail: "偷偷歇一会",
-    iconText: "鱼",
+    iconText: readActivityStatusIconText("slacking"),
   },
   dazing: {
     variant: "dazing",
     title: "TA 发呆中",
     detail: "灵魂出走啦",
-    iconText: "云",
+    iconText: readActivityStatusIconText("dazing"),
   },
   overtime: {
     variant: "overtime",
     title: "TA 加班中",
     detail: "努力搬砖中",
-    iconText: "班",
+    iconText: readActivityStatusIconText("overtime"),
   },
 };
 
