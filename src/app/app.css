@@ -25,7 +25,7 @@ body {
   z-index: 18;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   width: 164px;
@@ -38,6 +38,9 @@ body {
   box-shadow: 0 8px 18px rgba(76, 47, 32, 0.14);
   color: #402920;
   pointer-events: none;
+  --peer-status-dot: #8b929a;
+  --peer-status-icon-bg: #e6e8eb;
+  --peer-status-icon-color: #4b5563;
 }
 
 .peer-status-avatar,
@@ -72,6 +75,14 @@ body {
   gap: 2px;
 }
 
+.peer-status-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .peer-status-title {
   display: flex;
   min-width: 0;
@@ -84,7 +95,7 @@ body {
   height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #2f9e6e;
+  background: var(--peer-status-dot);
 }
 
 .peer-status-copy strong,
@@ -108,71 +119,60 @@ body {
 }
 
 .peer-status-icon {
-  background: #ffd66e;
-  color: #4b3519;
+  background: var(--peer-status-icon-bg);
+  color: var(--peer-status-icon-color);
 }
 
-.peer-status-card[data-status-variant="connecting"] .peer-status-icon {
-  background: #cfe0ec;
-  color: #425366;
+.peer-status-card[data-status-variant="connecting"] {
+  --peer-status-dot: #8b929a;
+  --peer-status-icon-bg: #e6e8eb;
+  --peer-status-icon-color: #4b5563;
 }
 
-.peer-status-card[data-status-variant="connecting"] .peer-status-dot {
-  background: #648da3;
+.peer-status-card[data-status-variant="online"] {
+  --peer-status-dot: #e8645a;
+  --peer-status-icon-bg: #ffe0dc;
+  --peer-status-icon-color: #8f2f28;
 }
 
-.peer-status-card[data-status-variant="online"] .peer-status-icon {
-  background: #d7f2de;
-  color: #225c3d;
+.peer-status-card[data-status-variant="slacking"] {
+  --peer-status-dot: #34bfa3;
+  --peer-status-icon-bg: #d8f5ee;
+  --peer-status-icon-color: #176b5d;
 }
 
-.peer-status-card[data-status-variant="online"] .peer-status-dot {
-  background: #2f9e6e;
+.peer-status-card[data-status-variant="offline"] {
+  --peer-status-dot: #6f8191;
+  --peer-status-icon-bg: #dfe8f0;
+  --peer-status-icon-color: #405261;
 }
 
-.peer-status-card[data-status-variant="slacking"] .peer-status-icon {
-  background: #ffd66e;
-  color: #4b3519;
+.peer-status-card[data-status-variant="dazing"] {
+  --peer-status-dot: #a78bfa;
+  --peer-status-icon-bg: #eee7ff;
+  --peer-status-icon-color: #5b3fa3;
 }
 
-.peer-status-card[data-status-variant="slacking"] .peer-status-dot {
-  background: #d79d1c;
-}
-
-.peer-status-card[data-status-variant="offline"] .peer-status-icon {
-  background: #d8e1ee;
-  color: #516074;
-}
-
-.peer-status-card[data-status-variant="offline"] .peer-status-dot {
-  background: #7b8798;
-}
-
-.peer-status-card[data-status-variant="dazing"] .peer-status-icon {
-  background: #e7ddff;
-  color: #5b3fa3;
-}
-
-.peer-status-card[data-status-variant="dazing"] .peer-status-dot {
-  background: #8a65d6;
-}
-
-.peer-status-card[data-status-variant="overtime"] .peer-status-icon {
-  background: #f6c7a0;
-  color: #5a341d;
-}
-
-.peer-status-card[data-status-variant="overtime"] .peer-status-dot {
-  background: #c96a2f;
+.peer-status-card[data-status-variant="overtime"] {
+  --peer-status-dot: #d99a2b;
+  --peer-status-icon-bg: #ffe6ba;
+  --peer-status-icon-color: #70470f;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .peer-status-card:not([data-status-variant="connecting"]) {
-    animation: peer-status-card-settle 220ms ease-out both;
+  .peer-status-card:not([data-status-variant="connecting"]) .peer-status-content {
+    animation: peer-status-content-settle 220ms ease-out both;
   }
 
   .peer-status-card[data-status-variant="connecting"] .peer-status-icon {
     animation: peer-status-waiting 1.8s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peer-status-content,
+  .peer-status-icon {
+    animation: none;
   }
 }
 
@@ -182,7 +182,7 @@ body {
   }
 }
 
-@keyframes peer-status-card-settle {
+@keyframes peer-status-content-settle {
   from {
     opacity: 0;
     transform: translateY(4px);

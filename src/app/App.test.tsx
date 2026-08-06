@@ -705,6 +705,61 @@ describe("App", () => {
     );
   });
 
+  it("uses online peer image candidates without the offline portrait", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    const peerPackage = {
+      ...importedPackageSummary("moon-buddy", "月亮伙伴"),
+      portraitPath: "C:/app/pet-packages/moon-buddy/portrait.png",
+      offlinePortraitPath:
+        "C:/app/pet-packages/moon-buddy/portrait-offline.png",
+    };
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([peerPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_b: peerPackage.id,
+        },
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    const portrait = await screen.findByRole("img", { name: "对方头像" });
+    expect(portrait.getAttribute("src")).toBe(
+      "asset://C:/app/pet-packages/moon-buddy/portrait.png",
+    );
+
+    fireEvent.error(portrait);
+    const preview = screen.getByRole("img", { name: "对方头像" });
+    expect(preview.getAttribute("src")).toBe(
+      "asset://C:/app/pet-packages/moon-buddy/preview.png",
+    );
+
+    fireEvent.error(preview);
+    const motionFallback = screen.getByRole("img", { name: "对方头像" });
+    expect(motionFallback.getAttribute("src")).toContain(
+      "frames/idle-breathe/0001.png",
+    );
+    expect(motionFallback.getAttribute("src")).not.toContain(
+      "portrait-offline.png",
+    );
+
+    fireEvent.error(motionFallback);
+    expect(screen.queryByRole("img", { name: "对方头像" })).toBeNull();
+    expect(screen.getByText("TA")).toBeTruthy();
+  });
+
   it("does not show the peer status card when unpaired", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
@@ -787,6 +842,39 @@ describe("App", () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     await dragPetPastThresholdAndRelease(screen.getByRole("region", { name: "情侣桌宠 MVP" }));
     expect(screen.queryByLabelText("对方状态")).toBeNull();
+  });
+
+  it("closes the status picker before opening the right-click settings menu", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
+    expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
+
+    const surface = screen.getByRole("region", { name: "情侣桌宠 MVP" });
+    fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
+
+    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "设置" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
   });
 
   it("persists and syncs the selected local activity status", async () => {

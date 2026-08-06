@@ -292,7 +292,6 @@ export function App() {
     return [
       peerStatusPetPackage.portraitUrl,
       peerStatusPetPackage.previewUrl,
-      peerStatusPetPackage.offlinePortraitUrl,
       motionFallbackUrl,
     ];
   }, [peerStatusPetPackage, peerStatusView?.variant]);
@@ -1202,6 +1201,8 @@ export function App() {
         setContextMenuPosition(nextPosition);
       }
 
+      closeStatusPicker();
+
       if (edgePeekSide) {
         void restoreFromEdgePeekIfNeeded()
           .then(() => {
@@ -1213,7 +1214,7 @@ export function App() {
 
       openContextMenu();
     },
-    [edgePeekSide, restoreFromEdgePeekIfNeeded],
+    [closeStatusPicker, edgePeekSide, restoreFromEdgePeekIfNeeded],
   );
 
   const handleDragStart = useCallback(() => {

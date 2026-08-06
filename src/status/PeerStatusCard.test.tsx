@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PeerStatusCard } from "./PeerStatusCard";
 import type { PeerStatusView } from "./peerStatusPresentation";
@@ -9,6 +11,22 @@ const slackingView: PeerStatusView = {
   detail: "偷偷歇一会",
   iconText: "鱼",
 };
+const onlineView: PeerStatusView = {
+  variant: "online",
+  title: "TA 在线",
+  detail: "正在陪你",
+  iconText: "心",
+};
+const dazingView: PeerStatusView = {
+  variant: "dazing",
+  title: "TA 发呆中",
+  detail: "灵魂出走啦",
+  iconText: "云",
+};
+
+function readAppCss() {
+  return readFileSync(join(process.cwd(), "src/app/app.css"), "utf8");
+}
 
 describe("PeerStatusCard", () => {
   it("renders a compact non-interactive status card with the view copy", () => {
@@ -108,5 +126,51 @@ describe("PeerStatusCard", () => {
     expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
       "fresh.png",
     );
+  });
+
+  it("remounts only the copy content when the status variant changes", () => {
+    const { rerender } = render(
+      <PeerStatusCard
+        view={onlineView}
+        imageCandidates={["failed.png", "good.png"]}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "对方头像" }));
+    const originalContent = document.querySelector(".peer-status-content");
+
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+    expect(originalContent).toBeTruthy();
+
+    rerender(
+      <PeerStatusCard
+        view={dazingView}
+        imageCandidates={["failed.png", "good.png"]}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
+      "good.png",
+    );
+    expect(document.querySelector(".peer-status-content")).not.toBe(
+      originalContent,
+    );
+  });
+
+  it("defines semantic status colors and reduced-motion-safe transition CSS", () => {
+    const css = readAppCss();
+
+    expect(css).toContain('.peer-status-card[data-status-variant="online"]');
+    expect(css).toContain("--peer-status-dot: #e8645a;");
+    expect(css).toContain("--peer-status-dot: #34bfa3;");
+    expect(css).toContain("--peer-status-dot: #a78bfa;");
+    expect(css).toContain("--peer-status-dot: #d99a2b;");
+    expect(css).toContain("--peer-status-dot: #6f8191;");
+    expect(css).toContain("--peer-status-dot: #8b929a;");
+    expect(css).toContain(".peer-status-content");
+    expect(css).toContain("animation: peer-status-content-settle 220ms");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });

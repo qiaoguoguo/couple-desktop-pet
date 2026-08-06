@@ -58,15 +58,17 @@ export function PeerStatusCard({
           "TA"
         )}
       </span>
-      <span className="peer-status-copy">
-        <span className="peer-status-title">
-          <span className="peer-status-dot" aria-hidden="true" />
-          <strong>{view.title}</strong>
+      <span key={view.variant} className="peer-status-content">
+        <span className="peer-status-copy">
+          <span className="peer-status-title">
+            <span className="peer-status-dot" aria-hidden="true" />
+            <strong>{view.title}</strong>
+          </span>
+          <span className="peer-status-detail">{view.detail}</span>
         </span>
-        <span className="peer-status-detail">{view.detail}</span>
-      </span>
-      <span className="peer-status-icon" aria-hidden="true">
-        {view.iconText}
+        <span className="peer-status-icon" aria-hidden="true">
+          {view.iconText}
+        </span>
       </span>
     </aside>
   );
