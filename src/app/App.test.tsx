@@ -612,6 +612,32 @@ describe("App", () => {
     expect(screen.getByLabelText("消息内容")).toBeTruthy();
   });
 
+  it("renders peer presence beside the pet and opens composer from online status", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+
+    expect(screen.getByLabelText("对方在线状态")).toBeTruthy();
+    expect(screen.getByText("TA 在线")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "给在线的TA发消息" }));
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
+  });
+
   it("sends composer panel text through the realtime client and restores the pet surface", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";

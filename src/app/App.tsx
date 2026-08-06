@@ -37,6 +37,7 @@ import {
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
 import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
+import { PeerPresenceLayer } from "../sync/PeerPresenceLayer";
 import {
   completeRemoteMessageDismissal,
   createEmptyRemoteMessageQueue,
@@ -161,6 +162,22 @@ export function App() {
       ),
     [petPackages, settings.appearance.selectedPetPackageId],
   );
+  const selectedPeerPetPackageId = settings.sync.peerDeviceId
+    ? settings.appearance.peerPetPackageByDeviceId[settings.sync.peerDeviceId] ??
+      null
+    : null;
+  const selectedPeerPetPackage = useMemo(
+    () =>
+      selectedPeerPetPackageId
+        ? petPackages.find((pkg) => pkg.id === selectedPeerPetPackageId) ?? null
+        : null,
+    [petPackages, selectedPeerPetPackageId],
+  );
+  const peerPresenceImageUrl =
+    selectedPeerPetPackage?.previewUrl ??
+    selectedPeerPetPackage?.motions[selectedPeerPetPackage.defaultMotionId]
+      ?.frames[0] ??
+    null;
   const activeMotion = useMemo(
     () =>
       selectedPetPackage.motions[
@@ -994,6 +1011,14 @@ export function App() {
     settingsOpen,
   ]);
 
+  const openMessageComposerPanel = useCallback(() => {
+    setInteractionMenuPosition(null);
+    setContextMenuPosition(null);
+    runDesktopCommand(openMessageComposerSurface);
+    setBubble((current) => hideBubble(current));
+    setMessageComposerOpen(true);
+  }, []);
+
   const handleInteractionSelect = useCallback((selection: InteractionActionName) => {
     setInteractionMenuPosition(null);
 
@@ -1009,9 +1034,7 @@ export function App() {
         return;
       }
 
-      runDesktopCommand(openMessageComposerSurface);
-      setBubble(hideBubble(bubble));
-      setMessageComposerOpen(true);
+      openMessageComposerPanel();
       return;
     }
 
@@ -1034,7 +1057,7 @@ export function App() {
       }),
     );
   }, [
-    bubble,
+    openMessageComposerPanel,
     realtime.state.peerPresence,
     realtime.state.status,
     selectedPetPackage,
@@ -1175,6 +1198,11 @@ export function App() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         />
+        <PeerPresenceLayer
+          status={syncStatus}
+          peerImageUrl={peerPresenceImageUrl}
+          onOpenMessageComposer={openMessageComposerPanel}
+        />
         <RemoteMessageLayer
           message={activeRemoteMessage}
           onAcknowledge={handleRemoteMessageAcknowledge}
@@ -1212,11 +1240,7 @@ export function App() {
             selectedPackageId={selectedPetPackage.id}
             peerDeviceId={settings.sync.peerDeviceId}
             selectedPeerPackageId={
-              settings.sync.peerDeviceId
-                ? settings.appearance.peerPetPackageByDeviceId[
-                    settings.sync.peerDeviceId
-                  ] ?? null
-                : null
+              selectedPeerPetPackageId
             }
             error={petPackageError}
             onImportPackage={handleImportPetPackage}
