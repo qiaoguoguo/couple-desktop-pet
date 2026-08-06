@@ -1,6 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PeerPresenceLayer } from "./PeerPresenceLayer";
+import {
+  getPeerPresenceHorizontalBounds,
+  PeerPresenceLayer,
+  PEER_PRESENCE_CARD_WIDTH_PX,
+  PEER_PRESENCE_RIGHT_PX,
+  PEER_PRESENCE_WINDOW_WIDTH_PX,
+} from "./PeerPresenceLayer";
 import type { SyncRuntimeState } from "./syncTypes";
 
 const baseStatus: SyncRuntimeState = {
@@ -45,6 +51,31 @@ describe("PeerPresenceLayer", () => {
     expect(screen.getByText("TA 离线")).toBeTruthy();
     expect(screen.getByText("等TA回来")).toBeTruthy();
     expect(screen.getByLabelText("离线留言小窝")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByRole("status", { name: "对方离线状态" })).toBeTruthy();
+  });
+
+  it("keeps the compact presence card inside the default 320px pet window", () => {
+    const bounds = getPeerPresenceHorizontalBounds();
+
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(PEER_PRESENCE_WINDOW_WIDTH_PX);
+
+    render(
+      <PeerPresenceLayer
+        status={baseStatus}
+        peerImageUrl={null}
+        onOpenMessageComposer={() => undefined}
+      />,
+    );
+
+    const layer = screen.getByLabelText("对方在线状态") as HTMLElement;
+    expect(layer.style.getPropertyValue("--peer-presence-right")).toBe(
+      `${PEER_PRESENCE_RIGHT_PX}px`,
+    );
+    expect(layer.style.getPropertyValue("--peer-presence-card-width")).toBe(
+      `${PEER_PRESENCE_CARD_WIDTH_PX}px`,
+    );
   });
 
   it("does not render when sync is not connected or peer presence is unknown", () => {
