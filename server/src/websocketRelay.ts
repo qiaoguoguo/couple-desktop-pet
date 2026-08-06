@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
+import { isNullableActivityStatus } from "../../shared/activityStatus.js";
 import type {
   ClientToServerMessage,
   ErrorServerMessage,
@@ -40,7 +41,7 @@ export function attachWebSocketRelay(
           return;
         }
 
-        handleAuthenticatedMessage(registry, connection, message);
+        handleAuthenticatedMessage(registry, connection, message, now);
       } catch (error) {
         sendError(socket, toErrorMessage(error, readRequestId(data)));
       }
@@ -83,6 +84,7 @@ function authenticateSocket(
     deviceId: authenticated.deviceId,
     pairId: authenticated.pairId,
     peerDeviceId: authenticated.peerDeviceId,
+    activityStatus: null,
   };
   const previous = registry.replace(connection);
   const isPresenceTransition = !previous;
@@ -105,6 +107,7 @@ function authenticateSocket(
       peerDeviceId: authenticated.peerDeviceId,
       changedAt,
     });
+    sendPeerStatusIfPresent(socket, authenticated.pairId, peer, changedAt);
     if (isPresenceTransition) {
       sendJson(peer.socket, {
         type: "peer.online",
@@ -112,6 +115,12 @@ function authenticateSocket(
         peerDeviceId: authenticated.deviceId,
         changedAt,
       });
+      sendPeerStatusIfPresent(
+        peer.socket,
+        authenticated.pairId,
+        connection,
+        changedAt,
+      );
     }
   } else {
     sendJson(socket, {
@@ -125,6 +134,25 @@ function authenticateSocket(
   return connection;
 }
 
+function sendPeerStatusIfPresent(
+  socket: WebSocket,
+  pairId: string,
+  peer: AuthenticatedConnection,
+  changedAt: string,
+): void {
+  if (peer.activityStatus === null) {
+    return;
+  }
+
+  sendJson(socket, {
+    type: "peer.status",
+    pairId,
+    peerDeviceId: peer.deviceId,
+    activityStatus: peer.activityStatus,
+    changedAt,
+  });
+}
+
 function createPresenceChangedAt(now: () => Date): string {
   return now().toISOString();
 }
@@ -133,9 +161,15 @@ function handleAuthenticatedMessage(
   registry: ConnectionRegistry,
   connection: AuthenticatedConnection,
   message: ClientToServerMessage,
+  now: () => Date,
 ): void {
   if (message.type === "ping") {
     sendJson(connection.socket, { type: "pong" });
+    return;
+  }
+
+  if (message.type === "status.update") {
+    handleStatusUpdate(registry, connection, message, now);
     return;
   }
 
@@ -198,6 +232,38 @@ function handleAuthenticatedMessage(
   });
 }
 
+function handleStatusUpdate(
+  registry: ConnectionRegistry,
+  connection: AuthenticatedConnection,
+  message: Extract<ClientToServerMessage, { type: "status.update" }>,
+  now: () => Date,
+): void {
+  if (message.pairId !== connection.pairId) {
+    sendError(connection.socket, {
+      type: "error",
+      requestId: message.requestId,
+      code: "auth_failed",
+      message: "Pair authentication failed",
+    });
+    return;
+  }
+
+  connection.activityStatus = message.activityStatus;
+
+  const peer = registry.get(connection.peerDeviceId);
+  if (!peer || peer.pairId !== connection.pairId) {
+    return;
+  }
+
+  sendJson(peer.socket, {
+    type: "peer.status",
+    pairId: connection.pairId,
+    peerDeviceId: connection.deviceId,
+    activityStatus: connection.activityStatus,
+    changedAt: now().toISOString(),
+  });
+}
+
 function parseClientMessage(data: RawData): ClientToServerMessage {
   const parsed = JSON.parse(data.toString()) as unknown;
   if (!isRecord(parsed) || typeof parsed.type !== "string") {
@@ -237,6 +303,20 @@ function parseClientMessage(data: RawData): ClientToServerMessage {
       pairId: parsed.pairId,
       clientMessageId: parsed.clientMessageId,
       text: parsed.text,
+    };
+  }
+
+  if (
+    parsed.type === "status.update" &&
+    typeof parsed.requestId === "string" &&
+    typeof parsed.pairId === "string" &&
+    isNullableActivityStatus(parsed.activityStatus)
+  ) {
+    return {
+      type: "status.update",
+      requestId: parsed.requestId,
+      pairId: parsed.pairId,
+      activityStatus: parsed.activityStatus,
     };
   }
 

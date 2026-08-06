@@ -186,6 +186,133 @@ describe("websocket relay", () => {
     });
     bob.close();
   });
+
+  it("forwards activity status updates only to the paired peer", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_1",
+        pairId: pair.pairId,
+        activityStatus: "slacking",
+      }),
+    );
+
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.status",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      activityStatus: "slacking",
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expectNoJson(alice);
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_clear",
+        pairId: pair.pairId,
+        activityStatus: null,
+      }),
+    );
+
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.status",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      activityStatus: null,
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expectNoJson(alice);
+
+    alice.close();
+    bob.close();
+  });
+
+  it("rejects activity status updates for an incorrect pair", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_wrong_pair",
+        pairId: "pair_wrong",
+        activityStatus: "dazing",
+      }),
+    );
+
+    await expect(readJson(alice)).resolves.toEqual({
+      type: "error",
+      requestId: "status_wrong_pair",
+      code: "auth_failed",
+      message: "Pair authentication failed",
+    });
+
+    alice.close();
+  });
+
+  it("rejects unknown activity status values", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_unknown",
+        pairId: pair.pairId,
+        activityStatus: "playing-games",
+      }),
+    );
+
+    await expect(readJson(alice)).resolves.toEqual({
+      type: "error",
+      requestId: "status_unknown",
+      code: "malformed_message",
+      message: "Malformed websocket message",
+    });
+
+    alice.close();
+  });
+
+  it("sends the current activity status to a later-authenticated paired peer", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    alice.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_before_peer",
+        pairId: pair.pairId,
+        activityStatus: "overtime",
+      }),
+    );
+    await expectNoJson(alice);
+
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.online",
+      peerDeviceId: "dev_a",
+    });
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.status",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_a",
+      activityStatus: "overtime",
+    });
+
+    alice.close();
+    bob.close();
+  });
 });
 
 async function createPair(): Promise<{ pairId: string }> {

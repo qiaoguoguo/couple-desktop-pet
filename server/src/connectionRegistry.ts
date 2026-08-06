@@ -1,10 +1,12 @@
 import type WebSocket from "ws";
+import type { ActivityStatus } from "../../shared/activityStatus.js";
 
 export interface AuthenticatedConnection {
   socket: WebSocket;
   deviceId: string;
   pairId: string;
   peerDeviceId: string;
+  activityStatus: ActivityStatus | null;
 }
 
 export class ConnectionRegistry {
