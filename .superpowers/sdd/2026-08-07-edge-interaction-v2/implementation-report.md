@@ -88,10 +88,12 @@ Visual result:
 
 ## Final Debug EXE
 
+This is the delivery artifact from the main agent's independent rebuild at 2026-08-07 20:01:19. Debug build hashes can change if the bundle is rebuilt again.
+
 - Path: `C:\Users\14567\.codex\worktrees\6515\情侣桌宠\src-tauri\target\debug\couple-desktop-pet.exe`
 - Size: 194,864,128 bytes
-- LastWriteTime: 2026-08-07 19:52:27
-- SHA256: `0294A03CF638340E6124180CC7213A9A9BA26424E90A14BCE803C4F96C2F99CC`
+- LastWriteTime: 2026-08-07 20:01:19
+- SHA256: `F0A1536359BB2D9229D19EDEFED32997EBA70318FCAC8AC5518628AED79DE1D7`
 
 ## Cleanup
 
