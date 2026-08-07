@@ -399,6 +399,39 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function installAnimationFrameController() {
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+  const requestSpy = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      const handle = nextHandle;
+      nextHandle += 1;
+      callbacks.set(handle, callback);
+      return handle;
+    });
+  const cancelSpy = vi
+    .spyOn(window, "cancelAnimationFrame")
+    .mockImplementation((handle) => {
+      callbacks.delete(handle);
+    });
+
+  return {
+    step(timeMs: number) {
+      const pending = Array.from(callbacks.entries());
+      callbacks.clear();
+
+      for (const [, callback] of pending) {
+        act(() => callback(timeMs));
+      }
+    },
+    restore() {
+      requestSpy.mockRestore();
+      cancelSpy.mockRestore();
+    },
+  };
+}
+
 describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
@@ -913,7 +946,8 @@ describe("App", () => {
     );
   });
 
-  it("closes the status picker immediately and defers the context menu until edge-peek restore completes", async () => {
+  it("closes the status picker immediately and defers the context menu until edge exit restore completes", async () => {
+    const raf = installAnimationFrameController();
     const snapDeferred = createDeferred<"left">();
     const restoreDeferred = createDeferred<void>();
     realtimeSyncMock.state.status = "connected";
@@ -955,6 +989,15 @@ describe("App", () => {
 
     expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
     expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+      "left",
+    );
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
 
     await act(async () => {
       restoreDeferred.resolve();
@@ -969,6 +1012,7 @@ describe("App", () => {
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock",
     );
+    raf.restore();
   });
 
   it("persists and syncs the selected local activity status", async () => {
@@ -1810,21 +1854,36 @@ describe("App", () => {
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
   });
 
-  it("enters edge peek after drag end returns an edge side", async () => {
+  it("enters edge interaction after drag end returns an edge side", async () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     const { container } = render(<App />);
 
     await dragPetPastThresholdAndRelease(container);
 
-    expect(await screen.findByAltText("桌宠半隐藏")).toBeTruthy();
+    expect(await screen.findByAltText("桌宠边缘进入")).toBeTruthy();
+    expect(
+      container.querySelector(".pet-frame-stage")?.getAttribute(
+        "data-edge-interaction-side",
+      ),
+    ).toBe("left");
   });
 
-  it("restores from edge peek before opening the interaction menu", async () => {
+  it("plays exit and restores before opening the interaction menu", async () => {
+    const raf = installAnimationFrameController();
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     const { container } = render(<App />);
 
     await dragPetPastThresholdAndRelease(container);
-    fireEvent.click(await screen.findByAltText("桌宠半隐藏"));
+    fireEvent.click(await screen.findByAltText("桌宠边缘进入"));
+
+    expect(
+      screen.queryByRole("menu", { name: "互动选项" }),
+    ).toBeNull();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
 
     await waitFor(() =>
       expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
@@ -1832,6 +1891,60 @@ describe("App", () => {
       ),
     );
     expect(await screen.findByRole("menu", { name: "互动选项" })).toBeTruthy();
+    raf.restore();
+  });
+
+  it("plays exit and restores before starting a drag from edge interaction", async () => {
+    const raf = installAnimationFrameController();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("right");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    windowCommandsMock.startWindowDrag.mockClear();
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+        "right",
+      ),
+    );
+    expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
+    raf.restore();
+  });
+
+  it("does not snap imported packages that have no edge interaction profile", async () => {
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([
+      importedPackageSummary(),
+    ]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: "imported:moon-buddy",
+      },
+    });
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+    await dragPetPastThresholdAndRelease(container);
+
+    expect(windowCommandsMock.snapWindowToEdgeIfNeeded).not.toHaveBeenCalled();
+    expect(screen.getByRole("img", { name: "月亮伙伴" })).toBeTruthy();
+    expect(screen.queryByAltText("桌宠边缘进入")).toBeNull();
   });
 
   it("disables and persists click-through before opening settings from the context menu", async () => {

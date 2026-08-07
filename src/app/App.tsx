@@ -30,10 +30,7 @@ import {
   startWindowDrag,
   writeSettings as writeDesktopSettings,
 } from "../desktop/windowCommands";
-import {
-  builtInEdgePeekImages,
-  type EdgePeekSide,
-} from "../desktop/edgePeek";
+import { getBuiltInEdgeProfile } from "../assets/builtInEdgeInteraction";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
 import { RemoteMessageLayer } from "../sync/RemoteMessageLayer";
@@ -93,6 +90,7 @@ import { AppearancePanel } from "../settings/AppearancePanel";
 import { ActivityStatusPicker } from "../status/ActivityStatusPicker";
 import { PeerStatusCard } from "../status/PeerStatusCard";
 import { resolvePeerStatusView } from "../status/peerStatusPresentation";
+import { useEdgeInteraction } from "../pet/useEdgeInteraction";
 
 const bubbleMessage = "我在这里。";
 const placeholderInteractionMessage = "功能开发中，先陪你待一会儿。";
@@ -141,7 +139,6 @@ export function App() {
     x: number;
     y: number;
   } | null>(null);
-  const [edgePeekSide, setEdgePeekSide] = useState<EdgePeekSide | null>(null);
   const [pairCode, setPairCode] = useState<{
     code: string;
     expiresAt: string;
@@ -296,6 +293,12 @@ export function App() {
       motionFallbackUrl,
     ];
   }, [peerStatusPetPackage, peerStatusView?.variant]);
+  const edgeInteraction = useEdgeInteraction({
+    packageId: selectedPetPackage.id,
+    snapWindowToEdgeIfNeeded,
+    restoreWindowFromEdgePeek,
+    getProfile: getBuiltInEdgeProfile,
+  });
   const shouldShowPeerStatus =
     Boolean(peerStatusView) &&
     !settingsOpen &&
@@ -303,7 +306,7 @@ export function App() {
     !activeRemoteMessage &&
     !interactionMenuPosition &&
     !statusPickerOpen &&
-    !edgePeekSide;
+    !edgeInteraction.state;
 
   useEffect(() => {
     const defaultMotion = getDefaultPetMotion(selectedPetPackage);
@@ -1016,18 +1019,6 @@ export function App() {
     );
   }, []);
 
-  const restoreFromEdgePeekIfNeeded = useCallback(async () => {
-    const currentSide = edgePeekSide;
-
-    if (!currentSide) {
-      return false;
-    }
-
-    await restoreWindowFromEdgePeek(currentSide);
-    setEdgePeekSide(null);
-    return true;
-  }, [edgePeekSide]);
-
   const openInteractionMenu = useCallback(() => {
     if (messageComposerOpen) {
       return;
@@ -1045,22 +1036,8 @@ export function App() {
       return;
     }
 
-    if (edgePeekSide) {
-      void restoreFromEdgePeekIfNeeded()
-        .then(() => {
-          openInteractionMenu();
-        })
-        .catch(() => undefined);
-      return;
-    }
-
-    openInteractionMenu();
-  }, [
-    edgePeekSide,
-    openInteractionMenu,
-    restoreFromEdgePeekIfNeeded,
-    settingsOpen,
-  ]);
+    edgeInteraction.requestExitThen(openInteractionMenu);
+  }, [edgeInteraction, openInteractionMenu, settingsOpen]);
 
   const openMessageComposerPanel = useCallback(() => {
     setInteractionMenuPosition(null);
@@ -1211,21 +1188,11 @@ export function App() {
         dismissStatusPicker();
       }
 
-      if (edgePeekSide) {
-        void restoreFromEdgePeekIfNeeded()
-          .then(() => {
-            openContextMenu();
-          })
-          .catch(() => undefined);
-        return;
-      }
-
-      openContextMenu();
+      edgeInteraction.requestExitThen(openContextMenu);
     },
     [
       dismissStatusPicker,
-      edgePeekSide,
-      restoreFromEdgePeekIfNeeded,
+      edgeInteraction,
       statusPickerOpen,
     ],
   );
@@ -1255,31 +1222,16 @@ export function App() {
       );
     };
 
-    if (edgePeekSide) {
-      void restoreFromEdgePeekIfNeeded()
-        .then(() => {
-          startDrag();
-        })
-        .catch(() => undefined);
-      return;
-    }
-
-    startDrag();
-  }, [edgePeekSide, restoreFromEdgePeekIfNeeded, setVisibleMotionForAction]);
+    edgeInteraction.requestExitThen(startDrag);
+  }, [edgeInteraction, setVisibleMotionForAction]);
 
   const handleDragEnd = useCallback(() => {
     setVisibleMotionForAction("idle-breathe");
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
     );
-    void snapWindowToEdgeIfNeeded()
-      .then((side) => {
-        if (side) {
-          setEdgePeekSide(side);
-        }
-      })
-      .catch(() => undefined);
-  }, [setVisibleMotionForAction]);
+    void edgeInteraction.snapAfterDrag().catch(() => undefined);
+  }, [edgeInteraction, setVisibleMotionForAction]);
 
   const handleResetPosition = useCallback(() => {
     runDesktopCommand(resetWindowPosition);
@@ -1331,10 +1283,12 @@ export function App() {
           motion={activeMotion}
           scale={settings.scale}
           petPackage={selectedPetPackage}
-          edgePeekSide={edgePeekSide}
-          edgePeekImageUrl={
-            edgePeekSide ? builtInEdgePeekImages[edgePeekSide] : null
-          }
+          edgeInteraction={edgeInteraction.renderState}
+          onEdgePhaseComplete={() => {
+            void edgeInteraction.handlePhaseComplete();
+          }}
+          onEdgePointerEnter={edgeInteraction.handlePointerEnter}
+          onEdgeLoadError={edgeInteraction.cancel}
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
