@@ -80,6 +80,7 @@ describe("macOS Tauri release config", () => {
     const plist = readFileSync(join(repoRoot, "src-tauri/Info.plist"), "utf8");
 
     expect(config.bundle?.macOS?.minimumSystemVersion).toBe("12.0");
+    expect(plist).toContain("<key>LSUIElement</key>");
     expect(plist).toContain("<key>NSAppTransportSecurity</key>");
     expect(plist).toContain("<key>NSAllowsArbitraryLoadsInWebContent</key>");
     expect(plist).toContain("<key>NSExceptionDomains</key>");

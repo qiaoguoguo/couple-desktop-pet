@@ -45,7 +45,7 @@ Success requires:
 Required Tauri/macOS behavior:
 
 - Set `app.macOSPrivateApi=true` or the Tauri v2 equivalent needed for transparent windows on macOS.
-- Set the runtime activation policy to `ActivationPolicy::Accessory` so the normal app has a menu bar item but no Dock icon.
+- Set `LSUIElement=true` in the generated app Info.plist so the app is an agent app and has no Dock icon from startup. Keep the runtime activation policy `ActivationPolicy::Accessory` and `set_dock_visibility(false)` as defensive safeguards after Tauri setup begins.
 - Provide complete menu bar tray actions: show, hide, settings, and explicit quit.
 - Closing the main window hides it. Explicit quit exits. System shutdown and user logout are not blocked.
 - Work-area calculations must respect menu bar, Dock, multiple displays, negative display origins, and HiDPI scale factors.

@@ -51,7 +51,7 @@
 - `scripts/macos/qa-build.mjs` - Node build verifier for QA and formal macOS artifacts.
 - `scripts/macos/qa-build.test.ts` - command-plan tests for artifact discovery and shell-free spawning.
 - `scripts/macos/native-evidence.mjs` - macOS evidence collector for facts it can prove automatically.
-- `scripts/macos/native-evidence.test.ts` - evidence script command-plan tests.
+- `scripts/macos/native-evidence.test.mjs` - evidence script command-plan and cleanup tests.
 - `scripts/interop/cross-platform-smoke.mjs` - two-role Windows and macOS real-client interop harness.
 - `scripts/interop/cross-platform-smoke.test.ts` - interop redaction and event matrix tests.
 - `scripts/macos/final-release-gate.mjs` - final evidence gate and release-decision writer.
@@ -1324,169 +1324,74 @@ git commit -m "test: add macos tauri embedded e2e"
 
 ---
 
-### Task 7: Native macOS Evidence Script And Manual Checklist
+### Task 7: Native macOS Evidence Script And Startup Dock Suppression
 
 **Files:**
 - Create: `scripts/macos/native-evidence.mjs`
-- Create: `scripts/macos/native-evidence.test.ts`
+- Create: `scripts/macos/native-evidence.test.mjs`
 - Create: `docs/manual-verification/macos-cross-platform.md`
+- Modify: `src-tauri/Info.plist`
+- Modify: `src/desktop/tauriMacosConfig.test.ts`
 - Modify: `package.json`
+- Modify: `docs/superpowers/specs/2026-08-07-macos-cross-platform-release-design.md`
+- Modify: `docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md`
 
 **Interfaces:**
-- Produces `pnpm macos:native-evidence`.
-- Script automatically records facts it can prove: environment, process launch, app path, binary signature facts, and screenshots.
-- Manual checklist records menu bar tray, Dock absence, topmost behavior, transparency, click-through recovery, close-to-hide, drag, position memory, scaling, auto movement, and four-edge behavior.
-- QA ad-hoc `spctl` failure is marked `qa-only`.
+- `src-tauri/Info.plist` sets `LSUIElement=true` so the app is an agent app and has no Dock icon from startup.
+- Runtime `ActivationPolicy::Accessory` and `set_dock_visibility(false)` remain defensive safeguards after Tauri setup begins.
+- `pnpm macos:native-evidence -- --mode qa|formal --app <absolute .app> --output <absolute dir>` records only directly provable native facts.
+- Automatic evidence covers `sw_vers`, `uname -m`, `system_profiler`, source and generated plist content, `codesign -dv`, `codesign --verify`, `spctl --assess`, app launch, process existence, and `screencapture`.
+- Every subprocess uses `spawn(command, args, { shell: false })`; every successful or failed step writes a redacted log.
+- If app launch has happened, any later failure runs the quit cleanup step in `finally`.
+- QA ad-hoc `spctl` failure is recorded as `qa-only`; formal mode requires `spctl` success.
+- Dock visible absence, menu bar tray, transparency, topmost behavior, drag, position memory, click-through recovery, close-to-hide, scaling, auto movement, and four-edge behavior remain manual or semi-automatic evidence with screenshots and state logs.
 
-- [ ] **Step 1: Write RED evidence script tests**
+- [ ] **Step 1: Write RED LSUIElement and native evidence tests**
 
-Create `scripts/macos/native-evidence.test.ts`:
+Add `src/desktop/tauriMacosConfig.test.ts` coverage requiring `<key>LSUIElement</key><true/>` in `src-tauri/Info.plist`.
 
-```ts
-import { describe, expect, it } from "vitest";
-import { createNativeEvidencePlan, manualEvidenceChecks } from "./native-evidence.mjs";
-
-describe("native macOS evidence plan", () => {
-  it("collects only directly provable automatic evidence", () => {
-    const commands = createNativeEvidencePlan({
-      appPath: "/Applications/情侣桌宠.app",
-      outputDir: ".superpowers/sdd/2026-08-07-macos-cross-platform/native",
-    }).commands;
-
-    expect(commands.map((command) => command.name)).toEqual([
-      "sw-vers",
-      "uname-machine",
-      "system-profiler-hardware",
-      "codesign-display",
-      "codesign-verify",
-      "spctl-assess",
-      "launch-app",
-      "capture-transparent-window",
-    ]);
-    expect(commands.some((command) => command.args.join(" ").includes("grep -v"))).toBe(false);
-  });
-
-  it("requires manual proof for system-layer behavior", () => {
-    expect(manualEvidenceChecks).toEqual([
-      "menu-bar-tray-visible",
-      "dock-icon-absent",
-      "window-topmost",
-      "transparent-window-compositing",
-      "click-through-recovery",
-      "close-to-hide",
-      "drag-and-position-memory",
-      "scale-and-auto-move",
-      "four-edge-interaction-current-behavior",
-    ]);
-  });
-});
-```
+Create `scripts/macos/native-evidence.test.mjs` with tests for:
+- CLI argument parsing and absolute `.app` / output paths.
+- Shell-free plan steps in the exact order listed in the interface.
+- QA `spctl` failure continuing with a `qa-only` log.
+- Formal `spctl` failure stopping with the rejected output recorded.
+- Cleanup after post-launch failure.
+- Apple and GitHub secret redaction.
 
 - [ ] **Step 2: Run RED**
-
-Run: `pnpm vitest run scripts/macos/native-evidence.test.ts`
-
-Expected: FAIL because native evidence script and checklist do not exist.
-
-- [ ] **Step 3: Implement evidence script**
-
-Create `scripts/macos/native-evidence.mjs`:
-
-```js
-export const manualEvidenceChecks = [
-  "menu-bar-tray-visible",
-  "dock-icon-absent",
-  "window-topmost",
-  "transparent-window-compositing",
-  "click-through-recovery",
-  "close-to-hide",
-  "drag-and-position-memory",
-  "scale-and-auto-move",
-  "four-edge-interaction-current-behavior",
-];
-
-export function createNativeEvidencePlan({ appPath, outputDir }) {
-  return {
-    commands: [
-      { name: "sw-vers", command: "sw_vers", args: [] },
-      { name: "uname-machine", command: "uname", args: ["-m"] },
-      { name: "system-profiler-hardware", command: "system_profiler", args: ["SPHardwareDataType"] },
-      { name: "codesign-display", command: "codesign", args: ["-dv", appPath] },
-      { name: "codesign-verify", command: "codesign", args: ["--verify", "--deep", "--strict", "--verbose=2", appPath] },
-      { name: "spctl-assess", command: "spctl", args: ["--assess", "--type", "execute", "--verbose=4", appPath] },
-      { name: "launch-app", command: "open", args: ["-n", appPath] },
-      { name: "capture-transparent-window", command: "screencapture", args: ["-x", `${outputDir}/transparent-window.png`] },
-    ],
-  };
-}
-```
-
-The CLI runs each command with `spawn(command, args, { shell: false })`, stores raw logs, and labels `spctl-assess` as `qa-only` when the app is ad-hoc signed.
-
-- [ ] **Step 4: Add manual checklist**
-
-Create `docs/manual-verification/macos-cross-platform.md`:
-
-```markdown
-# macOS Cross-Platform Manual Verification
-
-## Preconditions
-
-- Use a real macOS 12+ machine.
-- Launch the built `.app` from the DMG.
-- Use a clean app data directory unless validating position restore.
-- Do not use protocol mocks for native shell checks.
-
-## Native Shell Checks
-
-| Check | Action | Required Evidence |
-| --- | --- | --- |
-| Menu bar tray visible | Start app and capture menu bar area | `native/menu-bar-tray.png` |
-| Dock icon absent | Capture Dock before launch and after launch | `native/dock-before.png`, `native/dock-after.png` |
-| Window topmost | Place another app behind and in front, then focus the other app | paired screenshots and window log |
-| Transparent compositing | Capture desktop through transparent app background | `native/transparent-window.png` |
-| Click-through recovery | Enable click-through, use tray Show and Settings | screenshots plus `click-through-recovered` log |
-| Close-to-hide | Press standard close control, then use tray Show | process remains alive and window returns |
-| Drag and position memory | Drag pet, quit explicitly, restart | position log and screenshot |
-| Scale and auto movement | Change scale, enable auto move, observe movement | settings screenshot and movement log |
-| Four-edge current behavior | Drag built-in Q-girl to each edge and imported package to edge | screenshots and command log |
-
-## QA-only spctl Result
-
-Ad-hoc builds can fail `spctl --assess`; record that as QA-only. Formal Developer ID builds must pass `spctl --assess` after notarization and stapling.
-```
-
-Modify `package.json`:
-
-```json
-{
-  "scripts": {
-    "macos:native-evidence": "node scripts/macos/native-evidence.mjs"
-  }
-}
-```
-
-- [ ] **Step 5: Run GREEN**
-
-Run: `pnpm vitest run scripts/macos/native-evidence.test.ts`
-
-Expected: PASS, 2 tests.
-
-- [ ] **Step 6: Run real native evidence on macOS**
 
 Run:
 
 ```bash
-pnpm macos:native-evidence -- --app "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app"
+pnpm vitest run src/desktop/tauriMacosConfig.test.ts scripts/macos/native-evidence.test.mjs
 ```
 
-Expected: automatic evidence logs are written. Manual checklist rows remain incomplete until screenshots and action outcomes are attached.
+Expected: FAIL because `LSUIElement` and `scripts/macos/native-evidence.mjs` do not exist yet.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: Implement LSUIElement and evidence collector**
+
+Implement:
+- `src-tauri/Info.plist`: add only top-level `LSUIElement=true`; keep ATS WebView-only exception and scoped Relay IP exception.
+- `scripts/macos/native-evidence.mjs`: CLI, plan builder, shell-free recorded runner, QA/formal `spctl` behavior, cleanup in `finally`, redaction.
+- `package.json`: `macos:native-evidence`.
+- Manual verification document with the native checks that cannot be proven by static config or process logs.
+- Design and plan document updates explaining startup Dock suppression and the native evidence boundary.
+
+- [ ] **Step 4: Run GREEN**
+
+Run:
 
 ```bash
-git add scripts/macos/native-evidence.mjs scripts/macos/native-evidence.test.ts docs/manual-verification/macos-cross-platform.md package.json
-git commit -m "test: add macos native evidence checklist"
+pnpm vitest run src/desktop/tauriMacosConfig.test.ts scripts/macos/native-evidence.test.mjs
+```
+
+Expected: PASS, including the LSUIElement assertion and native evidence collector tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/Info.plist src/desktop/tauriMacosConfig.test.ts scripts/macos/native-evidence.mjs scripts/macos/native-evidence.test.mjs docs/manual-verification/macos-cross-platform.md package.json docs/superpowers/specs/2026-08-07-macos-cross-platform-release-design.md docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md
+git commit -m "test: add macos native evidence collection"
 ```
 
 ---
