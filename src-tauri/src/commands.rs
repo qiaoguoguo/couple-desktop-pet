@@ -1090,6 +1090,27 @@ mod tests {
     }
 
     #[test]
+    fn clamp_saved_window_position_uses_macos_menu_bar_work_area_on_negative_monitor() {
+        let work_area = TestWorkArea {
+            x: -1512,
+            y: 25,
+            width: 1512,
+            height: 919,
+        };
+        let window = TestWindowGeometry {
+            x: -1900,
+            y: -40,
+            width: 480,
+            height: 540,
+        };
+        let saved_position = SavedWindowPosition { x: -1900, y: -40 };
+
+        let position = clamp_saved_window_position(saved_position, work_area, window);
+
+        assert_eq!(position, PhysicalPosition::new(-1488, 49));
+    }
+
+    #[test]
     fn bottom_auto_move_wraps_to_left_and_stays_near_bottom() {
         let work_area = TestWorkArea {
             x: 0,
@@ -1550,6 +1571,30 @@ mod tests {
         assert_eq!(surface.saved_pet_window, pet_window);
         assert_eq!(surface.window.x, 380);
         assert_eq!(surface.window.y, 270);
+        assert_eq!(surface.window.width, 440);
+        assert_eq!(surface.window.height, 260);
+    }
+
+    #[test]
+    fn message_composer_surface_centers_within_macos_menu_bar_work_area() {
+        let work_area = TestWorkArea {
+            x: -1512,
+            y: 25,
+            width: 1512,
+            height: 919,
+        };
+        let pet_window = TestWindowGeometry {
+            x: -430,
+            y: 520,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(work_area, pet_window);
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.window.x, -976);
+        assert_eq!(surface.window.y, 354);
         assert_eq!(surface.window.width, 440);
         assert_eq!(surface.window.height, 260);
     }
