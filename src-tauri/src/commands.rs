@@ -201,7 +201,7 @@ pub fn hide_window(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn quit_app(app: AppHandle) -> Result<(), String> {
-    app.exit(0);
+    crate::request_app_exit(&app, 0);
     Ok(())
 }
 
@@ -232,6 +232,25 @@ pub fn emit_open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
         .map_err(|error| format!("failed to focus main window: {error}"))?;
     app.emit("open-settings", ())
         .map_err(|error| format!("failed to emit open-settings: {error}"))
+}
+
+pub fn install_main_window_close_to_hide<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let window = main_window(app)?;
+    let app_handle = app.clone();
+
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            if let Err(error) = crate::handle_main_window_close_request(
+                crate::is_explicit_app_quit_requested(),
+                || api.prevent_close(),
+                || hide_main_window(&app_handle),
+            ) {
+                eprintln!("failed to hide main window on close request: {error}");
+            }
+        }
+    });
+
+    Ok(())
 }
 
 pub fn restore_saved_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {

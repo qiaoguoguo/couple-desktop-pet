@@ -1,7 +1,17 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 mod commands;
 mod pet_packages;
+
+static EXPLICIT_APP_QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MainWindowCloseAction {
+    Hide,
+    AllowClose,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -9,6 +19,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             setup_tray(app)?;
+            if let Err(error) = commands::install_main_window_close_to_hide(app.handle()) {
+                eprintln!("failed to install main window close handler: {error}");
+            }
             if let Err(error) = commands::restore_saved_window_position(app.handle()) {
                 eprintln!("failed to restore saved window position: {error}");
             }
@@ -44,6 +57,41 @@ fn main() {
     run();
 }
 
+pub(crate) fn request_app_exit<R: tauri::Runtime>(app: &tauri::AppHandle<R>, code: i32) {
+    EXPLICIT_APP_QUIT_REQUESTED.store(true, Ordering::SeqCst);
+    app.exit(code);
+}
+
+pub(crate) fn is_explicit_app_quit_requested() -> bool {
+    EXPLICIT_APP_QUIT_REQUESTED.load(Ordering::SeqCst)
+}
+
+pub(crate) fn main_window_close_action(explicit_quit: bool) -> MainWindowCloseAction {
+    if explicit_quit {
+        MainWindowCloseAction::AllowClose
+    } else {
+        MainWindowCloseAction::Hide
+    }
+}
+
+pub(crate) fn handle_main_window_close_request<PreventClose, HideWindow>(
+    explicit_quit: bool,
+    mut prevent_close: PreventClose,
+    mut hide_window: HideWindow,
+) -> Result<(), String>
+where
+    PreventClose: FnMut(),
+    HideWindow: FnMut() -> Result<(), String>,
+{
+    match main_window_close_action(explicit_quit) {
+        MainWindowCloseAction::Hide => {
+            prevent_close();
+            hide_window()
+        }
+        MainWindowCloseAction::AllowClose => Ok(()),
+    }
+}
+
 #[cfg(desktop)]
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::{menu::MenuBuilder, tray::TrayIconBuilder};
@@ -64,7 +112,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 "hide" => commands::hide_main_window(app),
                 "settings" => commands::emit_open_settings(app),
                 "quit" => {
-                    app.exit(0);
+                    request_app_exit(app, 0);
                     Ok(())
                 }
                 _ => Ok(()),
@@ -86,4 +134,53 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 #[cfg(not(desktop))]
 fn setup_tray(_app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_window_close_policy_hides_ordinary_close_and_allows_explicit_quit() {
+        assert_eq!(main_window_close_action(false), MainWindowCloseAction::Hide);
+        assert_eq!(
+            main_window_close_action(true),
+            MainWindowCloseAction::AllowClose
+        );
+    }
+
+    #[test]
+    fn main_window_close_handler_hides_ordinary_close_and_leaves_explicit_quit_alone() {
+        let mut hide_count = 0;
+        let mut prevent_count = 0;
+        let ordinary = handle_main_window_close_request(
+            false,
+            || {
+                prevent_count += 1;
+            },
+            || {
+                hide_count += 1;
+                Ok(())
+            },
+        );
+
+        assert_eq!(ordinary, Ok(()));
+        assert_eq!(prevent_count, 1);
+        assert_eq!(hide_count, 1);
+
+        let explicit = handle_main_window_close_request(
+            true,
+            || {
+                prevent_count += 1;
+            },
+            || {
+                hide_count += 1;
+                Ok(())
+            },
+        );
+
+        assert_eq!(explicit, Ok(()));
+        assert_eq!(prevent_count, 1);
+        assert_eq!(hide_count, 1);
+    }
 }
