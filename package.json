@@ -29,6 +29,12 @@
     "macos:native-evidence": "node scripts/macos/native-evidence.mjs",
     "e2e:macos:build": "cross-env VITE_TAURI_E2E=1 tauri build --target universal-apple-darwin --bundles app --features e2e --config src-tauri/tauri.e2e.conf.json",
     "e2e:macos": "wdio run e2e/macos/wdio.conf.ts",
+    "e2e:windows:build": "cross-env VITE_TAURI_E2E=1 tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json",
+    "e2e:interop:windows": "wdio run e2e/interop/wdio.windows.conf.ts --suite interop",
+    "e2e:interop:windows:restart": "wdio run e2e/interop/wdio.windows.conf.ts --suite restart",
+    "e2e:interop:macos": "wdio run e2e/interop/wdio.macos.conf.ts --suite interop",
+    "e2e:interop:macos:restart": "wdio run e2e/interop/wdio.macos.conf.ts --suite restart",
+    "interop:validate": "node scripts/interop/cross-platform-smoke.mjs validate",
     "tauri": "tauri"
   },
   "dependencies": {

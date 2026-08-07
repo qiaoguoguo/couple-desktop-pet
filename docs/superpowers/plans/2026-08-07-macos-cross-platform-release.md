@@ -47,13 +47,16 @@
 - `src/desktop/windowCommands.test.ts` - bridge command and event tests.
 - `src/app/App.tsx` - React listener that persists click-through recovery and opens settings when requested.
 - `src/app/App.test.tsx` - App-level tray recovery, settings, geometry, and behavior regressions.
-- `vitest.config.ts` - include `scripts/**/*.test.ts` for script contract tests.
+- `vitest.config.ts` - includes `scripts/**/*.test.mjs` for Node script contract tests.
 - `scripts/macos/qa-build.mjs` - Node build verifier for QA and formal macOS artifacts.
-- `scripts/macos/qa-build.test.ts` - command-plan tests for artifact discovery and shell-free spawning.
+- `scripts/macos/qa-build.test.mjs` - command-plan tests for artifact discovery and shell-free spawning.
 - `scripts/macos/native-evidence.mjs` - macOS evidence collector for facts it can prove automatically.
 - `scripts/macos/native-evidence.test.mjs` - evidence script command-plan and cleanup tests.
-- `scripts/interop/cross-platform-smoke.mjs` - two-role Windows and macOS real-client interop harness.
-- `scripts/interop/cross-platform-smoke.test.ts` - interop redaction and event matrix tests.
+- `scripts/interop/github-rendezvous.mjs` - encrypted GitHub Issue rendezvous helper.
+- `scripts/interop/github-rendezvous.d.mts` - TypeScript declarations for E2E imports.
+- `scripts/interop/github-rendezvous.test.mjs` - encryption, REST, tamper, and redaction tests.
+- `scripts/interop/cross-platform-smoke.mjs` - sanitized interop event validation helper.
+- `scripts/interop/cross-platform-smoke.test.mjs` - interop redaction and event matrix tests.
 - `scripts/macos/final-release-gate.mjs` - final evidence gate and release-decision writer.
 - `scripts/macos/final-release-gate.test.ts` - final gate tests.
 - `e2e/macos/wdio.conf.ts` - WebdriverIO Tauri embedded-provider config.
@@ -1396,205 +1399,132 @@ git commit -m "test: add macos native evidence collection"
 
 ---
 
-### Task 8: Windows And macOS Real-Client Interop Harness
+### Task 8: Encrypted GitHub Rendezvous Interop Harness
 
 **Files:**
+- Create: `scripts/interop/github-rendezvous.mjs`
+- Create: `scripts/interop/github-rendezvous.d.mts`
+- Create: `scripts/interop/github-rendezvous.test.mjs`
 - Create: `scripts/interop/cross-platform-smoke.mjs`
-- Create: `scripts/interop/cross-platform-smoke.test.ts`
+- Create: `scripts/interop/cross-platform-smoke.test.mjs`
+- Create: `src/desktop/interopE2eConfig.test.ts`
+- Create: `e2e/interop/wdio.windows.conf.ts`
+- Create: `e2e/interop/wdio.macos.conf.ts`
+- Create: `e2e/interop/support/env.ts`
+- Create: `e2e/interop/support/rendezvous.ts`
+- Create: `e2e/interop/support/ui.ts`
+- Create: `e2e/interop/specs/cross-platform.e2e.ts`
+- Create: `e2e/interop/specs/restart-unpaired.e2e.ts`
+- Modify: `src/sync/SyncPanel.tsx`
+- Modify: `src/sync/SyncPanel.test.tsx`
 - Modify: `package.json`
+- Modify: `docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md`
 
 **Interfaces:**
-- Produces `pnpm interop:cross-platform`.
-- Produces `pnpm macos:relay-smoke`, which runs the macOS client against Relay HTTP and WebSocket using isolated app data.
-- Uses two real Tauri clients: one Windows session and one macOS WDIO session.
-- Uses isolated app-data roots for both roles.
-- Coordinates binding code only in memory or environment variables.
-- Writes sanitized JSONL logs with shortened IDs, no secrets, and no message bodies.
+- A private GitHub Issue is the rendezvous point for two real GitHub-hosted runners.
+- Cleartext Issue comments are limited to non-sensitive hello payloads: role plus X25519 public key.
+- Pair code, message text, device secret, and runner tokens are never written as cleartext Issue comments, stdout, or evidence logs.
+- X25519 derives a shared secret; HKDF derives the AES-256-GCM key; encrypted comments carry non-sensitive event names plus ciphertext payload.
+- `scripts/interop/github-rendezvous.mjs create|cleanup` creates the temporary Issue and deletes comments before closing it.
+- `scripts/interop/cross-platform-smoke.mjs validate` merges sanitized JSONL and verifies the required event matrix.
+- Windows WDIO and macOS WDIO configs use `@wdio/tauri-service` embedded provider with `browserName: "tauri"` and `tauri:options.application`.
+- Child app environments use isolated app data and remove `GITHUB_TOKEN`, `INTEROP_GITHUB_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, and `APPLE_*`; the WDIO runner process keeps the token for rendezvous.
+- The real role spec drives the UI: Windows creates a binding code, sends it encrypted, macOS accepts it, both wait online, both sync `slacking/dazing/overtime/null`, both exchange messages, both acknowledge bubbles and observe message animation, then unpair.
+- The restart spec uses the same isolated directory and verifies both sides restart unpaired.
+- `SyncPanel` exposes `aria-label="输入绑定码"` as the minimal stable selector needed for the real macOS role.
 
-- [ ] **Step 1: Write RED interop harness tests**
+Required event names:
 
-Create `scripts/interop/cross-platform-smoke.test.ts`:
-
-```ts
-import { describe, expect, it } from "vitest";
-import {
-  createInteropRunPlan,
-  requiredInteropEvents,
-  redactInteropEvent,
-} from "./cross-platform-smoke.mjs";
-
-describe("cross-platform interop smoke harness", () => {
-  it("uses isolated app data for Windows and macOS roles", () => {
-    const plan = createInteropRunPlan({
-      runDir: ".superpowers/sdd/2026-08-07-macos-cross-platform/interop/run-001",
-      relayUrl: "http://159.75.175.47:8787",
-      windowsBinary: "C:/build/couple-desktop-pet.exe",
-      macosBinary: "/Applications/情侣桌宠.app/Contents/MacOS/couple-desktop-pet",
-    });
-
-    expect(plan.windows.env.APPDATA).toContain("run-001/windows/AppData/Roaming");
-    expect(plan.macos.env.HOME).toContain("run-001/macos/home");
-    expect(plan.bindingCodeTransport).toBe("memory-only");
-  });
-
-  it("requires the full real-client event matrix", () => {
-    expect(requiredInteropEvents).toEqual([
-      "windows-pair-code-created",
-      "macos-pair-accepted",
-      "windows-online",
-      "macos-online",
-      "windows-status-to-macos",
-      "macos-status-to-windows",
-      "windows-message-to-macos",
-      "macos-message-to-windows",
-      "macos-bubble-acknowledged",
-      "windows-bubble-acknowledged",
-      "macos-message-animation-observed",
-      "windows-message-animation-observed",
-      "unpair-completed",
-      "restart-shows-unpaired",
-    ]);
-  });
-
-  it("redacts secrets and message bodies", () => {
-    expect(
-      redactInteropEvent({
-        event: "windows-message-to-macos",
-        deviceId: "dev_abcdef",
-        deviceSecret: "secret",
-        text: "private message",
-      }),
-    ).toEqual({
-      event: "windows-message-to-macos",
-      deviceId: "...cdef",
-      deviceSecret: "<redacted>",
-      text: "<redacted>",
-    });
-  });
-});
+```js
+[
+  "windows-pair-code-created",
+  "macos-pair-accepted",
+  "windows-peer-online",
+  "macos-peer-online",
+  "windows-observed-macos-status-slacking",
+  "windows-observed-macos-status-dazing",
+  "windows-observed-macos-status-overtime",
+  "windows-observed-macos-status-null",
+  "macos-observed-windows-status-slacking",
+  "macos-observed-windows-status-dazing",
+  "macos-observed-windows-status-overtime",
+  "macos-observed-windows-status-null",
+  "windows-message-sent",
+  "macos-message-received",
+  "macos-message-sent",
+  "windows-message-received",
+  "windows-bubble-acknowledged",
+  "macos-bubble-acknowledged",
+  "windows-message-animation-observed",
+  "macos-message-animation-observed",
+  "unpair-completed",
+  "windows-restart-shows-unpaired",
+  "macos-restart-shows-unpaired",
+]
 ```
+
+- [ ] **Step 1: Write RED tests**
+
+Add tests for:
+- X25519 shared key agreement, AES-256-GCM round trip, tamper failure, GitHub REST request bodies not containing pair code or message text, and log redaction.
+- Cross-platform event matrix, isolated `APPDATA` / `LOCALAPPDATA` / `USERPROFILE` and `HOME`, child app env filtering, JSONL sensitive plaintext rejection, and event validation.
+- WDIO config scripts and embedded-provider capabilities for both platforms.
+- `SyncPanel` binding input accessible by `aria-label="输入绑定码"`.
 
 - [ ] **Step 2: Run RED**
 
-Run: `pnpm vitest run scripts/interop/cross-platform-smoke.test.ts`
+Run:
 
-Expected: FAIL because the interop script does not exist.
-
-- [ ] **Step 3: Implement the harness shell**
-
-Create `scripts/interop/cross-platform-smoke.mjs`:
-
-```js
-import { join } from "node:path";
-
-export const requiredInteropEvents = [
-  "windows-pair-code-created",
-  "macos-pair-accepted",
-  "windows-online",
-  "macos-online",
-  "windows-status-to-macos",
-  "macos-status-to-windows",
-  "windows-message-to-macos",
-  "macos-message-to-windows",
-  "macos-bubble-acknowledged",
-  "windows-bubble-acknowledged",
-  "macos-message-animation-observed",
-  "windows-message-animation-observed",
-  "unpair-completed",
-  "restart-shows-unpaired",
-];
-
-export function createInteropRunPlan({ runDir, relayUrl, windowsBinary, macosBinary }) {
-  return {
-    relayUrl,
-    bindingCodeTransport: "memory-only",
-    windows: {
-      role: "windows",
-      binary: windowsBinary,
-      env: { APPDATA: join(runDir, "windows/AppData/Roaming") },
-    },
-    macos: {
-      role: "macos",
-      binary: macosBinary,
-      env: { HOME: join(runDir, "macos/home") },
-    },
-    logPath: join(runDir, "events.jsonl"),
-  };
-}
-
-export function redactInteropEvent(event) {
-  return Object.fromEntries(
-    Object.entries(event).map(([key, value]) => {
-      if (/secret|token|password/i.test(key)) return [key, "<redacted>"];
-      if (key === "text") return [key, "<redacted>"];
-      if (key.toLowerCase().endsWith("id") && typeof value === "string") {
-        return [key, `...${value.slice(-4)}`];
-      }
-      return [key, value];
-    }),
-  );
-}
+```bash
+pnpm vitest run scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
 ```
 
-The `--mode macos-relay-smoke` command performs these real-client actions on macOS:
+Expected: FAIL because the rendezvous scripts, interop WDIO config, specs, and binding input label are absent.
 
-1. Start the macOS Tauri client through WDIO embedded provider with isolated `HOME`.
-2. Set Relay URL to `http://159.75.175.47:8787`.
-3. Verify HTTP health with the same Relay URL.
-4. Authenticate a temporary WebSocket device through the real client path.
-5. Store sanitized result in `.superpowers/sdd/2026-08-07-macos-cross-platform/network/macos-http-ws.log`.
-6. Quit the isolated client.
+- [ ] **Step 3: Implement encrypted rendezvous and interop harness**
 
-The default `interop` command performs these real-client actions:
-
-1. Start Windows Tauri client with isolated `APPDATA`.
-2. Start macOS Tauri client through WDIO embedded provider with isolated `HOME`.
-3. Set both clients to `http://159.75.175.47:8787`.
-4. Generate a binding code in Windows UI.
-5. Pass the binding code through memory to macOS UI.
-6. Accept binding in macOS UI.
-7. Wait for both clients to show online state.
-8. Set `slacking`, `dazing`, `overtime`, and `null` from Windows and observe on macOS.
-9. Set `slacking`, `dazing`, `overtime`, and `null` from macOS and observe on Windows.
-10. Send Windows-to-macOS and macOS-to-Windows messages through UI.
-11. Verify typewriter bubble appears and acknowledgement removes it in both directions.
-12. Verify receipt animation starts in both directions.
-13. Unbind through UI.
-14. Restart both isolated clients and verify old pair state does not return.
-15. Merge both sanitized JSONL logs into `.superpowers/sdd/2026-08-07-macos-cross-platform/interop/events.jsonl`.
-
-Modify `package.json`:
-
-```json
-{
-  "scripts": {
-    "interop:cross-platform": "node scripts/interop/cross-platform-smoke.mjs --mode interop",
-    "macos:relay-smoke": "node scripts/interop/cross-platform-smoke.mjs --mode macos-relay-smoke"
-  }
-}
-```
+Implement:
+- `scripts/interop/github-rendezvous.mjs` with injectable `fetch`, X25519, HKDF, AES-256-GCM, create/cleanup CLI, comment deletion, issue close, and redaction.
+- `scripts/interop/github-rendezvous.d.mts` so E2E TypeScript can import the `.mjs` module without `any`.
+- `scripts/interop/cross-platform-smoke.mjs` with the required event list, isolated env helpers, child env filter, JSONL sanitizer, redactor, and `validate` CLI.
+- `e2e/interop/wdio.windows.conf.ts` and `e2e/interop/wdio.macos.conf.ts` with embedded provider and real app binary path from `INTEROP_APP_BINARY`.
+- `e2e/interop/specs/cross-platform.e2e.ts` and `restart-unpaired.e2e.ts`, using stable ARIA/role selectors only.
+- `src/sync/SyncPanel.tsx` aria label and its component test.
+- Package scripts: `e2e:windows:build`, `e2e:interop:windows`, `e2e:interop:windows:restart`, `e2e:interop:macos`, `e2e:interop:macos:restart`, `interop:validate`.
 
 - [ ] **Step 4: Run GREEN**
 
-Run: `pnpm vitest run scripts/interop/cross-platform-smoke.test.ts`
-
-Expected: PASS, 3 tests.
-
-- [ ] **Step 5: Run real two-machine smoke**
-
-Run with both machines available at the same time:
+Run:
 
 ```bash
-pnpm interop:cross-platform -- --relay http://159.75.175.47:8787 --windows-binary C:/path/couple-desktop-pet.exe --macos-binary /path/情侣桌宠.app/Contents/MacOS/couple-desktop-pet
+pnpm vitest run scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
+pnpm typecheck
 ```
 
-Expected: every item in `requiredInteropEvents` appears exactly once or with a documented retry sequence in the sanitized JSONL log. Harness unit tests do not count as Windows-to-macOS interoperability proof.
+Expected: PASS locally. This proves harness correctness and TypeScript coverage; it is not Windows-to-macOS interoperability proof.
+
+- [ ] **Step 5: Real two-runner smoke contract**
+
+Run only when a private GitHub repository and simultaneous Windows/macOS runners are available:
+
+```bash
+node scripts/interop/github-rendezvous.mjs create --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --title "couple-pet interop"
+pnpm e2e:windows:build
+pnpm e2e:interop:windows
+pnpm e2e:interop:windows:restart
+pnpm e2e:interop:macos
+pnpm e2e:interop:macos:restart
+pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
+node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --issue "$INTEROP_ISSUE_NUMBER"
+```
+
+Expected: all required event names appear in sanitized JSONL, no forbidden plaintext appears, and cleanup removes temporary comments before closing the Issue. Local unit tests do not count as this proof.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/interop/cross-platform-smoke.mjs scripts/interop/cross-platform-smoke.test.ts package.json
-git commit -m "test: add windows macos interop harness"
+git add scripts/interop e2e/interop src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.tsx src/sync/SyncPanel.test.tsx package.json docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md
+git commit -m "test: add encrypted cross platform interop harness"
 ```
 
 ---
@@ -2097,12 +2027,17 @@ cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 pnpm macos:formal-build
 plutil -p "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist" > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/generated-info-plist-ats.log"
-pnpm macos:relay-smoke
+node scripts/interop/github-rendezvous.mjs create --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --title "couple-pet interop"
 cargo tree --manifest-path src-tauri/Cargo.toml --no-default-features > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/cargo-tree-production.log"
 node scripts/macos/final-release-gate.mjs --scan-production > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/production-permission-scan.log"
 pnpm macos:native-evidence
 pnpm e2e:macos
-pnpm interop:cross-platform
+pnpm e2e:interop:windows
+pnpm e2e:interop:windows:restart
+pnpm e2e:interop:macos
+pnpm e2e:interop:macos:restart
+pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
+node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --issue "$INTEROP_ISSUE_NUMBER"
 pnpm macos:final-gate
 ```
 
@@ -2155,7 +2090,11 @@ pnpm macos:qa-build
 pnpm e2e:macos:build
 pnpm e2e:macos
 pnpm macos:native-evidence
-pnpm interop:cross-platform
+pnpm e2e:interop:windows
+pnpm e2e:interop:windows:restart
+pnpm e2e:interop:macos
+pnpm e2e:interop:macos:restart
+pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
 pnpm macos:formal-build
 pnpm macos:final-gate
 ```

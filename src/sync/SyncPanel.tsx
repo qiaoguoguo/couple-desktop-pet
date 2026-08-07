@@ -70,6 +70,7 @@ export function SyncPanel({
         <label className="sync-field">
           <span>输入绑定码</span>
           <input
+            aria-label="输入绑定码"
             type="text"
             inputMode="numeric"
             value={acceptCode}

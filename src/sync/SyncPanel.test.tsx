@@ -44,6 +44,7 @@ describe("SyncPanel", () => {
     expect(screen.queryByLabelText("发送消息")).toBeNull();
     expect(screen.getByRole("button", { name: "生成绑定码" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "绑定" })).toBeTruthy();
+    expect(screen.getByLabelText("输入绑定码").getAttribute("aria-label")).toBe("输入绑定码");
   });
 
   it("lets users request a pair code from the default cloud relay setup", () => {
