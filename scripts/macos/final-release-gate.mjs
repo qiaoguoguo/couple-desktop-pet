@@ -203,6 +203,7 @@ const sensitiveInteropKeys = new Set([
 ]);
 
 const githubTokenPattern = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9_]{20,})\b/;
+const qaOnlySpctlMarker = "qa-only spctl assessment failure; ad-hoc QA builds are not formal release passes";
 
 function uniquePaths(paths) {
   return [...new Set(paths)];
@@ -237,6 +238,10 @@ export function inspectEvidenceFile({ evidenceRoot, relativePath }) {
 }
 
 function validateEvidenceContent(relativePath, content) {
+  if (relativePath === "native/spctl-assess.log") {
+    return validateNativeSpctlAssessLog(content);
+  }
+
   const exitError = validateRecordedExitLog(relativePath, content);
   if (exitError) {
     return exitError;
@@ -267,6 +272,20 @@ function validateEvidenceContent(relativePath, content) {
     return validateInteropValidatorLog(content);
   }
 
+  return undefined;
+}
+
+function validateNativeSpctlAssessLog(content) {
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  if (firstLine === "exit=0") {
+    return undefined;
+  }
+  if (!/^exit=[1-9]\d*$/.test(firstLine)) {
+    return "native QA-only Gatekeeper evidence must start with exit=<positive nonzero integer> or exact exit=0";
+  }
+  if (!content.includes(qaOnlySpctlMarker)) {
+    return "native QA-only Gatekeeper evidence with nonzero exit must include the QA-only marker";
+  }
   return undefined;
 }
 

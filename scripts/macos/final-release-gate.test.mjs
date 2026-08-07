@@ -23,6 +23,7 @@ import {
 } from "./final-release-gate.mjs";
 
 const hash64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const qaOnlySpctlMarker = "qa-only spctl assessment failure; ad-hoc QA builds are not formal release passes";
 let tempRoots = [];
 
 function makeTempRoot() {
@@ -192,6 +193,30 @@ describe("macOS final release gate", () => {
       reason: expect.stringContaining("Developer ID"),
     });
     expect(result.missing).toContain("build/codesign-verify-app-final.log");
+  });
+
+  it("accepts explicit QA-only Gatekeeper evidence before formal signing evidence exists", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root, { includeFormal: false });
+    writeEvidence(
+      root,
+      "native/spctl-assess.log",
+      `exit=1\n--- stdout ---\n\n--- stderr ---\nrejected\n${qaOnlySpctlMarker}\n`,
+    );
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result).toMatchObject({
+      status: "qa-only",
+      reason: expect.stringContaining("Developer ID"),
+    });
+    expect(result.invalid).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/spctl-assess.log",
+        }),
+      ]),
+    );
   });
 
   it("blocks before qa-only when runtime or interop evidence is missing", () => {
@@ -416,6 +441,30 @@ describe("macOS final release gate", () => {
           expect.objectContaining({
             path: relativePath,
             reason: expect.stringContaining("exit=0"),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("rejects malformed QA-only Gatekeeper evidence", () => {
+    for (const [text, reason] of [
+      [`exit=foo\n--- stderr ---\n${qaOnlySpctlMarker}\n`, "positive nonzero"],
+      ["exit=1\n--- stderr ---\nrejected\n", "QA-only marker"],
+      [`--- stderr ---\n${qaOnlySpctlMarker}\n`, "exit="],
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root, { includeFormal: false });
+      writeEvidence(root, "native/spctl-assess.log", text);
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "native/spctl-assess.log",
+            reason: expect.stringContaining(reason),
           }),
         ]),
       );
