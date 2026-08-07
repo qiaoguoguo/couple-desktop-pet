@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  listenForClickThroughRecovered,
   restoreWindowFromEdgePeek,
   snapWindowToEdgeIfNeeded,
 } from "./windowCommands";
@@ -19,6 +20,7 @@ vi.mock("./desktopApi", () => ({
 describe("windowCommands edge peek bridge", () => {
   beforeEach(() => {
     desktopApiMock.invokeCommand.mockReset();
+    desktopApiMock.listenToDesktopEvent.mockReset();
   });
 
   it("keeps snap command name unchanged", async () => {
@@ -39,6 +41,21 @@ describe("windowCommands edge peek bridge", () => {
     expect(desktopApiMock.invokeCommand).toHaveBeenCalledWith(
       "restore_window_from_edge_peek",
       { side: "right" },
+    );
+  });
+
+  it("subscribes to click-through recovered desktop event", async () => {
+    const handler = vi.fn();
+    const unlisten = vi.fn();
+    desktopApiMock.listenToDesktopEvent.mockResolvedValueOnce(unlisten);
+
+    await expect(listenForClickThroughRecovered(handler)).resolves.toBe(
+      unlisten,
+    );
+
+    expect(desktopApiMock.listenToDesktopEvent).toHaveBeenCalledWith(
+      "click-through-recovered",
+      handler,
     );
   });
 });

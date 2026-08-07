@@ -25,6 +25,8 @@ const EDGE_PEEK_LEFT_CONTACT_X_RATIO: f64 = 0.2203125;
 const EDGE_PEEK_RIGHT_CONTACT_X_RATIO: f64 = 0.778125;
 const EDGE_PEEK_TOP_CONTACT_Y_RATIO: f64 = 0.05;
 const EDGE_PEEK_BOTTOM_CONTACT_Y_RATIO: f64 = 0.367;
+const CLICK_THROUGH_RECOVERED_EVENT: &str = "click-through-recovered";
+const OPEN_SETTINGS_EVENT: &str = "open-settings";
 
 static MESSAGE_COMPOSER_SURFACE_STATE: Mutex<Option<WindowGeometry>> = Mutex::new(None);
 static EDGE_PEEK_HIDDEN_STATE: Mutex<Option<EdgePeekSide>> = Mutex::new(None);
@@ -191,7 +193,7 @@ pub fn close_message_composer_surface(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn show_window(app: AppHandle) -> Result<(), String> {
-    show_main_window(&app)
+    recover_click_through_and_show_main_window(&app, ClickThroughRecoveryReason::Show)
 }
 
 #[tauri::command]
@@ -207,6 +209,48 @@ pub fn quit_app(app: AppHandle) -> Result<(), String> {
 
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let window = main_window(app)?;
+    show_and_focus_main_window(&window)
+}
+
+pub fn recover_click_through_and_show_main_window<R: Runtime>(
+    app: &AppHandle<R>,
+    reason: ClickThroughRecoveryReason,
+) -> Result<(), String> {
+    let window = main_window(app)?;
+
+    for step in click_through_recovery_plan(reason) {
+        match step {
+            ClickThroughRecoveryStep::ClearClickThrough => {
+                set_window_click_through(&window, false)?;
+            }
+            ClickThroughRecoveryStep::ShowWindow => {
+                window
+                    .show()
+                    .map_err(|error| format!("failed to show main window: {error}"))?;
+            }
+            ClickThroughRecoveryStep::FocusWindow => {
+                window
+                    .set_focus()
+                    .map_err(|error| format!("failed to focus main window: {error}"))?;
+            }
+            ClickThroughRecoveryStep::EmitRecovered(recovered_reason) => {
+                app.emit(
+                    CLICK_THROUGH_RECOVERED_EVENT,
+                    serde_json::json!({ "reason": recovered_reason.as_payload() }),
+                )
+                .map_err(|error| format!("failed to emit click-through recovery: {error}"))?;
+            }
+            ClickThroughRecoveryStep::EmitOpenSettings => {
+                app.emit(OPEN_SETTINGS_EVENT, ())
+                    .map_err(|error| format!("failed to emit open-settings: {error}"))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_and_focus_main_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
     window
         .show()
         .map_err(|error| format!("failed to show main window: {error}"))?;
@@ -222,16 +266,7 @@ pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 }
 
 pub fn emit_open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let window = main_window(app)?;
-    set_window_click_through(&window, false)?;
-    window
-        .show()
-        .map_err(|error| format!("failed to show main window: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("failed to focus main window: {error}"))?;
-    app.emit("open-settings", ())
-        .map_err(|error| format!("failed to emit open-settings: {error}"))
+    recover_click_through_and_show_main_window(app, ClickThroughRecoveryReason::Settings)
 }
 
 pub fn install_main_window_close_to_hide<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -317,6 +352,47 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
 fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     app.get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| format!("window `{MAIN_WINDOW_LABEL}` not found"))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClickThroughRecoveryReason {
+    Show,
+    Settings,
+}
+
+impl ClickThroughRecoveryReason {
+    fn as_payload(self) -> &'static str {
+        match self {
+            Self::Show => "show",
+            Self::Settings => "settings",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClickThroughRecoveryStep {
+    ClearClickThrough,
+    ShowWindow,
+    FocusWindow,
+    EmitRecovered(ClickThroughRecoveryReason),
+    EmitOpenSettings,
+}
+
+fn click_through_recovery_plan(
+    reason: ClickThroughRecoveryReason,
+) -> Vec<ClickThroughRecoveryStep> {
+    let mut steps = vec![
+        ClickThroughRecoveryStep::ClearClickThrough,
+        ClickThroughRecoveryStep::ShowWindow,
+        ClickThroughRecoveryStep::FocusWindow,
+        ClickThroughRecoveryStep::EmitRecovered(reason),
+    ];
+
+    if matches!(reason, ClickThroughRecoveryReason::Settings) {
+        steps.push(ClickThroughRecoveryStep::EmitOpenSettings);
+    }
+
+    steps
 }
 
 fn apply_window_geometry<R: Runtime>(
@@ -900,6 +976,38 @@ mod tests {
         MESSAGE_COMPOSER_SURFACE_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn click_through_recovery_plan_recovers_show_before_emitting_event() {
+        assert_eq!(
+            click_through_recovery_plan(ClickThroughRecoveryReason::Show),
+            [
+                ClickThroughRecoveryStep::ClearClickThrough,
+                ClickThroughRecoveryStep::ShowWindow,
+                ClickThroughRecoveryStep::FocusWindow,
+                ClickThroughRecoveryStep::EmitRecovered(ClickThroughRecoveryReason::Show),
+            ],
+        );
+        assert_eq!(ClickThroughRecoveryReason::Show.as_payload(), "show");
+    }
+
+    #[test]
+    fn click_through_recovery_plan_recovers_settings_then_opens_settings() {
+        assert_eq!(
+            click_through_recovery_plan(ClickThroughRecoveryReason::Settings),
+            [
+                ClickThroughRecoveryStep::ClearClickThrough,
+                ClickThroughRecoveryStep::ShowWindow,
+                ClickThroughRecoveryStep::FocusWindow,
+                ClickThroughRecoveryStep::EmitRecovered(ClickThroughRecoveryReason::Settings),
+                ClickThroughRecoveryStep::EmitOpenSettings,
+            ],
+        );
+        assert_eq!(
+            ClickThroughRecoveryReason::Settings.as_payload(),
+            "settings"
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ import {
 } from "../bubble/bubbleStore";
 import {
   hideWindow,
+  listenForClickThroughRecovered,
   listenForOpenSettings,
   moveWindowForAutoStep,
   closeMessageComposerSurface,
@@ -411,6 +412,23 @@ export function App() {
     [settingsApi],
   );
 
+  const persistRecoveredClickThrough = useCallback(() => {
+    const currentSettings = settingsRef.current;
+
+    if (!currentSettings.clickThrough) {
+      return;
+    }
+
+    const nextSettings = mergeSettings({
+      ...currentSettings,
+      clickThrough: false,
+    });
+
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    persistSettings(nextSettings);
+  }, [persistSettings]);
+
   const openSettingsPanel = useCallback(() => {
     const currentSettings = settingsRef.current;
 
@@ -456,6 +474,29 @@ export function App() {
       unlisten?.();
     };
   }, [openSettingsPanel]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForClickThroughRecovered(() => {
+      persistRecoveredClickThrough();
+    })
+      .then((unsubscribe) => {
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+
+        unlisten = unsubscribe;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [persistRecoveredClickThrough]);
 
   useEffect(() => {
     if (!bubble.visible) {

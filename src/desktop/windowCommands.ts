@@ -7,6 +7,8 @@ import {
   type DesktopEventUnlisten,
 } from "./desktopApi";
 
+export type ClickThroughRecoveryReason = "show" | "settings";
+
 export function readSettings(): Promise<unknown> {
   return invokeCommand<unknown>("read_settings");
 }
@@ -67,6 +69,12 @@ export function listenForOpenSettings(
   handler: () => void,
 ): Promise<DesktopEventUnlisten> {
   return listenToDesktopEvent("open-settings", handler);
+}
+
+export function listenForClickThroughRecovered(
+  handler: (payload: { reason: ClickThroughRecoveryReason }) => void,
+): Promise<DesktopEventUnlisten> {
+  return listenToDesktopEvent("click-through-recovered", handler);
 }
 
 export function startWindowDrag(): Promise<void> {

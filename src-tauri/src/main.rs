@@ -110,7 +110,10 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             let result = match event.id().as_ref() {
-                "show" => commands::show_main_window(app),
+                "show" => commands::recover_click_through_and_show_main_window(
+                    app,
+                    commands::ClickThroughRecoveryReason::Show,
+                ),
                 "hide" => commands::hide_main_window(app),
                 "settings" => commands::emit_open_settings(app),
                 "quit" => {

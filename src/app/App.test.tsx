@@ -21,6 +21,10 @@ import { App } from "./App";
 const windowCommandsMock = vi.hoisted(() => ({
   openSettingsHandler: undefined as (() => void) | undefined,
   openSettingsUnlisten: vi.fn(),
+  clickThroughRecoveredHandler: undefined as
+    | ((payload: { reason: "show" | "settings" }) => void)
+    | undefined,
+  clickThroughRecoveredUnlisten: vi.fn(),
   moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
   openMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
   closeMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
@@ -141,6 +145,12 @@ vi.mock("../desktop/windowCommands", () => ({
     windowCommandsMock.openSettingsHandler = handler;
     return Promise.resolve(windowCommandsMock.openSettingsUnlisten);
   }),
+  listenForClickThroughRecovered: vi.fn(
+    (handler: (payload: { reason: "show" | "settings" }) => void) => {
+      windowCommandsMock.clickThroughRecoveredHandler = handler;
+      return Promise.resolve(windowCommandsMock.clickThroughRecoveredUnlisten);
+    },
+  ),
 }));
 
 vi.mock("../sync/useRealtimeSync", () => ({
@@ -443,6 +453,8 @@ describe("App", () => {
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
     windowCommandsMock.openSettingsUnlisten.mockClear();
+    windowCommandsMock.clickThroughRecoveredHandler = undefined;
+    windowCommandsMock.clickThroughRecoveredUnlisten.mockClear();
     windowCommandsMock.moveWindowForAutoStep.mockClear();
     windowCommandsMock.openMessageComposerSurface.mockClear();
     windowCommandsMock.closeMessageComposerSurface.mockClear();
@@ -1535,6 +1547,79 @@ describe("App", () => {
     const settingsButton = screen.getByRole("button", { name: "设置" });
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
     expect(settingsButton.classList.contains("is-visible")).toBe(true);
+  });
+
+  it("persists click-through disabled when tray show recovers input", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(windowCommandsMock.clickThroughRecoveredHandler).toBeTruthy(),
+    );
+    await waitFor(() => {
+      expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+        true,
+      );
+    });
+    windowCommandsMock.writeSettings.mockClear();
+
+    act(() => {
+      windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "show" });
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ clickThrough: false }),
+      ),
+    );
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+      false,
+    );
+  });
+
+  it("does not rewrite settings when tray recovery arrives while click-through is already disabled", async () => {
+    render(<App />);
+
+    await waitFor(() =>
+      expect(windowCommandsMock.clickThroughRecoveredHandler).toBeTruthy(),
+    );
+    await flushAppEffects();
+    windowCommandsMock.writeSettings.mockClear();
+
+    act(() => {
+      windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "show" });
+    });
+
+    await flushAppEffects();
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+  });
+
+  it("opens settings after tray settings recovers click-through", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(windowCommandsMock.clickThroughRecoveredHandler).toBeTruthy(),
+    );
+    await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+    await waitFor(() => {
+      expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+        true,
+      );
+    });
+    windowCommandsMock.writeSettings.mockClear();
+
+    act(() => {
+      windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "settings" });
+      windowCommandsMock.openSettingsHandler?.();
+    });
+
+    expect(screen.getByRole("button", { name: "设置" }).getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ clickThrough: false }),
+      ),
+    );
   });
 
   it("closes the settings panel from the panel header", async () => {
