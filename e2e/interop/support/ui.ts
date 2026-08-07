@@ -1,14 +1,11 @@
 import { $, browser, expect } from "@wdio/globals";
 import { isMessageAnimationMotion } from "../../../scripts/interop/cross-platform-smoke.mjs";
+import { openPetContextMenu } from "../../support/contextMenu";
 
 export const testMessageText = "interop message text";
 
 export async function openSettings() {
-  const surface = await $('section[aria-label="情侣桌宠 MVP"]');
-  await expect(surface).toBeDisplayed();
-  await surface.click({ button: "right" });
-  const menu = await $('[role="menu"][aria-label="桌宠菜单"]');
-  await expect(menu).toBeDisplayed();
+  const menu = await openPetContextMenu();
   await menu.$('//button[@role="menuitem" and normalize-space(.)="设置"]').click();
   await expect($('section[aria-label="桌宠设置"]')).toBeDisplayed();
 }

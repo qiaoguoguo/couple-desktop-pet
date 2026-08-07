@@ -150,9 +150,11 @@ describe("macOS Tauri embedded E2E config", () => {
 
   it("defines specs with existing stable selectors", () => {
     const spec = readText("e2e/macos/specs/app-shell.e2e.ts");
+    const contextMenuHelper = readText("e2e/support/contextMenu.ts");
+    const stableSelectors = `${spec}\n${contextMenuHelper}`;
 
     expect(spec).toContain('aria-label="情侣桌宠 MVP"');
-    expect(spec).toContain("桌宠菜单");
+    expect(stableSelectors).toContain("桌宠菜单");
     expect(spec).toContain("桌宠设置");
     expect(spec).toContain("形象管理");
     expect(spec).toContain("远程互动");
@@ -162,5 +164,27 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).not.toContain("$('button[role=\"menuitem\"]')");
     expect(spec).toContain("关闭设置");
     expect(spec).not.toContain("data-testid");
+  });
+
+  it("opens the pet context menu through a shared DOM contextmenu helper", () => {
+    const helper = readText("e2e/support/contextMenu.ts");
+    const appShellSpec = readText("e2e/macos/specs/app-shell.e2e.ts");
+    const interopUi = readText("e2e/interop/support/ui.ts");
+
+    expect(helper).toContain('section[aria-label="情侣桌宠 MVP"]');
+    expect(helper).toContain('new MouseEvent("contextmenu"');
+    expect(helper).toContain("bubbles: true");
+    expect(helper).toContain("cancelable: true");
+    expect(helper).toContain("composed: true");
+    expect(helper).toContain("button: 2");
+    expect(helper).toContain("buttons: 0");
+    expect(helper).toContain("clientX");
+    expect(helper).toContain("clientY");
+    expect(helper).toContain('[role="menu"][aria-label="桌宠菜单"]');
+
+    for (const source of [appShellSpec, interopUi]) {
+      expect(source).toContain("openPetContextMenu");
+      expect(source).not.toContain('click({ button: "right" })');
+    }
   });
 });
