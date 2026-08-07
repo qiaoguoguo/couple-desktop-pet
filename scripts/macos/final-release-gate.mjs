@@ -275,41 +275,51 @@ function validateRecordedExitLog(relativePath, content) {
     return undefined;
   }
   const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  const match = firstLine.match(/^exit=(\d+)$/);
-  if (match && match[1] !== "0") {
-    return "recorded evidence log must start with exit=0 when it includes an exit header";
+  if (firstLine !== "exit=0") {
+    return "recorded evidence log must start with exact exit=0";
   }
   return undefined;
 }
 
 function validateManualChecklist(content) {
   const checks = new Map();
+  const invalid = new Set();
+  const required = new Set(requiredManualCheckIds);
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) {
       continue;
     }
-    const [id, value] = trimmed.split("=");
-    checks.set(id, value);
+    const idCandidate = trimmed.split("=", 1)[0];
+    const match = trimmed.match(/^([a-z0-9-]+)=PASS$/);
+    if (!match) {
+      if (required.has(idCandidate)) {
+        invalid.add(idCandidate);
+      }
+      continue;
+    }
+    const id = match[1];
+    if (!required.has(id)) {
+      continue;
+    }
+    if (checks.has(id)) {
+      invalid.add(id);
+    }
+    checks.set(id, "PASS");
   }
 
-  const failed = [];
   const missing = [];
   for (const id of requiredManualCheckIds) {
     if (!checks.has(id)) {
       missing.push(id);
-      continue;
-    }
-    if (checks.get(id) !== "PASS") {
-      failed.push(id);
     }
   }
 
   if (missing.length > 0) {
-    return `manual checklist missing PASS rows for: ${missing.join(", ")}`;
+    return `manual checklist missing exact PASS rows for: ${missing.join(", ")}`;
   }
-  if (failed.length > 0) {
-    return `manual checklist has non-PASS rows for: ${failed.join(", ")}`;
+  if (invalid.size > 0) {
+    return `manual checklist has duplicate or non-exact rows for: ${[...invalid].join(", ")}`;
   }
   return undefined;
 }
@@ -375,29 +385,30 @@ function validateInteropEvidence(evidenceRoot, missing, invalid) {
     return { invalid: [] };
   }
 
-  try {
-    const events = [];
-    for (const relativePath of logs) {
-      const role = relativePath.includes("/windows/") ? "windows" : "macos";
+  const events = [];
+  for (const relativePath of logs) {
+    const role = relativePath.includes("/windows/") ? "windows" : "macos";
+    try {
       events.push(...readAndValidateInteropLog(join(evidenceRoot, relativePath), relativePath, role));
-    }
-    const result = validateInteropEvents(events);
-    if (!result.ok) {
+    } catch (error) {
       return {
         invalid: [
           {
-            path: "interop/windows/events.jsonl",
-            reason: `interop event matrix missing: ${result.missing.join(", ")}`,
+            path: relativePath,
+            reason: error.message ?? String(error),
           },
         ],
       };
     }
-  } catch (error) {
+  }
+
+  const result = validateInteropEvents(events);
+  if (!result.ok) {
     return {
       invalid: [
         {
           path: "interop/windows/events.jsonl",
-          reason: error.message ?? String(error),
+          reason: `interop event matrix missing: ${result.missing.join(", ")}`,
         },
       ],
     };
@@ -414,11 +425,9 @@ function readAndValidateInteropLog(fullPath, relativePath, expectedRole) {
   }
 
   for (const event of events) {
-    if (event.role !== expectedRole) {
-      throw new Error(`${relativePath} contains an event with a role that does not match the file role`);
-    }
-    if (!allowedEvents.has(event.event)) {
-      throw new Error(`${relativePath} contains an event outside the required interop schema`);
+    const schemaError = validateInteropEventSchema(event, expectedRole, allowedEvents);
+    if (schemaError) {
+      throw new Error(`${relativePath} ${schemaError}`);
     }
     const sensitiveError = findUnsafeInteropEvidence(event);
     if (sensitiveError) {
@@ -427,6 +436,58 @@ function readAndValidateInteropLog(fullPath, relativePath, expectedRole) {
   }
 
   return events;
+}
+
+function validateInteropEventSchema(event, expectedRole, allowedEvents) {
+  if (!isPlainObject(event)) {
+    return "row must be a plain object";
+  }
+
+  const expectedKeys = ["at", "details", "event", "platform", "role"];
+  const keys = Object.keys(event).sort();
+  const missingKeys = expectedKeys.filter((key) => !keys.includes(key));
+  if (missingKeys.length > 0) {
+    return `row missing top-level keys: ${missingKeys.join(", ")}`;
+  }
+
+  const extraKeys = keys.filter((key) => !expectedKeys.includes(key));
+  if (extraKeys.length > 0) {
+    return `row contains unsupported top-level keys: ${extraKeys.join(", ")}`;
+  }
+
+  if (event.role !== expectedRole) {
+    return "contains an event with a role that does not match the file role";
+  }
+
+  if (event.platform !== expectedRole) {
+    return "contains an event with a platform that does not match the file role";
+  }
+
+  if (!allowedEvents.has(event.event)) {
+    return "contains an event outside the required interop schema";
+  }
+
+  if (!isValidIsoTimestamp(event.at)) {
+    return "row at must be a valid ISO timestamp";
+  }
+
+  if (!isPlainObject(event.details)) {
+    return "row details must be a plain object";
+  }
+
+  return undefined;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidIsoTimestamp(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
 function findUnsafeInteropEvidence(value) {

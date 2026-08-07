@@ -209,7 +209,7 @@ describe("macOS final release gate", () => {
     const root = makeTempRoot();
     writeCompleteEvidence(root);
     writeEvidence(root, "native/process-exists.log", "");
-    writeEvidence(root, "build/lipo-verify-universal.log", "Architectures in the fat file: app are: arm64\n");
+    writeEvidence(root, "build/lipo-verify-universal.log", "exit=0\n--- stdout ---\nArchitectures in the fat file: app are: arm64\n");
     writeEvidence(root, "build/sha256-dmg.log", "not-a-sha  artifact\n");
     writeInteropLogs(root, "macos-message-animation-observed");
 
@@ -256,12 +256,14 @@ describe("macOS final release gate", () => {
         event: "windows-pair-code-created",
         role: "macos",
         platform: "windows",
+        at: "2026-08-07T12:00:00.000Z",
         details: { message: "interop message text", token: "<redacted>" },
       }),
       JSON.stringify({
         event: "failure",
         role: "windows",
         platform: "windows",
+        at: "2026-08-07T12:00:01.000Z",
         details: { errorSummary: "github_pat_1234567890abcdefghijklmnopqrstuv" },
       }),
     ];
@@ -281,6 +283,52 @@ describe("macOS final release gate", () => {
     const reasonText = result.invalid.map((entry) => entry.reason).join("\n");
     expect(reasonText).not.toContain("interop message text");
     expect(reasonText).not.toContain("github_pat_");
+  });
+
+  it("requires every interop JSONL row to use the complete safe top-level schema", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    writeEvidence(
+      root,
+      "interop/macos/events.jsonl",
+      `${JSON.stringify({ event: "macos-pair-accepted", role: "macos" })}\n`,
+    );
+
+    const missingSchema = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(missingSchema.status).toBe("blocked");
+    expect(missingSchema.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "interop/macos/events.jsonl",
+          reason: expect.stringContaining("platform"),
+        }),
+      ]),
+    );
+
+    writeCompleteEvidence(root);
+    writeEvidence(
+      root,
+      "interop/macos/events.jsonl",
+      `${JSON.stringify({
+        event: "macos-pair-accepted",
+        role: "macos",
+        platform: "windows",
+        at: "not-a-date",
+        details: [],
+      })}\n`,
+    );
+
+    const invalidSchema = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+    expect(invalidSchema.status).toBe("blocked");
+    expect(invalidSchema.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "interop/macos/events.jsonl",
+          reason: expect.stringContaining("platform"),
+        }),
+      ]),
+    );
   });
 
   it("requires every manual native check id to pass explicitly", () => {
@@ -316,6 +364,21 @@ describe("macOS final release gate", () => {
         }),
       ]),
     });
+
+    writeEvidence(
+      root,
+      "native/manual-checklist.log",
+      `${requiredManualCheckIds.map((id) => `${id}=PASS`).join("\n")}\nno-dock=PASS=garbage\n`,
+    );
+    expect(evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }))).toMatchObject({
+      status: "blocked",
+      invalid: expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/manual-checklist.log",
+          reason: expect.stringContaining("no-dock"),
+        }),
+      ]),
+    });
   });
 
   it("does not read PNG files as UTF-8 while rejecting recorded exit logs with nonzero exit", () => {
@@ -333,6 +396,30 @@ describe("macOS final release gate", () => {
         reason: expect.stringContaining("exit=0"),
       }),
     ]);
+  });
+
+  it("requires recorded command logs to start with an exact exit=0 header", () => {
+    for (const [relativePath, text] of [
+      ["build/hdiutil-attach-dmg.log", "exit=-1\n--- stdout ---\nok\n"],
+      ["native/process-exists.log", "exit=foo\n--- stdout ---\nok\n"],
+      ["build/codesign-verify-app.log", "--- stdout ---\nok\n"],
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root);
+      writeEvidence(root, relativePath, text);
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: relativePath,
+            reason: expect.stringContaining("exit=0"),
+          }),
+        ]),
+      );
+    }
   });
 
   it("scans only production artifacts for forbidden E2E symbols", () => {
