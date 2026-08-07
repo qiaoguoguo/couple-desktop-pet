@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 mod commands;
 mod pet_packages;
+mod platform;
 
 static EXPLICIT_APP_QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -18,6 +19,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            platform::configure_platform_shell(app)?;
             setup_tray(app)?;
             if let Err(error) = commands::install_main_window_close_to_hide(app.handle()) {
                 eprintln!("failed to install main window close handler: {error}");
