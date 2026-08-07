@@ -34,3 +34,4 @@ Initial results are `Pending` or `Not run`. Do not mark a gate as passed until d
 | Formal stapler validation | `build/stapler-validate-app.log`, `build/stapler-validate-dmg.log` | Pending |
 | Formal Gatekeeper assessment | `build/spctl-assess-app.log`, `build/spctl-assess-dmg.log` | Pending |
 | Final QA-only boundary | `build/codesign-verify-app.log`, `build/codesign-describe-app.log`, `native/spctl-assess.log` prove only ad-hoc QA status, not formal release status | Pending |
+| Final release gate decision output | Generated after scanning all external evidence; never used as input evidence | Pending |

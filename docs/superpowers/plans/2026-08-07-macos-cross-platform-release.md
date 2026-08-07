@@ -59,7 +59,7 @@
 - `scripts/interop/cross-platform-smoke.mjs` - sanitized interop event validation helper.
 - `scripts/interop/cross-platform-smoke.test.mjs` - interop redaction and event matrix tests.
 - `scripts/macos/final-release-gate.mjs` - final evidence gate and release-decision writer.
-- `scripts/macos/final-release-gate.test.ts` - final gate tests.
+- `scripts/macos/final-release-gate.test.mjs` - final gate tests.
 - `e2e/macos/wdio.conf.ts` - WebdriverIO Tauri embedded-provider config.
 - `e2e/macos/specs/*.e2e.ts` - real macOS DOM workflow specs.
 - `src-tauri/tauri.e2e.conf.json` - E2E-only Tauri config with `withGlobalTauri` and an inline E2E capability.
@@ -2111,159 +2111,60 @@ git commit -m "docs: add macos release evidence matrix"
 
 **Files:**
 - Create: `scripts/macos/final-release-gate.mjs`
-- Create: `scripts/macos/final-release-gate.test.ts`
+- Create: `scripts/macos/final-release-gate.test.mjs`
 - Modify: `package.json`
 - Modify: `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md`
 
 **Interfaces:**
-- Produces `pnpm macos:final-gate`.
-- Consumes external evidence files from Tasks 5 through 10.
-- Generates `.superpowers/sdd/2026-08-07-macos-cross-platform/release-decision.md` after validating external evidence.
-- `requiredFinalEvidence` does not include `release-decision.md`.
+- Produces `pnpm macos:final-gate` and `pnpm macos:production-scan`.
+- Consumes external evidence files from Tasks 5 through 10 under `.superpowers/sdd/2026-08-07-macos-cross-platform/`.
+- Exports `requiredQaEvidence`, `requiredFormalEvidence`, `requiredManualNativeEvidence`, `requiredFinalEvidence`, `evaluateMacosReleaseGate(...)`, `scanProductionArtifacts(...)`, `inspectEvidenceFile(...)`, and `collectEvidenceStatus(...)`.
+- Generates `.superpowers/sdd/2026-08-07-macos-cross-platform/release-decision.md` only after scanning external evidence; `requiredFinalEvidence` never includes `release-decision.md`.
 
-- [ ] **Step 1: Write RED final gate tests**
+- [x] **Step 1: Write RED final gate tests**
 
-Create `scripts/macos/final-release-gate.test.ts`:
+Create `scripts/macos/final-release-gate.test.mjs` with tests for:
 
-```ts
-import { describe, expect, it } from "vitest";
-import {
-  evaluateMacosReleaseGate,
-  requiredFinalEvidence,
-} from "./final-release-gate.mjs";
+- Evidence path contract: `build/plutil-generated-info-plist.log`, `network/macos-http-ws-relay.log`, `macos/cargo-tree-production.log`, `build/lipo-verify-universal.log`, `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, and `interop/validator/validator.log` are required; `interop/events.jsonl` and `release-decision.md` are not inputs.
+- Status precedence: missing or invalid QA/runtime/manual native/interop evidence produces `blocked`; complete non-formal evidence with missing Developer ID signing/notary/stapler/spctl/formal hashes produces `qa-only`; all evidence produces `complete`.
+- Evidence validity: required paths must be regular non-empty files, lipo logs must include both `arm64` and `x86_64`, SHA logs must contain a 64-character hex digest, and interop JSONL must pass the existing `readSanitizedJsonl` plus `validateInteropEvents` matrix.
+- Production scan: only production `dist`, `src-tauri/capabilities/default.json`, and `src-tauri/tauri.conf.json` are scanned for `@wdio/tauri-plugin`, `wdio:default`, `wdio-webdriver:default`, `tauri-plugin-wdio`, `tauri_plugin_wdio`, `tauri-plugin-wdio-webdriver`, and `tauri_plugin_wdio_webdriver`.
+- CLI behavior: complete exits 0, `blocked`/`qa-only` exits nonzero, and the decision file contains only status/time/missing path/invalid summary metadata rather than copied evidence contents.
 
-describe("macOS final release gate", () => {
-  it("requires external evidence before generating a decision", () => {
-    expect(requiredFinalEvidence).toContain("build/plutil-generated-info-plist.log");
-    expect(requiredFinalEvidence).toContain("network/macos-http-ws-relay.log");
-    expect(requiredFinalEvidence).toContain("macos/cargo-tree-production.log");
-    expect(requiredFinalEvidence).toContain("build/lipo-verify-universal.log");
-    expect(requiredFinalEvidence).not.toContain("release-decision.md");
+- [x] **Step 2: Run RED**
 
-    expect(
-      evaluateMacosReleaseGate({
-        presentEvidence: new Set(requiredFinalEvidence),
-        formalSigningComplete: true,
-        realMacRuntimeComplete: true,
-        realInteropComplete: true,
-      }),
-    ).toEqual({ status: "complete" });
-  });
-
-  it("marks ad hoc builds as QA-only without formal signing evidence", () => {
-    expect(
-      evaluateMacosReleaseGate({
-        presentEvidence: new Set(requiredFinalEvidence),
-        formalSigningComplete: false,
-        realMacRuntimeComplete: true,
-        realInteropComplete: true,
-      }),
-    ).toEqual({
-      status: "qa-only",
-      reason: "Developer ID signing, notarization, or stapling evidence is missing",
-    });
-  });
-});
-```
-
-- [ ] **Step 2: Run RED**
-
-Run: `pnpm vitest run scripts/macos/final-release-gate.test.ts`
+Run: `pnpm vitest run scripts/macos/final-release-gate.test.mjs`
 
 Expected: FAIL because final gate script does not exist.
 
-- [ ] **Step 3: Implement final gate script**
+- [x] **Step 3: Implement final gate script**
 
 Create `scripts/macos/final-release-gate.mjs`:
 
-```js
-export const requiredFinalEvidence = [
-  "windows/full-regression.log",
-  "macos/full-regression.log",
-  "build/file-app-binary.log",
-  "build/lipo-verify-universal.log",
-  "build/plutil-generated-info-plist.log",
-  "network/macos-http-ws-relay.log",
-  "build/hdiutil-verify-dmg.log",
-  "build/hdiutil-attach-dmg.log",
-  "build/hdiutil-detach-dmg.log",
-  "build/codesign-verify-app.log",
-  "build/codesign-describe-app.log",
-  "build/notarytool.log",
-  "build/stapler-validate.log",
-  "build/spctl-before-staple.log",
-  "build/spctl-after-staple.log",
-  "macos/cargo-tree-production.log",
-  "macos/production-permission-scan.log",
-  "native/launch-app.log",
-  "native/process-exists.log",
-  "native/app-window.png",
-  "native/menu-bar-tray.png",
-  "native/dock-before.png",
-  "native/dock-after.png",
-  "interop/windows/events.jsonl",
-  "interop/macos/events.jsonl",
-  "interop/validator/validator.log",
-];
-
-export function evaluateMacosReleaseGate({
-  presentEvidence,
-  formalSigningComplete,
-  realMacRuntimeComplete,
-  realInteropComplete,
-}) {
-  const missing = requiredFinalEvidence.filter((path) => !presentEvidence.has(path));
-  if (!formalSigningComplete) {
-    return {
-      status: "qa-only",
-      reason: "Developer ID signing, notarization, or stapling evidence is missing",
-    };
-  }
-  if (!realMacRuntimeComplete || !realInteropComplete || missing.length > 0) {
-    return { status: "blocked", missing };
-  }
-  return { status: "complete" };
-}
-```
-
-Add production scan mode in the same file:
-
-```js
-export function scanProductionArtifacts(textByPath) {
-  const forbidden = [
-    "tauri-plugin-wdio",
-    "wdio:default",
-    "wdio-webdriver:default",
-    "@wdio/tauri-plugin",
-  ];
-  return Object.entries(textByPath).flatMap(([path, text]) =>
-    forbidden
-      .filter((needle) => text.includes(needle))
-      .map((needle) => ({ path, needle })),
-  );
-}
-```
-
-The CLI supports:
-
-- `node scripts/macos/final-release-gate.mjs --scan-production`: scans production `dist` and macOS release bundle files, prints `no production e2e symbols found` when clean, and exits nonzero when a forbidden symbol is found.
-- `node scripts/macos/final-release-gate.mjs`: scans `.superpowers/sdd/2026-08-07-macos-cross-platform/`, evaluates the gate, writes `release-decision.md`, and exits 0 only for `status: "complete"`.
+- `collectEvidenceStatus({ evidenceRoot })` inspects `requiredFinalEvidence`, verifies each path is a regular non-empty file, performs special lipo/SHA checks, and validates split interop logs using the existing sanitized JSONL reader and required event matrix.
+- `evaluateMacosReleaseGate(collected)` applies the required precedence:
+  - any QA, real macOS runtime, interop, or manual native issue => `blocked`;
+  - non-formal evidence complete but formal Developer ID chain incomplete => `qa-only`;
+  - all external evidence complete => `complete`.
+- `scanProductionArtifacts(textByPath)` is a pure scanner for forbidden E2E symbols. CLI `--scan-production` gathers only existing text files from production `dist`, `src-tauri/capabilities/default.json`, and `src-tauri/tauri.conf.json`; it does not scan legitimate `e2e/` sources.
+- The default CLI evidence root is `.superpowers/sdd/2026-08-07-macos-cross-platform`, with `--evidence-root <path>` for downloaded artifact directories.
 
 Modify `package.json`:
 
 ```json
 {
   "scripts": {
-    "macos:final-gate": "node scripts/macos/final-release-gate.mjs"
+    "macos:final-gate": "node scripts/macos/final-release-gate.mjs",
+    "macos:production-scan": "node scripts/macos/final-release-gate.mjs --scan-production"
   }
 }
 ```
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
-Run: `pnpm vitest run scripts/macos/final-release-gate.test.ts`
+Run: `pnpm vitest run scripts/macos/final-release-gate.test.mjs`
 
-Expected: PASS, 2 tests.
+Expected: PASS.
 
 - [ ] **Step 5: Run Windows regression**
 
@@ -2276,6 +2177,8 @@ pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml --features e2e
+pnpm macos:production-scan
 git diff --check
 ```
 
@@ -2323,7 +2226,7 @@ Expected:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/macos/final-release-gate.mjs scripts/macos/final-release-gate.test.ts package.json
+git add scripts/macos/final-release-gate.mjs scripts/macos/final-release-gate.test.mjs package.json docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md
 git add -f .superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md
 git commit -m "test: add macos final release gate"
 ```
