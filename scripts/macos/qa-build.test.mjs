@@ -9,12 +9,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertUniversalSlices,
   createMacosBuildPlan,
   findMacosArtifacts,
   findMountedApp,
+  isCliEntrypoint,
   parseHdiutilAttachTargets,
   parseHdiutilMountPoint,
   redactBuildLog,
@@ -39,6 +41,15 @@ afterEach(() => {
 });
 
 describe("macOS QA build verifier", () => {
+  it("recognizes CLI entrypoints in localized paths with spaces", () => {
+    const scriptPath = join(makeTempRoot(), "含 空格", "情侣桌宠", "qa-build.mjs");
+
+    expect(isCliEntrypoint(pathToFileURL(scriptPath).href, scriptPath)).toBe(true);
+    expect(isCliEntrypoint(pathToFileURL(scriptPath).href, join(makeTempRoot(), "other.mjs"))).toBe(
+      false,
+    );
+  });
+
   it("creates distinct shell-free plans for QA and formal builds", () => {
     expect(createMacosBuildPlan({ mode: "qa" }).buildStep).toEqual({
       name: "tauri-build-qa",

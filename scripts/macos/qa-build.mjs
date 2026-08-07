@@ -112,6 +112,14 @@ export function createMacosBuildPlan({ mode }) {
   };
 }
 
+export function isCliEntrypoint(metaUrl, argvPath = process.argv[1]) {
+  if (!argvPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);
+}
+
 export function findMacosArtifacts(bundleRoot = defaultBundleRoot) {
   const paths = listPaths(bundleRoot);
   const stagingAppPath = selectNewestPath(
@@ -415,9 +423,21 @@ function parseCliMode(argv) {
   return argv[index + 1];
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
-  runMacosBuildVerification({ mode: parseCliMode(process.argv.slice(2)) }).catch((error) => {
-    console.error(error.message);
-    process.exitCode = 1;
+export async function runMacosBuildCli(
+  argv,
+  { env = process.env, stderr = console } = {},
+) {
+  try {
+    await runMacosBuildVerification({ mode: parseCliMode(argv), env });
+    return 0;
+  } catch (error) {
+    stderr.error(redactBuildLog(error.message ?? String(error), env));
+    return 1;
+  }
+}
+
+if (isCliEntrypoint(import.meta.url)) {
+  runMacosBuildCli(process.argv.slice(2)).then((exitCode) => {
+    process.exitCode = exitCode;
   });
 }

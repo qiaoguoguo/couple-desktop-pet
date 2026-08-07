@@ -34,6 +34,22 @@ export function parseNativeEvidenceArgs(argv) {
   return { mode, appPath, outputDir };
 }
 
+export function isCliEntrypoint(metaUrl, argvPath = process.argv[1]) {
+  if (!argvPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);
+}
+
+export function sanitizeNativeEvidenceEnv(env = process.env) {
+  const sanitized = { ...env };
+  for (const key of sensitiveEnvKeys) {
+    delete sanitized[key];
+  }
+  return sanitized;
+}
+
 function readRequiredArg(argv, name) {
   const index = argv.indexOf(name);
   if (index === -1 || !argv[index + 1]) {
@@ -88,7 +104,15 @@ export function createNativeEvidencePlan({ mode, appPath, outputDir }) {
         shell: false,
       },
       { name: "launch-app", command: "open", args: ["-n", appPath], shell: false },
-      { name: "process-exists", command: "pgrep", args: ["-fl", "couple-desktop-pet"], shell: false },
+      {
+        name: "process-exists",
+        command: "osascript",
+        args: [
+          "-e",
+          `tell application "System Events" to count (application processes whose bundle identifier is "${bundleIdentifier}")`,
+        ],
+        shell: false,
+      },
       {
         name: "screencapture",
         command: "screencapture",
@@ -112,6 +136,8 @@ export async function runNativeEvidenceCollection({
   platform = process.platform,
   env = process.env,
   runner = runStep,
+  processWaitAttempts = 20,
+  processWaitDelayMs = 250,
 }) {
   if (platform !== "darwin") {
     throw new Error("macOS native evidence must run on a real macOS host");
@@ -121,6 +147,7 @@ export async function runNativeEvidenceCollection({
   }
 
   const plan = createNativeEvidencePlan({ mode, appPath, outputDir });
+  const childEnv = sanitizeNativeEvidenceEnv(env);
   let launched = false;
 
   try {
@@ -130,7 +157,7 @@ export async function runNativeEvidenceCollection({
       }
 
       if (step.name === "spctl-assess" && mode === "qa") {
-        const result = await runLooseStep(step, { runner, outputDir, env });
+        const result = await runLooseStep(step, { runner, outputDir, childEnv, logEnv: env });
         if (result.code !== 0) {
           writeStepLog(
             outputDir,
@@ -145,29 +172,94 @@ export async function runNativeEvidenceCollection({
         continue;
       }
 
-      await runRecordedStep(step, { runner, outputDir, env });
+      if (step.name === "process-exists") {
+        await waitForProcessRunning(step, {
+          runner,
+          outputDir,
+          childEnv,
+          logEnv: env,
+          attempts: processWaitAttempts,
+          delayMs: processWaitDelayMs,
+        });
+        continue;
+      }
+
+      await runRecordedStep(step, { runner, outputDir, childEnv, logEnv: env });
     }
   } finally {
     if (launched) {
-      await runLooseStep(plan.cleanupStep, { runner, outputDir, env });
+      await runLooseStep(plan.cleanupStep, { runner, outputDir, childEnv, logEnv: env });
     }
   }
 }
 
-async function runLooseStep(step, { runner, outputDir, env }) {
+async function waitForProcessRunning(
+  step,
+  { runner, outputDir, childEnv, logEnv, attempts, delayMs },
+) {
+  let lastResult = { code: 1, stdout: "", stderr: "process check did not run" };
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    lastResult = await runLooseStep(step, { runner, outputDir, childEnv, logEnv });
+    if (isBundleRunning(lastResult)) {
+      return lastResult;
+    }
+    if (attempt < attempts) {
+      await wait(delayMs);
+    }
+  }
+
+  const timeoutResult = {
+    code: 1,
+    stdout: lastResult.stdout ?? "",
+    stderr: `Timed out waiting for ${bundleIdentifier} after ${attempts} attempts${
+      lastResult.stderr ? `\n${lastResult.stderr}` : ""
+    }`,
+  };
+  writeStepLog(outputDir, step.name, timeoutResult, logEnv);
+  throw Object.assign(new Error(timeoutResult.stderr), timeoutResult);
+}
+
+function isBundleRunning(result) {
+  if (result.code !== 0) {
+    return false;
+  }
+
+  const value = String(result.stdout ?? "").trim().toLowerCase();
+  if (!value || value === "0" || value === "false" || value === "not-running") {
+    return false;
+  }
+  if (/^\d+$/.test(value)) {
+    return Number.parseInt(value, 10) > 0;
+  }
+
+  return true;
+}
+
+function wait(delayMs) {
+  if (delayMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolveWait) => {
+    setTimeout(resolveWait, delayMs);
+  });
+}
+
+async function runLooseStep(step, { runner, outputDir, childEnv, logEnv }) {
   try {
-    const result = await runner(step, env);
-    writeStepLog(outputDir, step.name, result, env);
+    const result = await runner(step, childEnv);
+    writeStepLog(outputDir, step.name, result, logEnv);
     return result;
   } catch (error) {
     const result = resultFromError(error);
-    writeStepLog(outputDir, step.name, result, env);
+    writeStepLog(outputDir, step.name, result, logEnv);
     return result;
   }
 }
 
-async function runRecordedStep(step, { runner, outputDir, env }) {
-  const result = await runLooseStep(step, { runner, outputDir, env });
+async function runRecordedStep(step, { runner, outputDir, childEnv, logEnv }) {
+  const result = await runLooseStep(step, { runner, outputDir, childEnv, logEnv });
   if (result.code !== 0) {
     const detail = result.stderr || result.stdout;
     throw Object.assign(
@@ -202,6 +294,25 @@ export function runStep(step, env = process.env) {
   });
 }
 
+export async function runNativeEvidenceCli(
+  argv,
+  {
+    env = process.env,
+    platform = process.platform,
+    runner = runStep,
+    stderr = console,
+  } = {},
+) {
+  try {
+    const args = parseNativeEvidenceArgs(argv);
+    await runNativeEvidenceCollection({ ...args, env, platform, runner });
+    return 0;
+  } catch (error) {
+    stderr.error(redactNativeEvidenceLog(error.message ?? String(error), env));
+    return 1;
+  }
+}
+
 function resultFromError(error) {
   return {
     code: typeof error.code === "number" ? error.code : 1,
@@ -234,10 +345,8 @@ export function redactNativeEvidenceLog(text, env = process.env) {
   return redacted;
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
-  const args = parseNativeEvidenceArgs(process.argv.slice(2));
-  runNativeEvidenceCollection(args).catch((error) => {
-    console.error(error.message);
-    process.exitCode = 1;
+if (isCliEntrypoint(import.meta.url)) {
+  runNativeEvidenceCli(process.argv.slice(2)).then((exitCode) => {
+    process.exitCode = exitCode;
   });
 }
