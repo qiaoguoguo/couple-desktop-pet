@@ -16,6 +16,7 @@ interface RendezvousEnv {
   token: string;
   issueNumber: number;
   role: InteropRole;
+  sessionId: string;
 }
 
 export function readRendezvousEnv(env: NodeJS.ProcessEnv = process.env): RendezvousEnv {
@@ -34,6 +35,7 @@ export function readRendezvousEnv(env: NodeJS.ProcessEnv = process.env): Rendezv
     token: requireEnv(env, "INTEROP_GITHUB_TOKEN"),
     issueNumber: Number.parseInt(requireEnv(env, "INTEROP_ISSUE_NUMBER"), 10),
     role,
+    sessionId: env.INTEROP_SESSION_ID ?? "main",
   };
 }
 
@@ -57,19 +59,25 @@ export async function createRendezvousSession() {
     issueNumber: env.issueNumber,
     role: env.role,
     publicKey: exportPublicKey(keys.publicKey),
+    sessionId: env.sessionId,
   });
   const peerHello = await client.waitForPeerHello({
     issueNumber: env.issueNumber,
     selfRole: env.role,
+    sessionId: env.sessionId,
   });
   const key = deriveSharedKey({
     privateKey: keys.privateKey,
     peerPublicKey: peerHello.publicKey,
     issueNumber: env.issueNumber,
+    sessionId: env.sessionId,
   });
+  const peerRole = env.role === "windows" ? "macos" : "windows";
 
   return {
     role: env.role,
+    peerRole,
+    sessionId: env.sessionId,
     async send<TPayload>(event: string, payload: TPayload) {
       await client.postEncryptedEvent({
         issueNumber: env.issueNumber,
@@ -78,6 +86,7 @@ export async function createRendezvousSession() {
           event,
           payload,
           key,
+          sessionId: env.sessionId,
         }),
       });
     },
@@ -86,8 +95,15 @@ export async function createRendezvousSession() {
         issueNumber: env.issueNumber,
         selfRole: env.role,
         event,
+        sessionId: env.sessionId,
       })) as EncryptedEvent;
-      return decryptEncryptedEvent<TPayload>({ encryptedEvent, key }).payload;
+      return decryptEncryptedEvent<TPayload>({
+        encryptedEvent,
+        key,
+        expectedEvent: event,
+        expectedRole: peerRole,
+        sessionId: env.sessionId,
+      }).payload;
     },
   };
 }

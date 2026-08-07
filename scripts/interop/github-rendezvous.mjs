@@ -39,7 +39,7 @@ function importPublicKey(publicKey) {
   });
 }
 
-export function deriveSharedKey({ privateKey, peerPublicKey, issueNumber }) {
+export function deriveSharedKey({ privateKey, peerPublicKey, issueNumber, sessionId = "main" }) {
   const secret = diffieHellman({
     privateKey,
     publicKey: importPublicKey(peerPublicKey),
@@ -48,16 +48,18 @@ export function deriveSharedKey({ privateKey, peerPublicKey, issueNumber }) {
     hkdfSync(
       "sha256",
       secret,
-      Buffer.from(`couple-pet-interop:${issueNumber}`),
+      Buffer.from(`couple-pet-interop:${issueNumber}:${sessionId}`),
       Buffer.from("github-issue-rendezvous-v1"),
       32,
     ),
   );
 }
 
-export function createEncryptedEvent({ role, event, payload, key }) {
+export function createEncryptedEvent({ role, event, payload, key, sessionId = "main" }) {
   const nonce = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  const aad = createAad({ role, event, sessionId });
+  cipher.setAAD(aad);
   const plaintext = Buffer.from(JSON.stringify({ role, event, payload }), "utf8");
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 
@@ -65,17 +67,31 @@ export function createEncryptedEvent({ role, event, payload, key }) {
     kind: "encrypted-event",
     role,
     event,
+    sessionId,
     nonce: nonce.toString("base64url"),
     ciphertext: ciphertext.toString("base64url"),
     tag: cipher.getAuthTag().toString("base64url"),
   };
 }
 
-export function decryptEncryptedEvent({ encryptedEvent, key }) {
+export function decryptEncryptedEvent({
+  encryptedEvent,
+  key,
+  expectedEvent,
+  expectedRole,
+  sessionId = encryptedEvent.sessionId ?? "main",
+}) {
   const decipher = createDecipheriv(
     "aes-256-gcm",
     key,
     Buffer.from(encryptedEvent.nonce, "base64url"),
+  );
+  decipher.setAAD(
+    createAad({
+      role: encryptedEvent.role,
+      event: encryptedEvent.event,
+      sessionId,
+    }),
   );
   decipher.setAuthTag(Buffer.from(encryptedEvent.tag, "base64url"));
   const plaintext = Buffer.concat([
@@ -83,7 +99,25 @@ export function decryptEncryptedEvent({ encryptedEvent, key }) {
     decipher.final(),
   ]);
 
-  return JSON.parse(plaintext.toString("utf8"));
+  const decoded = JSON.parse(plaintext.toString("utf8"));
+  if (decoded.role !== encryptedEvent.role) {
+    throw new Error("Encrypted event role does not match outer metadata");
+  }
+  if (decoded.event !== encryptedEvent.event) {
+    throw new Error("Encrypted event name does not match outer metadata");
+  }
+  if (expectedRole && decoded.role !== expectedRole) {
+    throw new Error(`Encrypted event expected role ${expectedRole}, received ${decoded.role}`);
+  }
+  if (expectedEvent && decoded.event !== expectedEvent) {
+    throw new Error(`Encrypted event expected event ${expectedEvent}, received ${decoded.event}`);
+  }
+
+  return decoded;
+}
+
+function createAad({ role, event, sessionId }) {
+  return Buffer.from(JSON.stringify({ marker: commentMarker, role, event, sessionId }), "utf8");
 }
 
 export function tamperEncryptedEventForTest(encryptedEvent) {
@@ -107,7 +141,14 @@ export function createGitHubRendezvousClient({
   }
 
   async function request(method, path, body) {
-    const response = await fetchImpl(`${apiBaseUrl}/repos/${owner}/${repo}${path}`, {
+    const response = await requestRaw(method, path, body);
+
+    return response.data;
+  }
+
+  async function requestRaw(method, path, body) {
+    const url = path.startsWith("http") ? path : `${apiBaseUrl}/repos/${owner}/${repo}${path}`;
+    const response = await fetchImpl(url, {
       method,
       headers: {
         Accept: "application/vnd.github+json",
@@ -122,7 +163,20 @@ export function createGitHubRendezvousClient({
       throw new Error(`GitHub ${method} ${path} failed with ${response.status}: ${await response.text()}`);
     }
 
-    return response.json();
+    if (response.status === 204) {
+      return { data: null, headers: response.headers };
+    }
+
+    const text = await response.text();
+    if (!text.trim()) {
+      return { data: null, headers: response.headers };
+    }
+
+    try {
+      return { data: JSON.parse(text), headers: response.headers };
+    } catch {
+      return { data: await response.json(), headers: response.headers };
+    }
   }
 
   const client = {
@@ -132,9 +186,9 @@ export function createGitHubRendezvousClient({
         body: "Temporary encrypted couple-pet interop rendezvous issue.",
       });
     },
-    async postHello({ issueNumber, role, publicKey }) {
+    async postHello({ issueNumber, role, publicKey, sessionId = "main" }) {
       return request("POST", `/issues/${issueNumber}/comments`, {
-        body: serializeComment({ kind: "hello", role, publicKey }),
+        body: serializeComment({ kind: "hello", role, publicKey, sessionId }),
       });
     },
     async postEncryptedEvent({ issueNumber, encryptedEvent }) {
@@ -143,7 +197,14 @@ export function createGitHubRendezvousClient({
       });
     },
     async listComments(issueNumber) {
-      return request("GET", `/issues/${issueNumber}/comments`);
+      const comments = [];
+      let path = `/issues/${issueNumber}/comments?per_page=100`;
+      while (path) {
+        const response = await requestRaw("GET", path);
+        comments.push(...(response.data ?? []));
+        path = readNextLink(response.headers);
+      }
+      return comments;
     },
     async deleteComment(commentId) {
       return request("DELETE", `/issues/comments/${commentId}`);
@@ -151,19 +212,29 @@ export function createGitHubRendezvousClient({
     async closeIssue(issueNumber) {
       return request("PATCH", `/issues/${issueNumber}`, { state: "closed" });
     },
-    async waitForPeerHello({ issueNumber, selfRole, timeoutMs = 120_000, intervalMs = 2_000 }) {
+    async waitForPeerHello({
+      issueNumber,
+      selfRole,
+      sessionId = "main",
+      timeoutMs = 120_000,
+      intervalMs = 2_000,
+    }) {
       const comment = await waitForComment({
         load: () => client.listComments(issueNumber),
         timeoutMs,
         intervalMs,
         predicate: (comment) =>
-          comment.kind === "hello" && comment.role !== selfRole && typeof comment.publicKey === "string",
+          comment.kind === "hello" &&
+          comment.role !== selfRole &&
+          comment.sessionId === sessionId &&
+          typeof comment.publicKey === "string",
       });
-      return { id: comment.id, role: comment.role, publicKey: comment.publicKey };
+      return { id: comment.id, role: comment.role, publicKey: comment.publicKey, sessionId: comment.sessionId };
     },
     async waitForEncryptedEvent({
       issueNumber,
       selfRole,
+      sessionId = "main",
       timeoutMs = 120_000,
       intervalMs = 2_000,
       event,
@@ -175,6 +246,7 @@ export function createGitHubRendezvousClient({
         predicate: (comment) =>
           comment.kind === "encrypted-event" &&
           comment.role !== selfRole &&
+          comment.sessionId === sessionId &&
           (event ? comment.event === event : true),
       });
     },
@@ -196,7 +268,7 @@ function serializeComment(payload) {
 function parseComment(comment) {
   try {
     const payload = JSON.parse(comment.body);
-    if (payload.marker && payload.marker !== commentMarker) {
+    if (payload.marker !== commentMarker) {
       return null;
     }
     if (payload.kind !== "hello" && payload.kind !== "encrypted-event") {
@@ -206,6 +278,21 @@ function parseComment(comment) {
   } catch {
     return null;
   }
+}
+
+function readNextLink(headers) {
+  const link = headers?.get?.("link");
+  if (!link) {
+    return null;
+  }
+
+  for (const part of link.split(",")) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
 }
 
 async function waitForComment({ load, predicate, timeoutMs, intervalMs }) {
@@ -233,14 +320,17 @@ function wait(delayMs) {
   return new Promise((resolveWait) => setTimeout(resolveWait, delayMs));
 }
 
-export function parseRendezvousArgs(argv) {
+export function parseRendezvousArgs(argv, env = process.env) {
   const command = argv[0];
   const repoValue = readRequiredArg(argv, "--repo");
   const [owner, repo] = repoValue.split("/");
   if (!owner || !repo) {
     throw new Error("--repo must be owner/repo");
   }
-  const token = readRequiredArg(argv, "--token");
+  const token = env.INTEROP_GITHUB_TOKEN;
+  if (!token) {
+    throw new Error("Missing INTEROP_GITHUB_TOKEN");
+  }
 
   if (command === "create") {
     return {
@@ -262,7 +352,7 @@ export function parseRendezvousArgs(argv) {
     };
   }
 
-  throw new Error("Usage: github-rendezvous.mjs create|cleanup --repo owner/repo --token token");
+  throw new Error("Usage: github-rendezvous.mjs create|cleanup --repo owner/repo; set INTEROP_GITHUB_TOKEN in the environment");
 }
 
 export function isCliEntrypoint(metaUrl, argvPath = process.argv[1]) {
@@ -293,10 +383,13 @@ export function redactRendezvousLog(text, secrets = process.env) {
   return redacted;
 }
 
-export async function runRendezvousCli(argv, { stdout = console, stderr = console } = {}) {
+export async function runRendezvousCli(
+  argv,
+  { stdout = console, stderr = console, env = process.env, fetchImpl = globalThis.fetch } = {},
+) {
   try {
-    const args = parseRendezvousArgs(argv);
-    const client = createGitHubRendezvousClient(args);
+    const args = parseRendezvousArgs(argv, env);
+    const client = createGitHubRendezvousClient({ ...args, fetchImpl });
     if (args.command === "create") {
       const issue = await client.createIssue({ title: args.title });
       stdout.log(String(issue.number));
@@ -306,7 +399,7 @@ export async function runRendezvousCli(argv, { stdout = console, stderr = consol
     stdout.log("cleanup-complete");
     return 0;
   } catch (error) {
-    stderr.error(redactRendezvousLog(error.message ?? String(error), process.env));
+    stderr.error(redactRendezvousLog(error.message ?? String(error), env));
     return 1;
   }
 }

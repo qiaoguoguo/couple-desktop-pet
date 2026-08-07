@@ -3,7 +3,7 @@ import { createIsolatedAppEnv, filterChildAppEnv } from "./support/env";
 
 const appBinaryPath =
   process.env.INTEROP_APP_BINARY ??
-  resolve(process.cwd(), "src-tauri/target/debug/couple-desktop-pet.exe");
+  resolve(process.cwd(), "src-tauri/target/release/couple-desktop-pet.exe");
 const isolatedRoot =
   process.env.INTEROP_APP_DATA_ROOT ?? resolve(process.cwd(), ".tmp/interop/windows");
 const childAppEnv = {

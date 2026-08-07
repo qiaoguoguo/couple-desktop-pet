@@ -34,6 +34,8 @@
     "e2e:interop:windows:restart": "wdio run e2e/interop/wdio.windows.conf.ts --suite restart",
     "e2e:interop:macos": "wdio run e2e/interop/wdio.macos.conf.ts --suite interop",
     "e2e:interop:macos:restart": "wdio run e2e/interop/wdio.macos.conf.ts --suite restart",
+    "interop:rendezvous:create": "node scripts/interop/github-rendezvous.mjs create",
+    "interop:rendezvous:cleanup": "node scripts/interop/github-rendezvous.mjs cleanup",
     "interop:validate": "node scripts/interop/cross-platform-smoke.mjs validate",
     "tauri": "tauri"
   },

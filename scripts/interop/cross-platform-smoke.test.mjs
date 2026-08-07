@@ -1,10 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createIsolatedAppEnv,
+  createInteropEventLogger,
   filterChildAppEnv,
+  isMessageAnimationMotion,
   readSanitizedJsonl,
   redactInteropEvent,
   requiredInteropEvents,
@@ -49,7 +51,8 @@ describe("cross platform interop smoke utilities", () => {
       "macos-bubble-acknowledged",
       "windows-message-animation-observed",
       "macos-message-animation-observed",
-      "unpair-completed",
+      "windows-unpair-completed",
+      "macos-unpair-completed",
       "windows-restart-shows-unpaired",
       "macos-restart-shows-unpaired",
     ]);
@@ -74,7 +77,67 @@ describe("cross platform interop smoke utilities", () => {
       KEEP_ME: "yes",
     });
 
-    expect(childEnv).toEqual({ PATH: "/bin", KEEP_ME: "yes" });
+    expect(childEnv).toEqual({
+      PATH: "/bin",
+      GITHUB_TOKEN: "",
+      INTEROP_GITHUB_TOKEN: "",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "",
+      APPLE_PASSWORD: "",
+      KEEP_ME: "yes",
+    });
+    expect({ ...{
+      GITHUB_TOKEN: "ghs_secret",
+      INTEROP_GITHUB_TOKEN: "ghs_secret",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc",
+      APPLE_PASSWORD: "apple",
+    }, ...childEnv }).toEqual(
+      expect.objectContaining({
+        GITHUB_TOKEN: "",
+        INTEROP_GITHUB_TOKEN: "",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "",
+        APPLE_PASSWORD: "",
+      }),
+    );
+  });
+
+  it("appends sanitized JSONL evidence and creates parent directories", () => {
+    const root = makeTempRoot();
+    const logPath = join(root, "nested", "windows.jsonl");
+    const logger = createInteropEventLogger({
+      logPath,
+      role: "windows",
+      platform: "windows",
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
+    });
+
+    logger.record("windows-pair-code-created", {
+      pairCode: "123456",
+      deviceSecret: "secret",
+      assertion: "binding code output was visible",
+    });
+    logger.record("windows-peer-online", { assertion: "peer online label visible" });
+
+    const lines = readFileSync(logPath, "utf8").trim().split(/\r?\n/).map(JSON.parse);
+    expect(lines).toEqual([
+      {
+        event: "windows-pair-code-created",
+        role: "windows",
+        platform: "windows",
+        at: "2026-08-07T12:00:00.000Z",
+        details: {
+          pairCode: "<redacted>",
+          deviceSecret: "<redacted>",
+          assertion: "binding code output was visible",
+        },
+      },
+      {
+        event: "windows-peer-online",
+        role: "windows",
+        platform: "windows",
+        at: "2026-08-07T12:00:00.000Z",
+        details: { assertion: "peer online label visible" },
+      },
+    ]);
   });
 
   it("merges sanitized JSONL logs and rejects sensitive plaintext", () => {
@@ -133,5 +196,11 @@ describe("cross platform interop smoke utilities", () => {
         visible: "ok",
       },
     });
+  });
+
+  it("only treats the pair message motion as received message animation evidence", () => {
+    expect(isMessageAnimationMotion("motion-message-pair")).toBe(true);
+    expect(isMessageAnimationMotion("idle-breathe")).toBe(false);
+    expect(isMessageAnimationMotion(null)).toBe(false);
   });
 });

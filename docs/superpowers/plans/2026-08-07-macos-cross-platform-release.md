@@ -1428,7 +1428,7 @@ git commit -m "test: add macos native evidence collection"
 - `scripts/interop/github-rendezvous.mjs create|cleanup` creates the temporary Issue and deletes comments before closing it.
 - `scripts/interop/cross-platform-smoke.mjs validate` merges sanitized JSONL and verifies the required event matrix.
 - Windows WDIO and macOS WDIO configs use `@wdio/tauri-service` embedded provider with `browserName: "tauri"` and `tauri:options.application`.
-- Child app environments use isolated app data and remove `GITHUB_TOKEN`, `INTEROP_GITHUB_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, and `APPLE_*`; the WDIO runner process keeps the token for rendezvous.
+- Child app environments use isolated app data and mask `GITHUB_TOKEN`, `INTEROP_GITHUB_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, and `APPLE_*` to empty strings so `@wdio/tauri-service` cannot reintroduce parent secrets during its environment merge; the WDIO runner process keeps the token for rendezvous.
 - The real role spec drives the UI: Windows creates a binding code, sends it encrypted, macOS accepts it, both wait online, both sync `slacking/dazing/overtime/null`, both exchange messages, both acknowledge bubbles and observe message animation, then unpair.
 - The restart spec uses the same isolated directory and verifies both sides restart unpaired.
 - `SyncPanel` exposes `aria-label="输入绑定码"` as the minimal stable selector needed for the real macOS role.
@@ -1457,7 +1457,8 @@ Required event names:
   "macos-bubble-acknowledged",
   "windows-message-animation-observed",
   "macos-message-animation-observed",
-  "unpair-completed",
+  "windows-unpair-completed",
+  "macos-unpair-completed",
   "windows-restart-shows-unpaired",
   "macos-restart-shows-unpaired",
 ]
@@ -1508,14 +1509,14 @@ Expected: PASS locally. This proves harness correctness and TypeScript coverage;
 Run only when a private GitHub repository and simultaneous Windows/macOS runners are available:
 
 ```bash
-node scripts/interop/github-rendezvous.mjs create --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --title "couple-pet interop"
+INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs create --repo owner/repo --title "couple-pet interop"
 pnpm e2e:windows:build
 pnpm e2e:interop:windows
 pnpm e2e:interop:windows:restart
 pnpm e2e:interop:macos
 pnpm e2e:interop:macos:restart
 pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
-node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --issue "$INTEROP_ISSUE_NUMBER"
+INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --issue "$INTEROP_ISSUE_NUMBER"
 ```
 
 Expected: all required event names appear in sanitized JSONL, no forbidden plaintext appears, and cleanup removes temporary comments before closing the Issue. Local unit tests do not count as this proof.
@@ -2027,7 +2028,7 @@ cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 pnpm macos:formal-build
 plutil -p "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist" > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/generated-info-plist-ats.log"
-node scripts/interop/github-rendezvous.mjs create --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --title "couple-pet interop"
+INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs create --repo owner/repo --title "couple-pet interop"
 cargo tree --manifest-path src-tauri/Cargo.toml --no-default-features > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/cargo-tree-production.log"
 node scripts/macos/final-release-gate.mjs --scan-production > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/production-permission-scan.log"
 pnpm macos:native-evidence
@@ -2037,7 +2038,7 @@ pnpm e2e:interop:windows:restart
 pnpm e2e:interop:macos
 pnpm e2e:interop:macos:restart
 pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
-node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --token "$INTEROP_GITHUB_TOKEN" --issue "$INTEROP_ISSUE_NUMBER"
+INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --issue "$INTEROP_ISSUE_NUMBER"
 pnpm macos:final-gate
 ```
 

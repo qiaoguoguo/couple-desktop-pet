@@ -31,6 +31,12 @@ describe("cross-platform interop E2E harness config", () => {
     expect(packageJson.scripts?.["e2e:interop:macos:restart"]).toBe(
       "wdio run e2e/interop/wdio.macos.conf.ts --suite restart",
     );
+    expect(packageJson.scripts?.["interop:rendezvous:create"]).toBe(
+      "node scripts/interop/github-rendezvous.mjs create",
+    );
+    expect(packageJson.scripts?.["interop:rendezvous:cleanup"]).toBe(
+      "node scripts/interop/github-rendezvous.mjs cleanup",
+    );
     expect(packageJson.scripts?.["interop:validate"]).toBe(
       "node scripts/interop/cross-platform-smoke.mjs validate",
     );
@@ -54,6 +60,12 @@ describe("cross-platform interop E2E harness config", () => {
       expect(config).not.toContain("hostname");
       expect(config).not.toContain("port: 4444");
     }
+    expect(readText("e2e/interop/wdio.windows.conf.ts")).toContain(
+      "src-tauri/target/release/couple-desktop-pet.exe",
+    );
+    const envHelper = readText("e2e/interop/support/env.ts");
+    expect(envHelper).toContain('filtered[key] = ""');
+    expect(envHelper).toContain('key.startsWith("APPLE_")');
   });
 
   it("keeps interop E2E TypeScript in root typecheck coverage", () => {
@@ -69,5 +81,35 @@ describe("cross-platform interop E2E harness config", () => {
     expect(readText("e2e/interop/specs/cross-platform.e2e.ts")).not.toContain(
       "data-testid",
     );
+    const uiHelper = readText("e2e/interop/support/ui.ts");
+    expect(uiHelper).toContain('data-motion-id="motion-message-pair"');
+    expect(uiHelper).not.toContain('getAttribute("data-motion-id")) !== null');
+    expect(readText("e2e/interop/specs/cross-platform.e2e.ts")).toContain(
+      "windows-message-received",
+    );
+    expect(readText("e2e/interop/specs/cross-platform.e2e.ts")).toContain(
+      "macos-message-received",
+    );
+    expect(readText("e2e/interop/specs/cross-platform.e2e.ts")).toContain(
+      "windows-unpair-completed",
+    );
+    expect(readText("e2e/interop/specs/cross-platform.e2e.ts")).toContain(
+      "macos-unpair-completed",
+    );
+  });
+
+  it("records sanitized event logs and screenshots from both E2E specs", () => {
+    const crossPlatformSpec = readText("e2e/interop/specs/cross-platform.e2e.ts");
+    const restartSpec = readText("e2e/interop/specs/restart-unpaired.e2e.ts");
+    const evidenceHelper = readText("e2e/interop/support/evidence.ts");
+
+    expect(evidenceHelper).toContain("INTEROP_EVENT_LOG");
+    expect(evidenceHelper).toContain("INTEROP_SCREENSHOT_DIR");
+    expect(evidenceHelper).toContain("createInteropEventLogger");
+    expect(evidenceHelper).toContain("saveScreenshot");
+    expect(crossPlatformSpec).toContain("recordAndSend");
+    expect(crossPlatformSpec).toContain("captureEvidenceScreenshot");
+    expect(crossPlatformSpec).toContain("failure");
+    expect(restartSpec).toContain("recordAndSend");
   });
 });

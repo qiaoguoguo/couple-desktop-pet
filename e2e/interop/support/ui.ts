@@ -1,4 +1,5 @@
 import { $, browser, expect } from "@wdio/globals";
+import { isMessageAnimationMotion } from "../../../scripts/interop/cross-platform-smoke.mjs";
 
 export const testMessageText = "interop message text";
 
@@ -67,6 +68,27 @@ export async function waitForPeerStatus(text: string) {
   });
 }
 
+export async function waitForIncomingMessage(): Promise<void> {
+  const layer = await $('[aria-label="对方桌宠消息"]');
+  await expect(layer).toBeDisplayed();
+}
+
+export async function waitForMessageAnimation() {
+  await browser.waitUntil(
+    async () => {
+      const stage = await $('.pet-frame-stage[data-motion-id="motion-message-pair"]');
+      if (!(await stage.isExisting())) {
+        return false;
+      }
+      return isMessageAnimationMotion(await stage.getAttribute("data-motion-id"));
+    },
+    {
+      timeout: 30_000,
+      timeoutMsg: "message motion did not switch to motion-message-pair",
+    },
+  );
+}
+
 export async function sendMessage(text = testMessageText) {
   const surface = await $('section[aria-label="情侣桌宠 MVP"]');
   await surface.click();
@@ -81,21 +103,38 @@ export async function sendMessage(text = testMessageText) {
 }
 
 export async function acknowledgeIncomingMessage() {
+  await waitForIncomingMessage();
   const layer = await $('[aria-label="对方桌宠消息"]');
-  await expect(layer).toBeDisplayed();
-  const stage = await $("[data-motion-id]");
-  await browser.waitUntil(async () => (await stage.getAttribute("data-motion-id")) !== null, {
-    timeout: 30_000,
-  });
   await layer.moveTo();
   await expect(layer).not.toBeDisplayed();
 }
 
-export async function unpair() {
+export async function confirmUnpaired() {
+  await openSettings();
+  await browser.waitUntil(
+    async () => {
+      const createButton = await $('button=生成绑定码');
+      const unpairButton = await $('button=取消绑定');
+      return (await createButton.isDisplayed()) && !(await unpairButton.isExisting());
+    },
+    { timeout: 60_000, timeoutMsg: "local UI did not return to unpaired state" },
+  );
+  await closeSettings();
+}
+
+export async function unpairAndConfirm() {
   await openSettings();
   const button = await $('button=取消绑定');
   if (await button.isExisting()) {
     await button.click();
   }
+  await browser.waitUntil(
+    async () => {
+      const createButton = await $('button=生成绑定码');
+      const unpairButton = await $('button=取消绑定');
+      return (await createButton.isDisplayed()) && !(await unpairButton.isExisting());
+    },
+    { timeout: 60_000, timeoutMsg: "unpair did not clear local UI state" },
+  );
   await closeSettings();
 }

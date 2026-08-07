@@ -9,6 +9,7 @@ export interface EncryptedEvent {
   kind: "encrypted-event";
   role: string;
   event: string;
+  sessionId: string;
   nonce: string;
   ciphertext: string;
   tag: string;
@@ -26,16 +27,21 @@ export function deriveSharedKey(args: {
   privateKey: KeyObject;
   peerPublicKey: string;
   issueNumber: number;
+  sessionId?: string;
 }): Buffer;
 export function createEncryptedEvent<TPayload>(args: {
   role: string;
   event: string;
   payload: TPayload;
   key: Buffer;
+  sessionId?: string;
 }): EncryptedEvent;
 export function decryptEncryptedEvent<TPayload>(args: {
   encryptedEvent: EncryptedEvent;
   key: Buffer;
+  expectedEvent?: string;
+  expectedRole?: string;
+  sessionId?: string;
 }): DecryptedEvent<TPayload>;
 export function tamperEncryptedEventForTest(encryptedEvent: EncryptedEvent): EncryptedEvent;
 export function createGitHubRendezvousClient(args: {
@@ -46,7 +52,12 @@ export function createGitHubRendezvousClient(args: {
   apiBaseUrl?: string;
 }): {
   createIssue(args: { title: string }): Promise<{ number: number }>;
-  postHello(args: { issueNumber: number; role: string; publicKey: string }): Promise<unknown>;
+  postHello(args: {
+    issueNumber: number;
+    role: string;
+    publicKey: string;
+    sessionId?: string;
+  }): Promise<unknown>;
   postEncryptedEvent(args: {
     issueNumber: number;
     encryptedEvent: EncryptedEvent;
@@ -57,12 +68,14 @@ export function createGitHubRendezvousClient(args: {
   waitForPeerHello(args: {
     issueNumber: number;
     selfRole: string;
+    sessionId?: string;
     timeoutMs?: number;
     intervalMs?: number;
-  }): Promise<{ id: number; role: string; publicKey: string }>;
+  }): Promise<{ id: number; role: string; publicKey: string; sessionId: string }>;
   waitForEncryptedEvent(args: {
     issueNumber: number;
     selfRole: string;
+    sessionId?: string;
     timeoutMs?: number;
     intervalMs?: number;
     event?: string;

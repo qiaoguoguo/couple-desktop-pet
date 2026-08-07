@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const requiredInteropEvents = [
@@ -24,7 +23,8 @@ export const requiredInteropEvents = [
   "macos-bubble-acknowledged",
   "windows-message-animation-observed",
   "macos-message-animation-observed",
-  "unpair-completed",
+  "windows-unpair-completed",
+  "macos-unpair-completed",
   "windows-restart-shows-unpaired",
   "macos-restart-shows-unpaired",
 ];
@@ -73,11 +73,29 @@ export function filterChildAppEnv(env = process.env) {
       continue;
     }
     if (sensitiveEnvNames.includes(key) || key.startsWith("APPLE_")) {
+      filtered[key] = "";
       continue;
     }
     filtered[key] = value;
   }
   return filtered;
+}
+
+export function createInteropEventLogger({ logPath, role, platform, now = () => new Date() }) {
+  return {
+    record(event, details = {}) {
+      const entry = {
+        event,
+        role,
+        platform,
+        at: now().toISOString(),
+        details: redactInteropEvent(details),
+      };
+      mkdirSync(dirname(logPath), { recursive: true });
+      appendFileSync(logPath, `${JSON.stringify(entry)}\n`);
+      return entry;
+    },
+  };
 }
 
 export function readSanitizedJsonl(paths, { forbiddenPlaintext = [] } = {}) {
@@ -107,6 +125,10 @@ export function validateInteropEvents(events) {
   const missing = requiredInteropEvents.filter((event) => !present.has(event));
 
   return { ok: missing.length === 0, missing };
+}
+
+export function isMessageAnimationMotion(motionId) {
+  return motionId === "motion-message-pair";
 }
 
 export function redactInteropEvent(event) {

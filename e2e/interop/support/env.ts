@@ -37,6 +37,7 @@ export function filterChildAppEnv(
       continue;
     }
     if (sensitiveEnvNames.has(key) || key.startsWith("APPLE_")) {
+      filtered[key] = "";
       continue;
     }
     filtered[key] = value;
