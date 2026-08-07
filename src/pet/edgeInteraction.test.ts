@@ -7,16 +7,16 @@ import {
 
 const profile: EdgeInteractionProfile = {
   side: "left",
-  contactAnchor: { x: 0.725, y: 0.5 },
+  contactAnchor: { x: 0.275, y: 0.5 },
   enter: {
     frames: ["enter-1.png", "enter-2.png", "enter-3.png"],
     fps: 8,
     loop: false,
     durationMs: 375,
     frameAnchors: [
-      { x: 0.724, y: 0.5 },
-      { x: 0.725, y: 0.5 },
-      { x: 0.726, y: 0.5 },
+      { x: 0.274, y: 0.5 },
+      { x: 0.275, y: 0.5 },
+      { x: 0.276, y: 0.5 },
     ],
   },
   idle: {
@@ -25,8 +25,8 @@ const profile: EdgeInteractionProfile = {
     loop: true,
     durationMs: 5500,
     frameAnchors: [
-      { x: 0.725, y: 0.5 },
-      { x: 0.725, y: 0.501 },
+      { x: 0.275, y: 0.5 },
+      { x: 0.275, y: 0.501 },
     ],
   },
   react: {
@@ -35,8 +35,8 @@ const profile: EdgeInteractionProfile = {
     loop: false,
     durationMs: 250,
     frameAnchors: [
-      { x: 0.725, y: 0.5 },
-      { x: 0.725, y: 0.502 },
+      { x: 0.275, y: 0.5 },
+      { x: 0.275, y: 0.502 },
     ],
   },
 };
