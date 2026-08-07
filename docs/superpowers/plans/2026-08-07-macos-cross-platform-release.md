@@ -69,7 +69,7 @@
 - `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md` - final matrix template.
 - `docs/manual-verification/macos-cross-platform.md` - native manual and semi-automated validation checklist.
 - `package.json` - macOS, WDIO, interop, and final-gate scripts and dev dependencies.
-- `src-tauri/Cargo.toml` - optional E2E plugin dependencies and feature.
+- `src-tauri/Cargo.toml` - Tauri dependency features, including a macOS target-specific `macos-private-api` feature to match the macOS private API overlay without enabling that feature on Windows/Linux, plus optional E2E plugin dependencies and feature.
 
 ---
 
@@ -81,12 +81,14 @@
 - Create: `src-tauri/Info.plist`
 - Create: `src/desktop/tauriMacosConfig.test.ts`
 - Modify: `package.json`
+- Modify: `src-tauri/Cargo.toml`
 
 **Interfaces:**
 - Produces package script `tauri:build:mac` with command `tauri build --target universal-apple-darwin --bundles app,dmg`.
 - Produces package script `tauri:build:mac:qa` with command `tauri build --target universal-apple-darwin --bundles app,dmg --config src-tauri/tauri.macos.qa.conf.json`.
 - Produces `src-tauri/Info.plist`, automatically merged by Tauri into `Contents/Info.plist`.
 - Produces macOS general overlay with `app.macOSPrivateApi=true`, bundle target `["app","dmg"]`, icon `icons/icon.icns`, and `minimumSystemVersion="12.0"`.
+- The macOS target-specific `tauri` dependency in `src-tauri/Cargo.toml` includes feature `macos-private-api`; this keeps direct `cargo test`/`cargo check` on real macOS aligned with `app.macOSPrivateApi=true` without breaking Windows/Linux direct Cargo checks.
 
 - [ ] **Step 1: Write the failing config contract test**
 
@@ -141,6 +143,17 @@ describe("macOS Tauri release config", () => {
     expect(plist).toContain("<key>159.75.175.47</key>");
     expect(plist).toContain("<key>NSExceptionAllowsInsecureHTTPLoads</key>");
     expect(plist).not.toContain("<key>NSAllowsArbitraryLoads</key>");
+  });
+
+  it("keeps Cargo tauri features aligned with macOS private API config", () => {
+    const config = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+      "src-tauri/tauri.macos.conf.json",
+    );
+    const cargoToml = readFileSync(join(repoRoot, "src-tauri/Cargo.toml"), "utf8");
+
+    expect(config.app?.macOSPrivateApi).toBe(true);
+    expect(cargoToml).toMatch(/\[target\.'cfg\(target_os = "macos"\)'\.dependencies\][\s\S]*tauri\s*=\s*\{[^\n]*"macos-private-api"/);
+    expect(cargoToml).not.toMatch(/\[dependencies\][\s\S]*?tauri\s*=\s*\{[^\n]*"macos-private-api"/);
   });
 
   it("exposes separate formal and QA build scripts", () => {
@@ -227,6 +240,16 @@ Create `src-tauri/Info.plist`:
   </dict>
 </dict>
 </plist>
+```
+
+Modify `src-tauri/Cargo.toml` so direct macOS Cargo paths see the same private API requirement as the Tauri overlay, while non-macOS Cargo paths keep the default feature set:
+
+```toml
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "image-ico"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "image-ico", "macos-private-api"] }
 ```
 
 Modify `package.json`:

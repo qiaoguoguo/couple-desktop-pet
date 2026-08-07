@@ -56,6 +56,28 @@ function readPlistBoolean(plist: string, key: string): boolean | null {
   return match[1] === "true";
 }
 
+function extractTauriDependencyFeatures(
+  cargoToml: string,
+  section = "dependencies",
+): string[] {
+  const escapedSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sectionMatch = cargoToml.match(
+    new RegExp(`\\[${escapedSection}\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`),
+  );
+
+  expect(sectionMatch, `missing ${section} section`).toBeTruthy();
+
+  const match = sectionMatch?.[1].match(
+    /^tauri\s*=\s*\{[^\n]*features\s*=\s*\[([^\]]*)\][^\n]*\}/m,
+  );
+
+  expect(match, "missing tauri dependency features").toBeTruthy();
+
+  return Array.from(match?.[1].matchAll(/"([^"]+)"/g) ?? []).map(
+    (feature) => feature[1],
+  );
+}
+
 describe("macOS Tauri release config", () => {
   it("keeps platform overlay free of signing identity and plist injection keys", () => {
     const config = readJson<{
@@ -101,6 +123,26 @@ describe("macOS Tauri release config", () => {
     expect(plist).toContain("<key>NSExceptionAllowsInsecureHTTPLoads</key>");
     expect(plist).not.toContain("<key>NSAllowsArbitraryLoads</key>");
     expect(extractAtsExceptionDomains(plist)).toEqual(["159.75.175.47"]);
+  });
+
+  it("keeps Cargo tauri features aligned with macOS private API config", () => {
+    const config = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+      "src-tauri/tauri.macos.conf.json",
+    );
+    const cargoToml = readFileSync(join(repoRoot, "src-tauri/Cargo.toml"), "utf8");
+
+    expect(config.app?.macOSPrivateApi).toBe(true);
+    expect(extractTauriDependencyFeatures(cargoToml)).not.toContain(
+      "macos-private-api",
+    );
+    expect(
+      extractTauriDependencyFeatures(
+        cargoToml,
+        'target.\'cfg(target_os = "macos")\'.dependencies',
+      ),
+    ).toContain(
+      "macos-private-api",
+    );
   });
 
   it("exposes separate formal and QA build scripts", () => {
