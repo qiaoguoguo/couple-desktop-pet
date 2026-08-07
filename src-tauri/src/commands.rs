@@ -21,8 +21,8 @@ const SAFE_WINDOW_MARGIN_PX: i32 = 24;
 const AUTO_MOVE_STEP_X_PX: i32 = 96;
 const AUTO_MOVE_STEP_Y_PX: i32 = 48;
 const EDGE_PEEK_TRIGGER_PX: i32 = 24;
-const EDGE_PEEK_LEFT_CONTACT_X_RATIO: f64 = 0.275;
-const EDGE_PEEK_RIGHT_CONTACT_X_RATIO: f64 = 0.725;
+const EDGE_PEEK_LEFT_CONTACT_X_RATIO: f64 = 0.2203125;
+const EDGE_PEEK_RIGHT_CONTACT_X_RATIO: f64 = 0.778125;
 const EDGE_PEEK_TOP_CONTACT_Y_RATIO: f64 = 0.05;
 const EDGE_PEEK_BOTTOM_CONTACT_Y_RATIO: f64 = 0.367;
 
@@ -1098,7 +1098,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-88, 240),
+                position: PhysicalPosition::new(-71, 240),
             })
         );
     }
@@ -1124,7 +1124,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(968, 240),
+                position: PhysicalPosition::new(951, 240),
             })
         );
     }
@@ -1218,14 +1218,14 @@ mod tests {
             calculate_edge_peek_snap(work_area, left_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-110, 180),
+                position: PhysicalPosition::new(-88, 180),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, right_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(910, 180),
+                position: PhysicalPosition::new(889, 180),
             })
         );
         assert_eq!(
@@ -1302,14 +1302,14 @@ mod tests {
             calculate_edge_peek_snap(work_area, left_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-1528, 100),
+                position: PhysicalPosition::new(-1511, 100),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, right_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(-232, 100),
+                position: PhysicalPosition::new(-249, 100),
             })
         );
         assert_eq!(
@@ -1360,7 +1360,7 @@ mod tests {
             calculate_edge_peek_snap(work_area, left_closer),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-88, 24),
+                position: PhysicalPosition::new(-71, 24),
             })
         );
     }
@@ -1390,14 +1390,14 @@ mod tests {
             calculate_edge_peek_snap(work_area, top_left_tie),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-88, 24),
+                position: PhysicalPosition::new(-71, 24),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, top_right_tie),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(968, 24),
+                position: PhysicalPosition::new(951, 24),
             })
         );
     }
