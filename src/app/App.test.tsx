@@ -2127,6 +2127,49 @@ describe("App", () => {
     expect(screen.queryByAltText("桌宠边缘进入")).toBeNull();
   });
 
+  it("pauses auto movement and idle scheduling while edge interaction is active, then resumes after exit", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const raf = installAnimationFrameController();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    expect(screen.getByAltText("桌宠边缘进入")).toBeTruthy();
+    windowCommandsMock.moveWindowForAutoStep.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(windowCommandsMock.moveWindowForAutoStep).not.toHaveBeenCalled();
+    expect(
+      container.querySelector(".pet-frame-stage")?.getAttribute("data-action"),
+    ).toBe("idle-breathe");
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(windowCommandsMock.moveWindowForAutoStep).toHaveBeenCalledTimes(1);
+    raf.restore();
+  });
+
   it("disables and persists click-through before opening settings from the context menu", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
     render(<App />);

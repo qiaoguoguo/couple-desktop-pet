@@ -540,7 +540,7 @@ export function App() {
   useEffect(() => {
     const schedulerTimer = window.setInterval(() => {
       setPetState((currentState) => {
-        if (isRemoteMessageActive) {
+        if (isRemoteMessageActive || isEdgeInteractionActive) {
           return currentState;
         }
 
@@ -612,6 +612,7 @@ export function App() {
     return () => window.clearInterval(schedulerTimer);
   }, [
     activeMotion.durationMs,
+    isEdgeInteractionActive,
     isRemoteMessageActive,
     selectedPetPackage,
     setVisibleMotion,

@@ -73,6 +73,10 @@ pub fn reset_window_position(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn move_window_for_auto_step(app: AppHandle, movement_range: String) -> Result<(), String> {
+    if is_edge_peek_hidden() {
+        return Ok(());
+    }
+
     let window = main_window(&app)?;
     let monitor = window
         .current_monitor()
@@ -86,7 +90,8 @@ pub fn move_window_for_auto_step(app: AppHandle, movement_range: String) -> Resu
     let outer_size = window
         .outer_size()
         .map_err(|error| format!("failed to read main window size: {error}"))?;
-    let next_position = calculate_auto_move_position(
+    let Some(next_position) = calculate_auto_move_position_if_allowed(
+        false,
         MovementRangeMode::from_value(&movement_range),
         WorkArea {
             x: work_area.position.x,
@@ -100,7 +105,9 @@ pub fn move_window_for_auto_step(app: AppHandle, movement_range: String) -> Resu
             width: outer_size.width,
             height: outer_size.height,
         },
-    );
+    ) else {
+        return Ok(());
+    };
 
     window
         .set_position(next_position)
@@ -629,6 +636,19 @@ fn calculate_auto_move_position(
     }
 }
 
+fn calculate_auto_move_position_if_allowed(
+    edge_peek_hidden: bool,
+    mode: MovementRangeMode,
+    work_area: WorkArea,
+    window: WindowGeometry,
+) -> Option<PhysicalPosition<i32>> {
+    if edge_peek_hidden {
+        return None;
+    }
+
+    Some(calculate_auto_move_position(mode, work_area, window))
+}
+
 fn clamp_saved_window_position(
     saved_position: SavedWindowPosition,
     work_area: WorkArea,
@@ -1001,6 +1021,41 @@ mod tests {
         let position = calculate_auto_move_position(MovementRangeMode::Free, work_area, window);
 
         assert_eq!(position, PhysicalPosition::new(24, 24));
+    }
+
+    #[test]
+    fn auto_move_is_noop_while_edge_peek_is_hidden() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+        };
+        let window = TestWindowGeometry {
+            x: 100,
+            y: 120,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_auto_move_position_if_allowed(
+                true,
+                MovementRangeMode::Free,
+                work_area,
+                window,
+            ),
+            None,
+        );
+        assert_eq!(
+            calculate_auto_move_position_if_allowed(
+                false,
+                MovementRangeMode::Free,
+                work_area,
+                window,
+            ),
+            Some(PhysicalPosition::new(196, 168)),
+        );
     }
 
     #[test]
