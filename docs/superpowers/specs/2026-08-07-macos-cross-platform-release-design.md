@@ -44,7 +44,7 @@ Success requires:
 
 Required Tauri/macOS behavior:
 
-- Set `app.macOSPrivateApi=true` or the Tauri v2 equivalent needed for transparent windows on macOS.
+- Set `app.macOSPrivateApi=true` in the base Tauri config and include the matching base Cargo `tauri` feature `macos-private-api`. This keeps Tauri's direct `cargo test`/`cargo check` build-script allowlist validation aligned on macOS; platform-specific overlay or target-specific Cargo dependency entries are not sufficient for that validation path.
 - Set `LSUIElement=true` in the generated app Info.plist so the app is an agent app and has no Dock icon from startup. Keep the runtime activation policy `ActivationPolicy::Accessory` and `set_dock_visibility(false)` as defensive safeguards after Tauri setup begins.
 - Provide complete menu bar tray actions: show, hide, settings, and explicit quit.
 - Closing the main window hides it. Explicit quit exits. System shutdown and user logout are not blocked.
@@ -74,7 +74,7 @@ Required Tauri/macOS behavior:
 
 Required build design:
 
-- Use a macOS-specific Tauri overlay config or an equivalent isolated build configuration. Shared config stays common; macOS-only bundle fields live in the overlay.
+- Use a macOS-specific Tauri overlay config or an equivalent isolated build configuration. Shared config carries the Tauri private API allowlist flag required by Tauri's base manifest validation; macOS-only bundle fields live in the overlay.
 - Bundle targets: `app` and `dmg`.
 - Minimum system version: `12.0`.
 - App icon: `icon.icns` included in the macOS bundle.

@@ -23,6 +23,7 @@
 - Do not fix or change the paused behavior where `imported:q-girl-complete-v3` does not receive built-in edge animation.
 - Do not commit device secrets, pair secrets, Apple credentials, certificates, provisioning material, or message bodies.
 - Use `src-tauri/Info.plist` for Tauri 2 automatic Info.plist merging; do not use a config key for plist injection.
+- `src-tauri/tauri.conf.json` sets `app.macOSPrivateApi=true` in the base config because `tauri-build` validates this flag against the base `tauri` dependency during direct `cargo test`/`cargo check`.
 - `src-tauri/tauri.macos.conf.json` is the shared macOS overlay and contains no signing identity.
 - `src-tauri/tauri.macos.qa.conf.json` is QA-only and contains `signingIdentity: "-"`.
 - Formal Developer ID builds do not load the QA overlay and use `APPLE_SIGNING_IDENTITY`.
@@ -69,7 +70,7 @@
 - `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md` - final matrix template.
 - `docs/manual-verification/macos-cross-platform.md` - native manual and semi-automated validation checklist.
 - `package.json` - macOS, WDIO, interop, and final-gate scripts and dev dependencies.
-- `src-tauri/Cargo.toml` - Tauri dependency features, including a macOS target-specific `macos-private-api` feature to match the macOS private API overlay without enabling that feature on Windows/Linux, plus optional E2E plugin dependencies and feature.
+- `src-tauri/Cargo.toml` - Tauri dependency features, including base `macos-private-api` to match base `app.macOSPrivateApi=true` for direct Cargo validation, plus optional E2E plugin dependencies and feature.
 
 ---
 
@@ -81,14 +82,15 @@
 - Create: `src-tauri/Info.plist`
 - Create: `src/desktop/tauriMacosConfig.test.ts`
 - Modify: `package.json`
+- Modify: `src-tauri/tauri.conf.json`
 - Modify: `src-tauri/Cargo.toml`
 
 **Interfaces:**
 - Produces package script `tauri:build:mac` with command `tauri build --target universal-apple-darwin --bundles app,dmg`.
 - Produces package script `tauri:build:mac:qa` with command `tauri build --target universal-apple-darwin --bundles app,dmg --config src-tauri/tauri.macos.qa.conf.json`.
 - Produces `src-tauri/Info.plist`, automatically merged by Tauri into `Contents/Info.plist`.
-- Produces macOS general overlay with `app.macOSPrivateApi=true`, bundle target `["app","dmg"]`, icon `icons/icon.icns`, and `minimumSystemVersion="12.0"`.
-- The macOS target-specific `tauri` dependency in `src-tauri/Cargo.toml` includes feature `macos-private-api`; this keeps direct `cargo test`/`cargo check` on real macOS aligned with `app.macOSPrivateApi=true` without breaking Windows/Linux direct Cargo checks.
+- Produces base Tauri config with `app.macOSPrivateApi=true`; the macOS overlay only carries bundle target `["app","dmg"]`, icon `icons/icon.icns`, and `minimumSystemVersion="12.0"`.
+- The base `tauri` dependency in `src-tauri/Cargo.toml` includes feature `macos-private-api`; `tauri-build` 2.6.x checks the base dependency before target-specific dependencies, so this keeps direct `cargo test`/`cargo check` aligned with `app.macOSPrivateApi=true` on real macOS. The flag is inert for non-macOS runtime behavior.
 
 - [ ] **Step 1: Write the failing config contract test**
 
@@ -108,7 +110,6 @@ function readJson<T>(path: string): T {
 describe("macOS Tauri release config", () => {
   it("keeps platform overlay free of signing identity and plist injection keys", () => {
     const config = readJson<{
-      app?: { macOSPrivateApi?: boolean };
       bundle?: {
         targets?: string[];
         icon?: string[];
@@ -119,7 +120,6 @@ describe("macOS Tauri release config", () => {
       };
     }>("src-tauri/tauri.macos.conf.json");
 
-    expect(config.app?.macOSPrivateApi).toBe(true);
     expect(config.bundle?.targets).toEqual(["app", "dmg"]);
     expect(config.bundle?.icon).toContain("icons/icon.icns");
     expect(config.bundle?.macOS?.minimumSystemVersion).toBe("12.0");
@@ -146,14 +146,18 @@ describe("macOS Tauri release config", () => {
   });
 
   it("keeps Cargo tauri features aligned with macOS private API config", () => {
-    const config = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+    const baseConfig = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+      "src-tauri/tauri.conf.json",
+    );
+    const macosOverlay = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
       "src-tauri/tauri.macos.conf.json",
     );
     const cargoToml = readFileSync(join(repoRoot, "src-tauri/Cargo.toml"), "utf8");
 
-    expect(config.app?.macOSPrivateApi).toBe(true);
-    expect(cargoToml).toMatch(/\[target\.'cfg\(target_os = "macos"\)'\.dependencies\][\s\S]*tauri\s*=\s*\{[^\n]*"macos-private-api"/);
-    expect(cargoToml).not.toMatch(/\[dependencies\][\s\S]*?tauri\s*=\s*\{[^\n]*"macos-private-api"/);
+    expect(baseConfig.app?.macOSPrivateApi).toBe(true);
+    expect(macosOverlay.app?.macOSPrivateApi).toBeUndefined();
+    expect(cargoToml).toMatch(/\[dependencies\][\s\S]*?tauri\s*=\s*\{[^\n]*"macos-private-api"/);
+    expect(cargoToml).not.toMatch(/\[target\.'cfg\(target_os = "macos"\)'\.dependencies\][\s\S]*tauri\s*=/);
   });
 
   it("exposes separate formal and QA build scripts", () => {
@@ -182,9 +186,6 @@ Create `src-tauri/tauri.macos.conf.json`:
 ```json
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "app": {
-    "macOSPrivateApi": true
-  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
@@ -198,6 +199,16 @@ Create `src-tauri/tauri.macos.conf.json`:
         "windowSize": { "width": 660, "height": 400 }
       }
     }
+  }
+}
+```
+
+Modify base `src-tauri/tauri.conf.json`:
+
+```json
+{
+  "app": {
+    "macOSPrivateApi": true
   }
 }
 ```
@@ -242,13 +253,10 @@ Create `src-tauri/Info.plist`:
 </plist>
 ```
 
-Modify `src-tauri/Cargo.toml` so direct macOS Cargo paths see the same private API requirement as the Tauri overlay, while non-macOS Cargo paths keep the default feature set:
+Modify `src-tauri/Cargo.toml` so direct Cargo paths see the same private API requirement as base Tauri config. Do not add a target-specific duplicate `tauri` dependency because `tauri-build` validates the base dependency first:
 
 ```toml
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "image-ico"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "image-ico", "macos-private-api"] }
 ```
 
@@ -267,7 +275,7 @@ Modify `package.json`:
 
 Run on any host: `pnpm vitest run src/desktop/tauriMacosConfig.test.ts`
 
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 Run on macOS: `plutil -lint src-tauri/Info.plist`
 
@@ -292,7 +300,7 @@ Expected: both commands print `true`, proving the generated `.app/Contents/Info.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src-tauri/tauri.macos.conf.json src-tauri/tauri.macos.qa.conf.json src-tauri/Info.plist src/desktop/tauriMacosConfig.test.ts package.json
+git add src-tauri/tauri.conf.json src-tauri/tauri.macos.conf.json src-tauri/tauri.macos.qa.conf.json src-tauri/Info.plist src-tauri/Cargo.toml src/desktop/tauriMacosConfig.test.ts package.json
 git commit -m "feat: add macos tauri release config"
 ```
 

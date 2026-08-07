@@ -56,18 +56,26 @@ function readPlistBoolean(plist: string, key: string): boolean | null {
   return match[1] === "true";
 }
 
+function extractCargoSection(cargoToml: string, section: string): string | undefined {
+  const escapedSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return cargoToml.match(
+    new RegExp(`\\[${escapedSection}\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`),
+  )?.[1];
+}
+
+function hasTauriDependencyInSection(cargoToml: string, section: string): boolean {
+  return /^tauri\s*=/m.test(extractCargoSection(cargoToml, section) ?? "");
+}
+
 function extractTauriDependencyFeatures(
   cargoToml: string,
   section = "dependencies",
 ): string[] {
-  const escapedSection = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sectionMatch = cargoToml.match(
-    new RegExp(`\\[${escapedSection}\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`),
-  );
+  const sectionText = extractCargoSection(cargoToml, section);
 
-  expect(sectionMatch, `missing ${section} section`).toBeTruthy();
+  expect(sectionText, `missing ${section} section`).toBeTruthy();
 
-  const match = sectionMatch?.[1].match(
+  const match = sectionText?.match(
     /^tauri\s*=\s*\{[^\n]*features\s*=\s*\[([^\]]*)\][^\n]*\}/m,
   );
 
@@ -92,7 +100,7 @@ describe("macOS Tauri release config", () => {
       };
     }>("src-tauri/tauri.macos.conf.json");
 
-    expect(config.app?.macOSPrivateApi).toBe(true);
+    expect(config.app?.macOSPrivateApi).toBeUndefined();
     expect(config.bundle?.targets).toEqual(["app", "dmg"]);
     expect(config.bundle?.icon).toContain("icons/icon.icns");
     expect(config.bundle?.macOS?.minimumSystemVersion).toBe("12.0");
@@ -125,24 +133,26 @@ describe("macOS Tauri release config", () => {
     expect(extractAtsExceptionDomains(plist)).toEqual(["159.75.175.47"]);
   });
 
-  it("keeps Cargo tauri features aligned with macOS private API config", () => {
-    const config = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+  it("keeps tauri-build private API contract in the base manifest and dependency", () => {
+    const baseConfig = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
+      "src-tauri/tauri.conf.json",
+    );
+    const macosOverlay = readJson<{ app?: { macOSPrivateApi?: boolean } }>(
       "src-tauri/tauri.macos.conf.json",
     );
     const cargoToml = readFileSync(join(repoRoot, "src-tauri/Cargo.toml"), "utf8");
 
-    expect(config.app?.macOSPrivateApi).toBe(true);
-    expect(extractTauriDependencyFeatures(cargoToml)).not.toContain(
-      "macos-private-api",
-    );
+    // tauri-build 2.6.3 checks the base tauri dependency before any
+    // target-specific dependency, so direct Cargo checks need this aligned here.
+    expect(baseConfig.app?.macOSPrivateApi).toBe(true);
+    expect(macosOverlay.app?.macOSPrivateApi).toBeUndefined();
+    expect(extractTauriDependencyFeatures(cargoToml)).toContain("macos-private-api");
     expect(
-      extractTauriDependencyFeatures(
+      hasTauriDependencyInSection(
         cargoToml,
         'target.\'cfg(target_os = "macos")\'.dependencies',
       ),
-    ).toContain(
-      "macos-private-api",
-    );
+    ).toBe(false);
   });
 
   it("exposes separate formal and QA build scripts", () => {
