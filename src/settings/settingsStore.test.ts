@@ -4,6 +4,7 @@ import {
   loadSettings,
   mergeSettings,
   saveSettings,
+  type PetSettings,
   type SettingsPersistenceApi,
 } from "./settingsStore";
 
@@ -242,6 +243,97 @@ describe("mergeSettings", () => {
     expect(settings.sync.relayUrl).toBe("http://159.75.175.47:8787");
   });
 
+  it("migrates a bound RFC1918 LAN relay to the cloud and clears server scoped pair fields", () => {
+    const settings = mergeSettings({
+      sync: {
+        enabled: true,
+        relayUrl: "http://192.168.1.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_old_lan",
+        peerDeviceId: "dev_b",
+        activityStatus: "overtime",
+      },
+    });
+
+    expect(settings.sync).toEqual({
+      enabled: true,
+      relayUrl: "http://159.75.175.47:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: null,
+      peerDeviceId: null,
+      activityStatus: "overtime",
+    });
+  });
+
+  it.each([
+    "http://10.0.0.5:8787",
+    "http://172.16.0.1:8787",
+    "http://172.31.255.255:8787",
+    "http://0.0.0.0:8787",
+    "http://[::1]:8787",
+    "http://localhost:8787",
+  ])("clears pair fields when legacy private relay %s is migrated", (relayUrl) => {
+    const settings = mergeSettings({
+      sync: {
+        relayUrl,
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_old",
+        peerDeviceId: "dev_b",
+        activityStatus: "slacking",
+      } as never,
+    });
+
+    expect(settings.sync).toMatchObject({
+      relayUrl: "http://159.75.175.47:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: null,
+      peerDeviceId: null,
+      activityStatus: "slacking",
+    });
+  });
+
+  it("keeps custom public relay pair fields", () => {
+    const settings = mergeSettings({
+      sync: {
+        relayUrl: "https://relay.example.com",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_public",
+        peerDeviceId: "dev_b",
+        activityStatus: "dazing",
+      } as never,
+    });
+
+    expect(settings.sync).toMatchObject({
+      relayUrl: "https://relay.example.com",
+      pairId: "pair_public",
+      peerDeviceId: "dev_b",
+      activityStatus: "dazing",
+    });
+  });
+
+  it("does not treat private-looking domain names as legacy private relays", () => {
+    const settings = mergeSettings({
+      sync: {
+        relayUrl: "https://192.168.x.example.com",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_domain",
+        peerDeviceId: "dev_b",
+      } as never,
+    });
+
+    expect(settings.sync).toMatchObject({
+      relayUrl: "https://192.168.x.example.com",
+      pairId: "pair_domain",
+      peerDeviceId: "dev_b",
+    });
+  });
+
   it("sanitizes invalid sync settings", () => {
     expect(
       mergeSettings({
@@ -313,6 +405,39 @@ describe("settings persistence", () => {
         activityStatus: "slacking",
       },
     });
+  });
+
+  it("persists cloud relay migration after loading stale bound LAN settings", async () => {
+    let writtenSettings = null as PetSettings | null;
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => ({
+        sync: {
+          enabled: true,
+          relayUrl: "http://192.168.1.47:8787",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: "pair_old_lan",
+          peerDeviceId: "dev_b",
+          activityStatus: "overtime",
+        },
+      }),
+      writeSettings: async (settings) => {
+        writtenSettings = settings;
+      },
+    };
+
+    const loadedSettings = await loadSettings(api);
+
+    expect(loadedSettings.sync).toEqual({
+      enabled: true,
+      relayUrl: "http://159.75.175.47:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: null,
+      peerDeviceId: null,
+      activityStatus: "overtime",
+    });
+    expect(writtenSettings).toEqual(loadedSettings);
   });
 
   it("falls back to defaults when reading settings fails", async () => {

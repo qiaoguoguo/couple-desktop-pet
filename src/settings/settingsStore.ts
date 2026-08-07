@@ -4,10 +4,6 @@ import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
 
 const LEGACY_BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper";
-const LEGACY_LOCAL_RELAY_URLS = new Set([
-  "http://127.0.0.1:8787",
-  "http://localhost:8787",
-]);
 
 export type { MovementRange, PetSettings } from "./settingsTypes";
 
@@ -41,7 +37,13 @@ export async function loadSettings(
       return mergeSettings({});
     }
 
-    return mergeSettings(storedSettings as Partial<PetSettings>);
+    const settings = mergeSettings(storedSettings as Partial<PetSettings>);
+
+    if (shouldPersistRelayMigration(storedSettings)) {
+      await api.writeSettings(settings).catch(() => undefined);
+    }
+
+    return settings;
   } catch {
     return mergeSettings({});
   }
@@ -79,13 +81,17 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
     return { ...defaultSettings.sync };
   }
 
+  const relayUrl = normalizeRelayUrlForSettings(value.relayUrl);
+
   return {
     enabled: true,
-    relayUrl: normalizeRelayUrl(value.relayUrl),
+    relayUrl: relayUrl.value,
     deviceId: readNullableString(value.deviceId),
     deviceSecret: readNullableString(value.deviceSecret),
-    pairId: readNullableString(value.pairId),
-    peerDeviceId: readNullableString(value.peerDeviceId),
+    pairId: relayUrl.migrated ? null : readNullableString(value.pairId),
+    peerDeviceId: relayUrl.migrated
+      ? null
+      : readNullableString(value.peerDeviceId),
     activityStatus: isNullableActivityStatus(value.activityStatus)
       ? value.activityStatus
       : null,
@@ -93,10 +99,74 @@ function readSyncSettings(value: unknown): PetSettings["sync"] {
 }
 
 export function normalizeRelayUrl(value: unknown): string {
+  return normalizeRelayUrlForSettings(value).value;
+}
+
+function normalizeRelayUrlForSettings(value: unknown): {
+  value: string;
+  migrated: boolean;
+} {
   const relayUrl = readNonEmptyString(value, defaultSettings.sync.relayUrl);
-  return LEGACY_LOCAL_RELAY_URLS.has(relayUrl)
-    ? defaultSettings.sync.relayUrl
-    : relayUrl;
+
+  if (typeof value === "string" && value.trim() && isLegacyPrivateRelayUrl(relayUrl)) {
+    return {
+      value: defaultSettings.sync.relayUrl,
+      migrated: relayUrl !== defaultSettings.sync.relayUrl,
+    };
+  }
+
+  return { value: relayUrl, migrated: false };
+}
+
+function shouldPersistRelayMigration(settings: Record<string, unknown>): boolean {
+  const sync = settings.sync;
+
+  if (!isRecord(sync)) {
+    return false;
+  }
+
+  return normalizeRelayUrlForSettings(sync.relayUrl).migrated;
+}
+
+function isLegacyPrivateRelayUrl(relayUrl: string): boolean {
+  let url: URL;
+
+  try {
+    url = new URL(relayUrl);
+  } catch {
+    return false;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  return (
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    isPrivateOrLocalIpv4(hostname)
+  );
+}
+
+function isPrivateOrLocalIpv4(hostname: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+    return false;
+  }
+
+  const octets = hostname.split(".").map((octet) => Number(octet));
+
+  if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false;
+  }
+
+  const [first, second] = octets;
+
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
 }
 
 function readAppearanceSettings(value: unknown): PetSettings["appearance"] {

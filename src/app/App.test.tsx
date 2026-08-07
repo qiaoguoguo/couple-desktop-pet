@@ -1608,7 +1608,7 @@ describe("App", () => {
       },
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1683,7 +1683,7 @@ describe("App", () => {
       },
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1727,7 +1727,7 @@ describe("App", () => {
       },
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1766,7 +1766,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1889,7 +1889,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1933,7 +1933,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -1984,7 +1984,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2024,7 +2024,7 @@ describe("App", () => {
       clickThrough: true,
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2067,7 +2067,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2114,7 +2114,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2139,7 +2139,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2156,6 +2156,57 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "发送" })).toBeNull();
 
     expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("loads a stale LAN relay binding as unpaired cloud sync settings", async () => {
+    relayHttpClientMock.createPairCode.mockResolvedValueOnce({
+      ok: true,
+      code: "123456",
+      expiresAt: "2026-08-03T12:10:00.000Z",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://192.168.1.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_old_lan",
+        peerDeviceId: "dev_b",
+        activityStatus: "dazing",
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+
+    expect(screen.queryByText("已绑定")).toBeNull();
+    expect(screen.getByRole("button", { name: "生成绑定码" })).toBeTruthy();
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync: expect.objectContaining({
+          relayUrl: "http://159.75.175.47:8787",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: null,
+          peerDeviceId: null,
+          activityStatus: "dazing",
+        }),
+      }),
+    );
+
+    windowCommandsMock.writeSettings.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
+
+    await waitFor(() =>
+      expect(relayHttpClientMock.constructor).toHaveBeenCalledWith(
+        "http://159.75.175.47:8787",
+      ),
+    );
+    expect(relayHttpClientMock.createPairCode).toHaveBeenCalledWith({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "Q 版桌宠",
+    });
   });
 
   it("polls a generated pair code and stores the accepted pair for the creator", async () => {
@@ -2175,7 +2226,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: null,
@@ -2229,7 +2280,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2273,7 +2324,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2310,7 +2361,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: "secret_a",
         pairId: "pair_1",
@@ -2335,7 +2386,7 @@ describe("App", () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       sync: {
         enabled: true,
-        relayUrl: "http://127.0.0.1:8787",
+        relayUrl: "http://159.75.175.47:8787",
         deviceId: "dev_a",
         deviceSecret: null,
         pairId: "pair_1",
