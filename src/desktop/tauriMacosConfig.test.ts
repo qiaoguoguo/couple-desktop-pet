@@ -43,6 +43,19 @@ function extractAtsExceptionDomains(plist: string): string[] {
   return domains;
 }
 
+function readPlistBoolean(plist: string, key: string): boolean | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = plist.match(
+    new RegExp(`<key>${escapedKey}</key>\\s*<(true|false)\\s*/>`),
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return match[1] === "true";
+}
+
 describe("macOS Tauri release config", () => {
   it("keeps platform overlay free of signing identity and plist injection keys", () => {
     const config = readJson<{
@@ -80,7 +93,7 @@ describe("macOS Tauri release config", () => {
     const plist = readFileSync(join(repoRoot, "src-tauri/Info.plist"), "utf8");
 
     expect(config.bundle?.macOS?.minimumSystemVersion).toBe("12.0");
-    expect(plist).toContain("<key>LSUIElement</key>");
+    expect(readPlistBoolean(plist, "LSUIElement")).toBe(true);
     expect(plist).toContain("<key>NSAppTransportSecurity</key>");
     expect(plist).toContain("<key>NSAllowsArbitraryLoadsInWebContent</key>");
     expect(plist).toContain("<key>NSExceptionDomains</key>");

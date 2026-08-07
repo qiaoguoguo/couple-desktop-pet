@@ -1,12 +1,16 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createNativeEvidencePlan,
+  isCliEntrypoint,
   parseNativeEvidenceArgs,
   redactNativeEvidenceLog,
+  runNativeEvidenceCli,
   runNativeEvidenceCollection,
+  sanitizeNativeEvidenceEnv,
 } from "./native-evidence.mjs";
 
 let tempRoots = [];
@@ -25,6 +29,15 @@ afterEach(() => {
 });
 
 describe("macOS native evidence collector", () => {
+  it("recognizes CLI entrypoints in localized paths with spaces", () => {
+    const scriptPath = join(makeTempRoot(), "含 空格", "情侣桌宠", "native-evidence.mjs");
+
+    expect(isCliEntrypoint(pathToFileURL(scriptPath).href, scriptPath)).toBe(true);
+    expect(isCliEntrypoint(pathToFileURL(scriptPath).href, join(makeTempRoot(), "other.mjs"))).toBe(
+      false,
+    );
+  });
+
   it("parses required CLI arguments and rejects relative app paths", () => {
     expect(
       parseNativeEvidenceArgs([
@@ -74,6 +87,15 @@ describe("macOS native evidence collector", () => {
       args: [
         "-e",
         'tell application id "com.couple.desktoppet" to quit',
+      ],
+      shell: false,
+    });
+    expect(plan.steps.find((step) => step.name === "process-exists")).toEqual({
+      name: "process-exists",
+      command: "osascript",
+      args: [
+        "-e",
+        'tell application "System Events" to count (application processes whose bundle identifier is "com.couple.desktoppet")',
       ],
       shell: false,
     });
@@ -161,6 +183,124 @@ describe("macOS native evidence collector", () => {
     const processLog = readFileSync(join(outputDir, "process-exists.log"), "utf8");
     expect(processLog).toContain("APPLE_ID=<redacted>");
     expect(processLog).not.toContain("user@example.com");
+  });
+
+  it("waits for app launch with bounded bundle-id polling before capturing evidence", async () => {
+    const root = makeTempRoot();
+    const appPath = join(root, "情侣桌宠.app");
+    const outputDir = join(root, "evidence");
+    mkdirSync(join(appPath, "Contents"), { recursive: true });
+    writeFileSync(join(appPath, "Contents", "Info.plist"), "<plist/>");
+    const calls = [];
+
+    await runNativeEvidenceCollection({
+      mode: "formal",
+      appPath,
+      outputDir,
+      platform: "darwin",
+      processWaitAttempts: 3,
+      processWaitDelayMs: 0,
+      runner: async (step) => {
+        calls.push(step.name);
+        if (step.name === "process-exists") {
+          const attempt = calls.filter((name) => name === "process-exists").length;
+          return { code: 0, stdout: attempt < 2 ? "0" : "1", stderr: "" };
+        }
+        return { code: 0, stdout: "ok", stderr: "" };
+      },
+    });
+
+    expect(calls.filter((name) => name === "process-exists")).toHaveLength(2);
+    expect(calls).toContain("screencapture");
+  });
+
+  it("logs and fails when bundle-id polling times out", async () => {
+    const root = makeTempRoot();
+    const appPath = join(root, "情侣桌宠.app");
+    const outputDir = join(root, "evidence");
+    mkdirSync(join(appPath, "Contents"), { recursive: true });
+    writeFileSync(join(appPath, "Contents", "Info.plist"), "<plist/>");
+
+    await expect(
+      runNativeEvidenceCollection({
+        mode: "formal",
+        appPath,
+        outputDir,
+        platform: "darwin",
+        processWaitAttempts: 2,
+        processWaitDelayMs: 0,
+        runner: async () => ({ code: 0, stdout: "0", stderr: "" }),
+      }),
+    ).rejects.toThrow(/Timed out waiting/);
+
+    expect(readFileSync(join(outputDir, "process-exists.log"), "utf8")).toContain(
+      "Timed out waiting for com.couple.desktoppet",
+    );
+  });
+
+  it("removes Apple and GitHub secrets from child process environments", async () => {
+    expect(
+      sanitizeNativeEvidenceEnv({
+        PATH: "/bin",
+        APPLE_ID: "user@example.com",
+        GITHUB_TOKEN: "ghs_secret",
+        INTEROP_GITHUB_TOKEN: "ghs_secret",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc",
+        KEEP_ME: "yes",
+      }),
+    ).toEqual({ PATH: "/bin", KEEP_ME: "yes" });
+
+    const root = makeTempRoot();
+    const appPath = join(root, "情侣桌宠.app");
+    const outputDir = join(root, "evidence");
+    mkdirSync(join(appPath, "Contents"), { recursive: true });
+    writeFileSync(join(appPath, "Contents", "Info.plist"), "<plist/>");
+    const observedEnvs = [];
+
+    await runNativeEvidenceCollection({
+      mode: "formal",
+      appPath,
+      outputDir,
+      platform: "darwin",
+      env: { PATH: "/bin", APPLE_ID: "user@example.com", GITHUB_TOKEN: "ghs_secret" },
+      runner: async (_step, env) => {
+        observedEnvs.push(env);
+        return { code: 0, stdout: "1", stderr: "" };
+      },
+    });
+
+    expect(observedEnvs.length).toBeGreaterThan(0);
+    expect(observedEnvs.every((env) => env.APPLE_ID === undefined)).toBe(true);
+    expect(observedEnvs.every((env) => env.GITHUB_TOKEN === undefined)).toBe(true);
+  });
+
+  it("redacts terminal errors emitted by the CLI wrapper", async () => {
+    const root = makeTempRoot();
+    const appPath = join(root, "情侣桌宠.app");
+    const outputDir = join(root, "evidence");
+    mkdirSync(join(appPath, "Contents"), { recursive: true });
+    writeFileSync(join(appPath, "Contents", "Info.plist"), "<plist/>");
+    const stderr = { error: vi.fn() };
+
+    await expect(
+      runNativeEvidenceCli(
+        ["--mode", "formal", "--app", appPath, "--output", outputDir],
+        {
+          platform: "darwin",
+          env: { APPLE_PASSWORD: "secret-value" },
+          stderr,
+          runner: async (step) =>
+            step.name === "spctl-assess"
+              ? { code: 1, stdout: "", stderr: "APPLE_PASSWORD=secret-value" }
+              : { code: 0, stdout: "1", stderr: "" },
+        },
+      ),
+    ).resolves.toBe(1);
+
+    expect(stderr.error).toHaveBeenCalledWith(
+      expect.stringContaining("APPLE_PASSWORD=<redacted>"),
+    );
+    expect(stderr.error.mock.calls[0][0]).not.toContain("secret-value");
   });
 
   it("redacts Apple and GitHub tokens from logs", () => {
