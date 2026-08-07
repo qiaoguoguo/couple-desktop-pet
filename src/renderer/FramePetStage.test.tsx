@@ -11,7 +11,7 @@ import {
   type ResolvedPetMotion,
   type ResolvedPetPackage,
 } from "../assets/petPackageRegistry";
-import { builtInEdgePeekImages, isEdgePeekSide } from "../desktop/edgePeek";
+import type { EdgeInteractionProfile } from "../pet/edgeInteraction";
 import { FramePetStage } from "./FramePetStage";
 import framePetStageSource from "./FramePetStage.tsx?raw";
 
@@ -80,6 +80,36 @@ function createImportedMotions(
       },
     ]),
   );
+}
+
+function createEdgeProfile(side = "right" as const): EdgeInteractionProfile {
+  const contactAnchor = { x: 0.725, y: 0.5 };
+
+  return {
+    side,
+    contactAnchor,
+    enter: {
+      frames: ["/edge/right/enter/0001.png"],
+      fps: 8,
+      loop: false,
+      durationMs: 125,
+      frameAnchors: [contactAnchor],
+    },
+    idle: {
+      frames: ["/edge/right/idle/0001.png"],
+      fps: 4,
+      loop: true,
+      durationMs: 5500,
+      frameAnchors: [contactAnchor],
+    },
+    react: {
+      frames: ["/edge/right/react/0001.png"],
+      fps: 6,
+      loop: false,
+      durationMs: 167,
+      frameAnchors: [contactAnchor],
+    },
+  };
 }
 
 function renderStage(petPackage = builtInPackage) {
@@ -187,58 +217,34 @@ describe("FramePetStage DOM frame rendering", () => {
     ).toBe("asset://moon/motions/motion-001/0001.png");
   });
 
-  it.each(["left", "right", "top", "bottom"] as const)(
-    "renders %s edge peek image without applying the normal pet scale",
-    (side) => {
-      render(
-        <FramePetStage
-          action="idle-breathe"
-          motion={builtInPackage.motions["idle-breathe"]}
-          scale={0.7}
-          petPackage={builtInPackage}
-          edgePeekSide={side}
-          edgePeekImageUrl={`/edge-${side}.png`}
-          onPetClick={vi.fn()}
-          onDragStart={vi.fn()}
-          onDragEnd={vi.fn()}
-        />,
-      );
+  it("renders edge interaction sequences instead of normal animation frames", () => {
+    const onEdgePhaseComplete = vi.fn();
 
-      const stage = document.querySelector(".pet-frame-stage") as HTMLElement;
-
-      expect(stage.classList.contains("is-edge-peek")).toBe(true);
-      expect(stage.classList.contains(`is-edge-${side}`)).toBe(true);
-      expect(stage.dataset.edgePeekSide).toBe(side);
-      expect(stage.style.getPropertyValue("--pet-scale")).toBe("1");
-      expect(screen.getByAltText("桌宠半隐藏").getAttribute("src")).toBe(
-        `/edge-${side}.png`,
-      );
-      expect(screen.queryByRole("img", { name: "Q 版小人" })).toBeNull();
-    },
-  );
-
-  it("exposes a built-in edge peek image for every supported side", () => {
-    expect(isEdgePeekSide("bottom")).toBe(true);
-    expect(builtInEdgePeekImages.bottom).toContain("bottom");
-  });
-
-  it("renders the edge peek image instead of animation frames", () => {
     render(
       <FramePetStage
         action="idle-breathe"
         motion={builtInPackage.motions["idle-breathe"]}
-        scale={1}
+        scale={0.7}
         petPackage={builtInPackage}
-        edgePeekSide="left"
-        edgePeekImageUrl="/edge-left.png"
+        edgeInteraction={{
+          profile: createEdgeProfile(),
+          phase: "idle",
+        }}
+        onEdgePhaseComplete={onEdgePhaseComplete}
         onPetClick={vi.fn()}
         onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
       />,
     );
 
-    expect(screen.getByAltText("桌宠半隐藏").getAttribute("src")).toBe(
-      "/edge-left.png",
+    const stage = document.querySelector(".pet-frame-stage") as HTMLElement;
+
+    expect(stage.classList.contains("is-edge-interaction")).toBe(true);
+    expect(stage.classList.contains("is-edge-right")).toBe(true);
+    expect(stage.dataset.edgeInteractionSide).toBe("right");
+    expect(stage.style.getPropertyValue("--pet-scale")).toBe("0.7");
+    expect(screen.getByAltText("桌宠边缘待机").getAttribute("src")).toBe(
+      "/edge/right/idle/0001.png",
     );
     expect(screen.queryByRole("img", { name: "Q 版小人" })).toBeNull();
   });

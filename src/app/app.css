@@ -233,7 +233,9 @@ body {
   cursor: grabbing;
 }
 
-.pet-frame-stage.is-edge-peek {
+.pet-frame-stage.is-edge-interaction {
+  width: 320px;
+  height: 360px;
   cursor: pointer;
   transform: none;
 }
@@ -268,7 +270,16 @@ body {
   pointer-events: none;
 }
 
-.pet-edge-peek-image {
+.edge-pet-stage {
+  position: absolute;
+  inset: 0;
+  width: 320px;
+  height: 360px;
+  touch-action: none;
+  user-select: none;
+}
+
+.edge-pet-frame {
   position: absolute;
   inset: 0;
   display: block;

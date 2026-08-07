@@ -13,16 +13,26 @@ import type {
   ResolvedPetMotion,
   ResolvedPetPackage,
 } from "../assets/petPackageRegistry";
-import type { EdgePeekSide } from "../desktop/edgePeek";
+import type {
+  EdgeInteractionProfile,
+  EdgePhase,
+} from "../pet/edgeInteraction";
 import { getFrameIndex } from "./animationPlayer";
+import { EdgePetStage } from "./EdgePetStage";
 
 interface FramePetStageProps {
   action: PetActionName;
   motion: ResolvedPetMotion;
   scale: number;
   petPackage: ResolvedPetPackage;
-  edgePeekSide?: EdgePeekSide | null;
-  edgePeekImageUrl?: string | null;
+  edgeInteraction?: {
+    profile: EdgeInteractionProfile;
+    phase: EdgePhase;
+  } | null;
+  onEdgePhaseComplete?(): void;
+  onEdgePointerEnter?(): void;
+  onEdgePointerLeave?(): void;
+  onEdgeLoadError?(): void;
   onPetClick(): void;
   onDragStart(): void;
   onDragEnd(): void;
@@ -49,8 +59,11 @@ export function FramePetStage({
   motion,
   scale,
   petPackage,
-  edgePeekSide = null,
-  edgePeekImageUrl = null,
+  edgeInteraction = null,
+  onEdgePhaseComplete,
+  onEdgePointerEnter,
+  onEdgePointerLeave,
+  onEdgeLoadError,
   onPetClick,
   onDragStart,
   onDragEnd,
@@ -93,10 +106,10 @@ export function FramePetStage({
     setImageFailed(false);
   }, [currentFrameUrl]);
 
-  const isEdgePeek = Boolean(edgePeekSide && edgePeekImageUrl);
+  const isEdgeInteraction = Boolean(edgeInteraction);
   const showFallback = !currentFrameUrl || imageFailed;
   const stageStyle = {
-    "--pet-scale": String(isEdgePeek ? 1 : scale),
+    "--pet-scale": String(scale),
   } as CSSProperties;
   const finishDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -179,31 +192,37 @@ export function FramePetStage({
   return (
     <div
       className={
-        isEdgePeek
-          ? `pet-frame-stage is-edge-peek is-edge-${edgePeekSide}`
+        isEdgeInteraction
+          ? `pet-frame-stage is-edge-interaction is-edge-${edgeInteraction?.profile.side}`
           : "pet-frame-stage"
       }
       data-action={action}
       data-motion-id={motion.id}
       data-pet-package-id={petPackage.id}
-      data-edge-peek-side={edgePeekSide ?? undefined}
+      data-edge-interaction-side={edgeInteraction?.profile.side}
       style={stageStyle}
-      onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
-      onPointerLeave={finishDrag}
+      onClick={isEdgeInteraction ? undefined : handleClick}
+      onPointerDown={isEdgeInteraction ? undefined : handlePointerDown}
+      onPointerMove={isEdgeInteraction ? undefined : handlePointerMove}
+      onPointerUp={isEdgeInteraction ? undefined : finishDrag}
+      onPointerCancel={isEdgeInteraction ? undefined : finishDrag}
+      onPointerLeave={isEdgeInteraction ? undefined : finishDrag}
     >
-      {isEdgePeek ? (
-        <img
-          className="pet-edge-peek-image"
-          src={edgePeekImageUrl ?? ""}
-          alt="桌宠半隐藏"
-          draggable={false}
+      {edgeInteraction ? (
+        <EdgePetStage
+          profile={edgeInteraction.profile}
+          phase={edgeInteraction.phase}
+          scale={scale}
+          onPhaseComplete={onEdgePhaseComplete ?? (() => undefined)}
+          onPointerEnter={onEdgePointerEnter}
+          onPointerLeave={onEdgePointerLeave}
+          onPetClick={onPetClick}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onLoadError={onEdgeLoadError}
         />
       ) : null}
-      {!isEdgePeek && currentFrameUrl && !imageFailed ? (
+      {!isEdgeInteraction && currentFrameUrl && !imageFailed ? (
         <img
           className="pet-frame-image"
           src={currentFrameUrl}
@@ -212,7 +231,7 @@ export function FramePetStage({
           onError={() => setImageFailed(true)}
         />
       ) : null}
-      {!isEdgePeek && showFallback ? (
+      {!isEdgeInteraction && showFallback ? (
         <div className="pet-dev-card pet-fallback-card" aria-label={`${petPackage.name}开发占位`}>
           <div className="pet-dev-face">
             <span>Q</span>
