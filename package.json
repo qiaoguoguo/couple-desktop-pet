@@ -24,6 +24,8 @@
     "platform-web:build": "pnpm --dir platform-web build",
     "tauri:build:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
     "tauri:build:mac:qa": "tauri build --target universal-apple-darwin --bundles app,dmg --config src-tauri/tauri.macos.qa.conf.json",
+    "macos:qa-build": "node scripts/macos/qa-build.mjs --mode qa",
+    "macos:formal-build": "node scripts/macos/qa-build.mjs --mode formal",
     "tauri": "tauri"
   },
   "dependencies": {
