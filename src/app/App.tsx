@@ -91,6 +91,7 @@ import { ActivityStatusPicker } from "../status/ActivityStatusPicker";
 import { PeerStatusCard } from "../status/PeerStatusCard";
 import { resolvePeerStatusView } from "../status/peerStatusPresentation";
 import { useEdgeInteraction } from "../pet/useEdgeInteraction";
+import { preloadEdgeFrames } from "../pet/edgeFramePreloader";
 
 const bubbleMessage = "我在这里。";
 const placeholderInteractionMessage = "功能开发中，先陪你待一会儿。";
@@ -149,6 +150,7 @@ export function App() {
   const petSurfaceRef = useRef<HTMLElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const statusPickerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const edgeDragPointerHeldRef = useRef(false);
 
   const petPackages = useMemo(
     () =>
@@ -293,12 +295,23 @@ export function App() {
       motionFallbackUrl,
     ];
   }, [peerStatusPetPackage, peerStatusView?.variant]);
-  const edgeInteraction = useEdgeInteraction({
+  const {
+    state: edgeInteractionState,
+    renderState: edgeInteractionRenderState,
+    snapAfterDrag: snapEdgeAfterDrag,
+    requestExitThen: requestEdgeExitThen,
+    handlePhaseComplete: handleEdgePhaseComplete,
+    handlePointerEnter: handleEdgePointerEnter,
+    handleLoadError: handleEdgeLoadError,
+  } = useEdgeInteraction({
     packageId: selectedPetPackage.id,
     snapWindowToEdgeIfNeeded,
     restoreWindowFromEdgePeek,
+    resetWindowPosition,
+    preloadFrames: preloadEdgeFrames,
     getProfile: getBuiltInEdgeProfile,
   });
+  const isEdgeInteractionActive = Boolean(edgeInteractionState);
   const shouldShowPeerStatus =
     Boolean(peerStatusView) &&
     !settingsOpen &&
@@ -306,7 +319,7 @@ export function App() {
     !activeRemoteMessage &&
     !interactionMenuPosition &&
     !statusPickerOpen &&
-    !edgeInteraction.state;
+    !isEdgeInteractionActive;
 
   useEffect(() => {
     const defaultMotion = getDefaultPetMotion(selectedPetPackage);
@@ -1036,8 +1049,8 @@ export function App() {
       return;
     }
 
-    edgeInteraction.requestExitThen(openInteractionMenu);
-  }, [edgeInteraction, openInteractionMenu, settingsOpen]);
+    requestEdgeExitThen(openInteractionMenu);
+  }, [openInteractionMenu, requestEdgeExitThen, settingsOpen]);
 
   const openMessageComposerPanel = useCallback(() => {
     setInteractionMenuPosition(null);
@@ -1188,11 +1201,11 @@ export function App() {
         dismissStatusPicker();
       }
 
-      edgeInteraction.requestExitThen(openContextMenu);
+      requestEdgeExitThen(openContextMenu);
     },
     [
       dismissStatusPicker,
-      edgeInteraction,
+      requestEdgeExitThen,
       statusPickerOpen,
     ],
   );
@@ -1222,16 +1235,31 @@ export function App() {
       );
     };
 
-    edgeInteraction.requestExitThen(startDrag);
-  }, [edgeInteraction, setVisibleMotionForAction]);
+    if (edgeInteractionState) {
+      edgeDragPointerHeldRef.current = true;
+      requestEdgeExitThen(() => {
+        if (edgeDragPointerHeldRef.current) {
+          startDrag();
+        }
+      });
+      return;
+    }
+
+    startDrag();
+  }, [edgeInteractionState, requestEdgeExitThen, setVisibleMotionForAction]);
 
   const handleDragEnd = useCallback(() => {
+    if (edgeInteractionState) {
+      edgeDragPointerHeldRef.current = false;
+      return;
+    }
+
     setVisibleMotionForAction("idle-breathe");
     setPetState((currentState) =>
       transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
     );
-    void edgeInteraction.snapAfterDrag().catch(() => undefined);
-  }, [edgeInteraction, setVisibleMotionForAction]);
+    void snapEdgeAfterDrag().catch(() => undefined);
+  }, [edgeInteractionState, setVisibleMotionForAction, snapEdgeAfterDrag]);
 
   const handleResetPosition = useCallback(() => {
     runDesktopCommand(resetWindowPosition);
@@ -1277,24 +1305,25 @@ export function App() {
         tabIndex={-1}
         onContextMenu={handlePetContextMenu}
       >
-        <BubbleLayer message={bubble.message} visible={bubble.visible} />
+        <BubbleLayer
+          message={bubble.message}
+          visible={bubble.visible && !isEdgeInteractionActive}
+        />
         <FramePetStage
           action={petState.action}
           motion={activeMotion}
           scale={settings.scale}
           petPackage={selectedPetPackage}
-          edgeInteraction={edgeInteraction.renderState}
-          onEdgePhaseComplete={() => {
-            void edgeInteraction.handlePhaseComplete();
-          }}
-          onEdgePointerEnter={edgeInteraction.handlePointerEnter}
-          onEdgeLoadError={edgeInteraction.cancel}
+          edgeInteraction={edgeInteractionRenderState}
+          onEdgePhaseComplete={handleEdgePhaseComplete}
+          onEdgePointerEnter={handleEdgePointerEnter}
+          onEdgeLoadError={handleEdgeLoadError}
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         />
         <RemoteMessageLayer
-          message={activeRemoteMessage}
+          message={isEdgeInteractionActive ? null : activeRemoteMessage}
           onAcknowledge={handleRemoteMessageAcknowledge}
         />
         {shouldShowPeerStatus && peerStatusView ? (
@@ -1369,7 +1398,7 @@ export function App() {
         </div>
       </div>
 
-      {contextMenuPosition ? (
+      {contextMenuPosition && !isEdgeInteractionActive ? (
         <div
           ref={contextMenuRef}
           className="pet-context-menu"
@@ -1401,7 +1430,7 @@ export function App() {
       ) : null}
 
       <InteractionMenu
-        open={Boolean(interactionMenuPosition)}
+        open={Boolean(interactionMenuPosition) && !isEdgeInteractionActive}
         x={interactionMenuPosition?.x ?? 0}
         y={interactionMenuPosition?.y ?? 0}
         options={interactionOptions}

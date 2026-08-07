@@ -164,6 +164,44 @@ describe("EdgePetStage", () => {
     );
   });
 
+  it("keeps frame progress on parent rerender while calling the latest completion callback", () => {
+    const raf = installRafController();
+    const profile = createProfile();
+    const staleComplete = vi.fn();
+    const latestComplete = vi.fn();
+    const { rerender } = render(
+      <EdgePetStage
+        profile={profile}
+        phase="enter"
+        scale={1}
+        onPhaseComplete={staleComplete}
+      />,
+    );
+
+    raf.step(0);
+    raf.step(625);
+    expect(screen.getByAltText("桌宠边缘进入").getAttribute("src")).toContain(
+      "enter/0006.png",
+    );
+
+    rerender(
+      <EdgePetStage
+        profile={profile}
+        phase="enter"
+        scale={1}
+        onPhaseComplete={latestComplete}
+      />,
+    );
+
+    expect(screen.getByAltText("桌宠边缘进入").getAttribute("src")).toContain(
+      "enter/0006.png",
+    );
+    raf.step(750);
+
+    expect(staleComplete).not.toHaveBeenCalled();
+    expect(latestComplete).toHaveBeenCalledTimes(1);
+  });
+
   it("compensates frame anchors in 320 by 360 display coordinates", () => {
     const profile = createProfile();
     profile.contactAnchor = { x: 0.5, y: 0.5 };

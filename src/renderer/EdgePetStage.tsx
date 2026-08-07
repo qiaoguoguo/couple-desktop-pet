@@ -46,25 +46,6 @@ function formatPx(value: number): string {
   return `${normalized}px`;
 }
 
-export function preloadEdgeFrames(frames: readonly string[]): Promise<void> {
-  if (typeof Image === "undefined") {
-    return Promise.resolve();
-  }
-
-  return Promise.all(
-    frames.map(
-      (frame) =>
-        new Promise<void>((resolve, reject) => {
-          const image = new Image();
-
-          image.onload = () => resolve();
-          image.onerror = () => reject(new Error(`Failed to preload ${frame}`));
-          image.src = frame;
-        }),
-    ),
-  ).then(() => undefined);
-}
-
 export function EdgePetStage({
   profile,
   phase,
@@ -86,6 +67,11 @@ export function EdgePetStage({
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const draggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const onPhaseCompleteRef = useRef(onPhaseComplete);
+
+  useEffect(() => {
+    onPhaseCompleteRef.current = onPhaseComplete;
+  }, [onPhaseComplete]);
 
   useEffect(() => {
     let animationFrame = 0;
@@ -113,7 +99,7 @@ export function EdgePetStage({
       if (!motion.loop && elapsedMs >= motion.durationMs) {
         if (!completed) {
           completed = true;
-          onPhaseComplete();
+          onPhaseCompleteRef.current();
         }
 
         return;
@@ -128,7 +114,7 @@ export function EdgePetStage({
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [motion, onPhaseComplete]);
+  }, [motion]);
 
   const finishDrag = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {

@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { StrictMode, type ComponentType, type PropsWithChildren } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { EdgeInteractionProfile, EdgeSide } from "./edgeInteraction";
 import { useEdgeInteraction } from "./useEdgeInteraction";
@@ -40,39 +41,70 @@ function createProfile(side: EdgeSide): EdgeInteractionProfile {
   };
 }
 
+interface RenderEdgeHookOptions {
+  packageId?: string;
+  snapWindowToEdgeIfNeeded?: () => Promise<EdgeSide | null>;
+  restoreWindowFromEdgePeek?: (side: EdgeSide) => Promise<void>;
+  resetWindowPosition?: () => Promise<void>;
+  preloadFrames?: (frames: readonly string[]) => Promise<void>;
+  getProfile?: (
+    candidatePackageId: string,
+    side: EdgeSide,
+  ) => EdgeInteractionProfile | null;
+  wrapper?: ComponentType<PropsWithChildren>;
+}
+
 function renderEdgeHook({
   packageId = "builtin:q-girl",
   snapWindowToEdgeIfNeeded = vi.fn<() => Promise<EdgeSide | null>>().mockResolvedValue("left"),
   restoreWindowFromEdgePeek = vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  resetWindowPosition = vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  preloadFrames = vi.fn<(_: readonly string[]) => Promise<void>>().mockResolvedValue(undefined),
   getProfile = vi.fn((candidatePackageId: string, side: EdgeSide) =>
     candidatePackageId === "builtin:q-girl" ? createProfile(side) : null,
   ),
-} = {}) {
+  wrapper,
+}: RenderEdgeHookOptions = {}) {
   const view = renderHook(() =>
     useEdgeInteraction({
       packageId,
       snapWindowToEdgeIfNeeded,
       restoreWindowFromEdgePeek,
+      resetWindowPosition,
+      preloadFrames,
       getProfile,
     }),
+    { wrapper },
   );
 
   return {
     ...view,
     snapWindowToEdgeIfNeeded,
     restoreWindowFromEdgePeek,
+    resetWindowPosition,
+    preloadFrames,
     getProfile,
   };
 }
 
+function StrictModeWrapper({ children }: PropsWithChildren) {
+  return <StrictMode>{children}</StrictMode>;
+}
+
 describe("useEdgeInteraction", () => {
   it("enters idle, reacts on hover, and returns to idle after react completes", async () => {
-    const { result, snapWindowToEdgeIfNeeded } = renderEdgeHook();
+    const { result, snapWindowToEdgeIfNeeded, preloadFrames } = renderEdgeHook();
 
     await act(async () => {
       await result.current.snapAfterDrag();
     });
 
+    expect(preloadFrames).toHaveBeenNthCalledWith(1, [
+      "/left/enter/0001.png",
+      "/right/enter/0001.png",
+      "/top/enter/0001.png",
+      "/bottom/enter/0001.png",
+    ]);
     expect(snapWindowToEdgeIfNeeded).toHaveBeenCalledTimes(1);
     expect(result.current.state).toEqual({ side: "left", phase: "enter" });
     expect(result.current.renderState?.profile.side).toBe("left");
@@ -89,6 +121,29 @@ describe("useEdgeInteraction", () => {
       await result.current.handlePhaseComplete();
     });
     expect(result.current.state).toEqual({ side: "left", phase: "idle" });
+  });
+
+  it("works after React StrictMode mounts, cleans up, and mounts effects again", async () => {
+    const onExit = vi.fn();
+    const { result, restoreWindowFromEdgePeek } = renderEdgeHook({
+      wrapper: StrictModeWrapper,
+    });
+
+    await act(async () => {
+      await result.current.snapAfterDrag();
+    });
+    expect(result.current.state).toEqual({ side: "left", phase: "enter" });
+
+    act(() => {
+      result.current.requestExitThen(onExit);
+    });
+    await act(async () => {
+      await result.current.handlePhaseComplete();
+    });
+
+    expect(restoreWindowFromEdgePeek).toHaveBeenCalledWith("left");
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBeNull();
   });
 
   it("restores after exit completes before running the queued action once", async () => {
@@ -134,6 +189,89 @@ describe("useEdgeInteraction", () => {
     });
 
     expect(snapWindowToEdgeIfNeeded).not.toHaveBeenCalled();
+    expect(result.current.state).toBeNull();
+  });
+
+  it("does not call native snap when enter frame preload fails", async () => {
+    const snapWindowToEdgeIfNeeded = vi.fn<() => Promise<EdgeSide | null>>().mockResolvedValue("left");
+    const preloadFrames = vi
+      .fn<(_: readonly string[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("enter failed"));
+    const { result } = renderEdgeHook({
+      snapWindowToEdgeIfNeeded,
+      preloadFrames,
+    });
+
+    await act(async () => {
+      await result.current.snapAfterDrag();
+    });
+
+    expect(preloadFrames).toHaveBeenCalledTimes(1);
+    expect(snapWindowToEdgeIfNeeded).not.toHaveBeenCalled();
+    expect(result.current.state).toBeNull();
+  });
+
+  it("restores the native window when idle or react preload fails after snapping", async () => {
+    const preloadFrames = vi
+      .fn<(_: readonly string[]) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("idle failed"));
+    const { result, restoreWindowFromEdgePeek } = renderEdgeHook({
+      preloadFrames,
+    });
+
+    await act(async () => {
+      await result.current.snapAfterDrag();
+      await Promise.resolve();
+    });
+
+    expect(preloadFrames).toHaveBeenNthCalledWith(2, [
+      "/left/idle/0001.png",
+      "/left/react/0001.png",
+    ]);
+    expect(restoreWindowFromEdgePeek).toHaveBeenCalledWith("left");
+    expect(result.current.state).toBeNull();
+  });
+
+  it("recovers from edge image load failure once without running a pending user command", async () => {
+    const onExit = vi.fn();
+    const { result, restoreWindowFromEdgePeek } = renderEdgeHook();
+
+    await act(async () => {
+      await result.current.snapAfterDrag();
+    });
+    act(() => {
+      result.current.requestExitThen(onExit);
+    });
+
+    await act(async () => {
+      await result.current.handleLoadError();
+      await result.current.handleLoadError();
+    });
+
+    expect(restoreWindowFromEdgePeek).toHaveBeenCalledTimes(1);
+    expect(restoreWindowFromEdgePeek).toHaveBeenCalledWith("left");
+    expect(onExit).not.toHaveBeenCalled();
+    expect(result.current.state).toBeNull();
+  });
+
+  it("falls back to a safe reset when edge image load recovery cannot restore", async () => {
+    const { result, restoreWindowFromEdgePeek, resetWindowPosition } =
+      renderEdgeHook({
+        restoreWindowFromEdgePeek: vi.fn<() => Promise<void>>().mockRejectedValueOnce(
+          new Error("restore failed"),
+        ),
+      });
+
+    await act(async () => {
+      await result.current.snapAfterDrag();
+    });
+    await act(async () => {
+      await result.current.handleLoadError();
+    });
+
+    expect(restoreWindowFromEdgePeek).toHaveBeenCalledWith("left");
+    expect(resetWindowPosition).toHaveBeenCalledTimes(1);
     expect(result.current.state).toBeNull();
   });
 

@@ -11,6 +11,8 @@ interface UseEdgeInteractionOptions {
   packageId: string;
   snapWindowToEdgeIfNeeded(): Promise<EdgePeekSide | null>;
   restoreWindowFromEdgePeek(side: EdgePeekSide): Promise<void>;
+  resetWindowPosition(): Promise<void>;
+  preloadFrames(frames: readonly string[]): Promise<void>;
   getProfile(packageId: string, side: EdgeSide): EdgeInteractionProfile | null;
 }
 
@@ -20,6 +22,8 @@ export function useEdgeInteraction({
   packageId,
   snapWindowToEdgeIfNeeded,
   restoreWindowFromEdgePeek,
+  resetWindowPosition,
+  preloadFrames,
   getProfile,
 }: UseEdgeInteractionOptions) {
   const [state, setState] = useState<EdgeInteractionState>(null);
@@ -34,12 +38,41 @@ export function useEdgeInteraction({
   }, [state]);
 
   useEffect(
-    () => () => {
-      mountedRef.current = false;
-      pendingCallbackRef.current = null;
+    () => {
+      mountedRef.current = true;
+
+      return () => {
+        mountedRef.current = false;
+        pendingCallbackRef.current = null;
+      };
     },
     [],
   );
+
+  const recoverFromEdge = useCallback(async () => {
+    const currentState = stateRef.current;
+
+    if (!currentState || restoreInFlightRef.current) {
+      return;
+    }
+
+    restoreInFlightRef.current = true;
+    pendingCallbackRef.current = null;
+
+    try {
+      await restoreWindowFromEdgePeek(currentState.side);
+    } catch {
+      await resetWindowPosition().catch(() => undefined);
+    } finally {
+      if (mountedRef.current) {
+        stateRef.current = null;
+        setState(null);
+        setProfile(null);
+      }
+
+      restoreInFlightRef.current = false;
+    }
+  }, [resetWindowPosition, restoreWindowFromEdgePeek]);
 
   const cancel = useCallback(() => {
     pendingCallbackRef.current = null;
@@ -68,13 +101,24 @@ export function useEdgeInteraction({
       return;
     }
 
+    try {
+      await preloadFrames(
+        edgeSides.flatMap(
+          (side) => availableProfiles.get(side)?.enter.frames ?? [],
+        ),
+      );
+    } catch {
+      return;
+    }
+
     const side = await snapWindowToEdgeIfNeeded();
 
     if (!side || !mountedRef.current) {
       return;
     }
 
-    const nextProfile = availableProfiles.get(side) ?? getProfile(packageId, side);
+    const nextProfile =
+      availableProfiles.get(side) ?? getProfile(packageId, side);
 
     if (!nextProfile) {
       await restoreWindowFromEdgePeek(side).catch(() => undefined);
@@ -89,9 +133,20 @@ export function useEdgeInteraction({
     stateRef.current = nextState;
     setProfile(nextProfile);
     setState(nextState);
+
+    void preloadFrames([
+      ...nextProfile.idle.frames,
+      ...nextProfile.react.frames,
+    ]).catch(() => {
+      if (stateRef.current?.side === side) {
+        void recoverFromEdge();
+      }
+    });
   }, [
     getProfile,
     packageId,
+    preloadFrames,
+    recoverFromEdge,
     restoreWindowFromEdgePeek,
     snapWindowToEdgeIfNeeded,
   ]);
@@ -163,6 +218,8 @@ export function useEdgeInteraction({
       setProfile(null);
       callback?.();
     } catch {
+      await resetWindowPosition().catch(() => undefined);
+
       if (mountedRef.current) {
         stateRef.current = null;
         setState(null);
@@ -171,7 +228,7 @@ export function useEdgeInteraction({
     } finally {
       restoreInFlightRef.current = false;
     }
-  }, [restoreWindowFromEdgePeek]);
+  }, [resetWindowPosition, restoreWindowFromEdgePeek]);
 
   const handlePointerEnter = useCallback(() => {
     const currentState = stateRef.current;
@@ -201,6 +258,7 @@ export function useEdgeInteraction({
     requestExitThen,
     handlePhaseComplete,
     handlePointerEnter,
+    handleLoadError: recoverFromEdge,
     cancel,
   };
 }

@@ -119,6 +119,9 @@ const petPackageCommandsMock = vi.hoisted(() => ({
 }));
 
 const dialogOpenMock = vi.hoisted(() => vi.fn());
+const edgeFramePreloaderMock = vi.hoisted(() => ({
+  preloadEdgeFrames: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
@@ -150,6 +153,10 @@ vi.mock("../sync/relayHttpClient", () => ({
 
 vi.mock("../assets/petPackageCommands", () => ({
   createPetPackageCommands: vi.fn(() => petPackageCommandsMock),
+}));
+
+vi.mock("../pet/edgeFramePreloader", () => ({
+  preloadEdgeFrames: edgeFramePreloaderMock.preloadEdgeFrames,
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -473,6 +480,8 @@ describe("App", () => {
     petPackageCommandsMock.convertFileSrc.mockImplementation(
       (path: string) => `asset://${path}`,
     );
+    edgeFramePreloaderMock.preloadEdgeFrames.mockReset();
+    edgeFramePreloaderMock.preloadEdgeFrames.mockResolvedValue(undefined);
     dialogOpenMock.mockReset();
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -1926,6 +1935,177 @@ describe("App", () => {
     );
     expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
     raf.restore();
+  });
+
+  it("does not start a delayed native drag when edge drag is released before exit completes", async () => {
+    const raf = installAnimationFrameController();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    windowCommandsMock.startWindowDrag.mockClear();
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+        "left",
+      ),
+    );
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+    raf.restore();
+  });
+
+  it("does not start a delayed native drag when the edge drag pointer leaves before exit completes", async () => {
+    const raf = installAnimationFrameController();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    windowCommandsMock.startWindowDrag.mockClear();
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.pointerLeave(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+        "left",
+      ),
+    );
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+    raf.restore();
+  });
+
+  it("opens the context menu only after right-click exits edge interaction", async () => {
+    const raf = installAnimationFrameController();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+
+    fireEvent.contextMenu(screen.getByRole("region", { name: "情侣桌宠 MVP" }), {
+      clientX: 48,
+      clientY: 52,
+    });
+
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    const settingsItem = await screen.findByRole("menuitem", { name: "设置" });
+    expect(settingsItem.closest('[role="menu"]')?.getAttribute("aria-label")).toBe(
+      "桌宠菜单",
+    );
+    raf.restore();
+  });
+
+  it("hides bubble and remote message layers while edge interaction is active and restores them after a canceled edge drag", async () => {
+    const raf = installAnimationFrameController();
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+    await flushAppEffects();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_edge",
+        fromDeviceId: "dev_b",
+        text: "想你啦",
+        at: "2026-08-03T12:00:00.000Z",
+      });
+    });
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+
+    await dragPetPastThresholdAndRelease(container);
+
+    expect(screen.getByAltText("桌宠边缘进入")).toBeTruthy();
+    expect(document.querySelector(".bubble-layer")).toBeNull();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    raf.step(0);
+    raf.step(750);
+    await flushAppEffects();
+
+    await waitFor(() =>
+      expect(document.querySelector(".bubble-layer")?.textContent).toBe("对"),
+    );
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    raf.restore();
+  });
+
+  it("restores from edge image load failure once without running a queued command", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    windowCommandsMock.startWindowDrag.mockClear();
+
+    const edgeStage = screen
+      .getByAltText("桌宠边缘进入")
+      .closest(".edge-pet-stage");
+
+    if (!edgeStage) {
+      throw new Error("edge pet stage missing");
+    }
+
+    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
+    const edgeImage = screen.getByAltText("桌宠边缘退出");
+    fireEvent.error(edgeImage);
+    fireEvent.error(edgeImage);
+    await flushAppEffects();
+
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledTimes(1);
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+      "left",
+    );
+    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+    expect(screen.queryByAltText("桌宠边缘退出")).toBeNull();
   });
 
   it("does not snap imported packages that have no edge interaction profile", async () => {
