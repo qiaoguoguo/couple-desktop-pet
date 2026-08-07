@@ -27,7 +27,7 @@
 - `src-tauri/tauri.macos.qa.conf.json` is QA-only and contains `signingIdentity: "-"`.
 - Formal Developer ID builds do not load the QA overlay and use `APPLE_SIGNING_IDENTITY`.
 - Evidence directory: `.superpowers/sdd/2026-08-07-macos-cross-platform/`.
-- The current repository has no git remote and no connected GitHub connector; adding CI files is code-side preparation, while executing CI requires repository infrastructure.
+- GitHub Actions workflows are committed as executable CI entry points; completing release evidence still requires running them on real GitHub-hosted Windows and macOS runners with the required Apple Developer secrets configured.
 - Without Apple Developer credentials, an ad-hoc QA DMG may be produced, but the formal release remains incomplete.
 
 ---
@@ -64,6 +64,7 @@
 - `src-tauri/tauri.e2e.conf.json` - E2E-only Tauri config with `withGlobalTauri` and an inline E2E capability.
 - `.github/workflows/macos-qa.yml` - GitHub-hosted macOS QA workflow.
 - `.github/workflows/macos-release.yml` - Developer ID signing, notarization, stapling, and assessment workflow.
+- `.github/workflows/cross-platform-interop.yml` - paired Windows and macOS runner interoperability workflow.
 - `.superpowers/sdd/2026-08-07-macos-cross-platform/README.md` - evidence manifest.
 - `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md` - final matrix template.
 - `docs/manual-verification/macos-cross-platform.md` - native manual and semi-automated validation checklist.
@@ -1530,16 +1531,30 @@ git commit -m "test: add encrypted cross platform interop harness"
 
 ---
 
-### Task 9: GitHub Actions macOS QA And Formal Release Workflows
+### Task 9: GitHub Actions macOS QA, Formal Release, And Cross-Platform Interop Workflows
 
 **Files:**
 - Create: `.github/workflows/macos-qa.yml`
 - Create: `.github/workflows/macos-release.yml`
-- Create: `scripts/macos/workflow-contract.test.ts`
+- Create: `.github/workflows/cross-platform-interop.yml`
+- Create: `scripts/macos/workflow-contract.test.mjs`
+- Modify: `package.json`
 
 **Interfaces:**
-- QA workflow uses GitHub-hosted `macos-15` runner and produces an ad-hoc Universal artifact.
-- Formal workflow uses GitHub-hosted `macos-15` runner and Tauri-recognized Apple signing/notarization environment variables.
+- All workflows use only `workflow_dispatch`.
+- `package.json` declares `packageManager: "pnpm@11.16.0"`.
+- All workflow jobs use Node 22 through a SHA-pinned `actions/setup-node` step.
+- Third-party actions are pinned exactly:
+  - `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`
+  - `actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0`
+  - `pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10`
+  - `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1`
+  - `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1`
+  - `dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable`
+- Every `actions/checkout` step sets `persist-credentials: false`.
+- QA workflow uses GitHub-hosted `macos-15`, installs `x86_64-apple-darwin,aarch64-apple-darwin`, runs full regression plus production WDIO negative scan, builds and verifies an ad-hoc Universal `.app/.dmg`, builds E2E in an isolated `CARGO_TARGET_DIR`, runs macOS embedded E2E, collects native evidence, and uploads evidence on failure.
+- Cross-platform workflow creates a temporary encrypted GitHub Issue rendezvous, runs Windows `windows-2025` and macOS `macos-15` jobs concurrently, uses `INTEROP_SESSION_ID=main` for the main suite and `restart` for restart, validates both JSONL logs, and always cleans up the temporary Issue.
+- Formal workflow uses GitHub-hosted `macos-15`, preflights Apple Developer ID secrets, runs full regression, runs `pnpm macos:formal-build`, records post-build signing/notarization/Gatekeeper evidence, uploads evidence on failure, and uploads the notarized DMG on success.
 - Formal secrets:
   - `APPLE_CERTIFICATE`
   - `APPLE_CERTIFICATE_PASSWORD`
@@ -1548,58 +1563,63 @@ git commit -m "test: add encrypted cross platform interop harness"
   - `APPLE_ID`
   - `APPLE_PASSWORD`
   - `APPLE_TEAM_ID`
-- Tauri performs Developer ID signing and notarization when formal environment variables are present.
+- Tauri performs Developer ID signing and notarization only when these formal environment variables are present.
 
 - [ ] **Step 1: Write RED workflow contract test**
 
-Create `scripts/macos/workflow-contract.test.ts`:
+Create `scripts/macos/workflow-contract.test.mjs`:
 
-```ts
+```js
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 
-describe("macOS workflows", () => {
-  it("uses GitHub-hosted real Mac runners", () => {
-    const qa = readFileSync(".github/workflows/macos-qa.yml", "utf8");
-    const release = readFileSync(".github/workflows/macos-release.yml", "utf8");
+const repoRoot = process.cwd();
 
-    expect(qa).toContain("runs-on: macos-15");
-    expect(release).toContain("runs-on: macos-15");
-  });
+function readWorkflow(path) {
+  const source = readFileSync(join(repoRoot, path), "utf8");
+  return { source, workflow: parse(source) };
+}
 
-  it("uses Tauri official Apple signing variables", () => {
-    const release = readFileSync(".github/workflows/macos-release.yml", "utf8");
+describe("macOS and cross-platform GitHub Actions workflows", () => {
+  it("uses workflow_dispatch only and SHA-pinned actions", () => {
+    const qa = readWorkflow(".github/workflows/macos-qa.yml");
+    const release = readWorkflow(".github/workflows/macos-release.yml");
+    const interop = readWorkflow(".github/workflows/cross-platform-interop.yml");
 
-    for (const secret of [
-      "APPLE_CERTIFICATE",
-      "APPLE_CERTIFICATE_PASSWORD",
-      "KEYCHAIN_PASSWORD",
-      "APPLE_SIGNING_IDENTITY",
-      "APPLE_ID",
-      "APPLE_PASSWORD",
-      "APPLE_TEAM_ID",
-    ]) {
-      expect(release).toContain(`secrets.${secret}`);
+    for (const item of [qa, release, interop]) {
+      expect(Object.keys(item.workflow.on)).toEqual(["workflow_dispatch"]);
+      expect(item.source).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
     }
   });
 
-  it("runs explicit post-build release assessment", () => {
-    const release = readFileSync(".github/workflows/macos-release.yml", "utf8");
+  it("keeps Windows and macOS interop jobs concurrent and cleanup unconditional", () => {
+    const { workflow } = readWorkflow(".github/workflows/cross-platform-interop.yml");
 
-    expect(release).toContain("pnpm macos:formal-build");
-    expect(release).toContain("xcrun stapler validate");
-    expect(release).toContain("spctl --assess");
+    expect(workflow.jobs.windows.needs).toBe("coordinator");
+    expect(workflow.jobs.macos.needs).toBe("coordinator");
+    expect(workflow.jobs.cleanup.if).toBe("always()");
+    expect(workflow.jobs.cleanup.needs).toEqual(["coordinator", "windows", "macos", "validator"]);
   });
 });
 ```
 
 - [ ] **Step 2: Run RED**
 
-Run: `pnpm vitest run scripts/macos/workflow-contract.test.ts`
+Run: `pnpm vitest run scripts/macos/workflow-contract.test.mjs`
 
 Expected: FAIL because workflow files do not exist.
 
-- [ ] **Step 3: Add QA workflow**
+- [ ] **Step 3: Add package manager and QA workflow**
+
+Modify `package.json`:
+
+```json
+{
+  "packageManager": "pnpm@11.16.0"
+}
+```
 
 Create `.github/workflows/macos-qa.yml`:
 
@@ -1609,17 +1629,23 @@ name: macOS QA
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  universal-adhoc:
+  macos-qa:
     runs-on: macos-15
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
       - run: pnpm install --frozen-lockfile
@@ -1627,16 +1653,138 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+      - run: node scripts/macos/final-release-gate.mjs --scan-production
       - run: pnpm macos:qa-build
-      - uses: actions/upload-artifact@v4
+      - run: CARGO_TARGET_DIR="${{ runner.temp }}/macos-e2e-target" pnpm e2e:macos:build
+      - run: pnpm e2e:macos
+      - run: pnpm macos:native-evidence -- --mode qa --app "$APP_PATH" --output "$PWD/.superpowers/sdd/2026-08-07-macos-cross-platform/native"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
-          name: couple-pet-macos-adhoc
+          name: macos-qa-evidence
+          if-no-files-found: warn
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             .superpowers/sdd/2026-08-07-macos-cross-platform/build/**
+            .superpowers/sdd/2026-08-07-macos-cross-platform/macos/**
+            .superpowers/sdd/2026-08-07-macos-cross-platform/native/**
 ```
 
-- [ ] **Step 4: Add formal release workflow**
+- [ ] **Step 4: Add cross-platform interop workflow**
+
+Create `.github/workflows/cross-platform-interop.yml`:
+
+```yaml
+name: Windows macOS Interop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  coordinator:
+    runs-on: ubuntu-24.04
+    outputs:
+      issue_number: ${{ steps.create.outputs.issue_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: create
+        env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm interop:rendezvous:create -- --repo "${{ github.repository }}" --title "couple-pet interop"
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    needs: coordinator
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm e2e:windows:build
+      - env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+          INTEROP_SESSION_ID: main
+          INTEROP_APP_DATA_ROOT: ${{ runner.temp }}/couple-pet-interop-windows
+        run: pnpm e2e:interop:windows
+      - env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+          INTEROP_SESSION_ID: restart
+          INTEROP_APP_DATA_ROOT: ${{ runner.temp }}/couple-pet-interop-windows
+        run: pnpm e2e:interop:windows:restart
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 60
+    needs: coordinator
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm e2e:macos:build
+      - env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+          INTEROP_SESSION_ID: main
+          INTEROP_APP_DATA_ROOT: ${{ runner.temp }}/couple-pet-interop-macos
+        run: pnpm e2e:interop:macos
+      - env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+          INTEROP_SESSION_ID: restart
+          INTEROP_APP_DATA_ROOT: ${{ runner.temp }}/couple-pet-interop-macos
+        run: pnpm e2e:interop:macos:restart
+
+  validator:
+    if: always()
+    needs: [windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - run: pnpm interop:validate -- --log windows/events.jsonl --log macos/events.jsonl
+
+  cleanup:
+    if: always()
+    needs: [coordinator, windows, macos, validator]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          INTEROP_GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm interop:rendezvous:cleanup -- --repo "${{ github.repository }}" --issue "${{ needs.coordinator.outputs.issue_number }}"
+```
+
+- [ ] **Step 5: Add formal release workflow**
 
 Create `.github/workflows/macos-release.yml`:
 
@@ -1646,9 +1794,13 @@ name: macOS Release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  developer-id-notarized:
+  developer-id-release:
     runs-on: macos-15
+    timeout-minutes: 90
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -1658,51 +1810,75 @@ jobs:
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required Apple signing secret: $name"
+              exit 1
+            fi
+          done
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
       - run: pnpm macos:formal-build
       - name: Validate stapling and Gatekeeper assessment
         run: |
           APP_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
           DMG_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
           xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/notarytool.log
-          spctl --assess --type execute --verbose=4 "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/spctl-before-staple.log
-          xcrun stapler validate "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/stapler-validate.log
-          spctl --assess --type execute --verbose=4 "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/spctl-after-staple.log
+          xcrun stapler validate "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/stapler-validate-app.log
+          xcrun stapler validate "$DMG_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/stapler-validate-dmg.log
+          spctl --assess --type execute --verbose=4 "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/spctl-assess-app.log
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/spctl-assess-dmg.log
           hdiutil verify "$DMG_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/hdiutil-verify-final.log
-      - uses: actions/upload-artifact@v4
+          shasum -a 256 "$DMG_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/sha256-dmg-final.log
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
-          name: couple-pet-macos-notarized
+          name: macos-release-evidence
+          if-no-files-found: warn
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             .superpowers/sdd/2026-08-07-macos-cross-platform/build/**
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: success()
+        with:
+          name: couple-pet-macos-notarized-dmg
+          if-no-files-found: warn
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 ```
 
-The current repository still needs a remote and GitHub repository configuration before these workflows can run.
+- [ ] **Step 6: Run GREEN and YAML parse**
 
-- [ ] **Step 5: Run GREEN**
-
-Run: `pnpm vitest run scripts/macos/workflow-contract.test.ts`
-
-Expected: PASS, 3 tests.
-
-- [ ] **Step 6: Commit**
+Run:
 
 ```bash
-git add .github/workflows/macos-qa.yml .github/workflows/macos-release.yml scripts/macos/workflow-contract.test.ts
-git commit -m "ci: add macos release workflows"
+pnpm vitest run scripts/macos/workflow-contract.test.mjs
+node -e "import {readFileSync} from 'node:fs'; import {parse} from 'yaml'; for (const f of ['.github/workflows/macos-qa.yml','.github/workflows/macos-release.yml','.github/workflows/cross-platform-interop.yml']) parse(readFileSync(f,'utf8'));"
+```
+
+Expected: PASS, all three workflow YAML files parse.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add .github/workflows/macos-qa.yml .github/workflows/macos-release.yml .github/workflows/cross-platform-interop.yml scripts/macos/workflow-contract.test.mjs package.json docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md
+git commit -m "ci: add macos and cross platform workflows"
 ```
 
 ---
