@@ -1552,9 +1552,11 @@ git commit -m "test: add encrypted cross platform interop harness"
   - `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1`
   - `dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable`
 - Every `actions/checkout` step sets `persist-credentials: false`.
+- macOS runner shell steps use quoted glob selection plus `test`/`break` for `.app`, executable, and `.dmg` paths; workflow examples must not use GNU-only `find` depth or early-exit options.
+- Every `actions/upload-artifact` step whose `path` includes `.superpowers/**` sets `include-hidden-files: true`; the separate non-hidden notarized DMG artifact does not need this setting.
 - QA workflow uses GitHub-hosted `macos-15`, installs `x86_64-apple-darwin,aarch64-apple-darwin`, runs full regression plus production WDIO negative scan, builds and verifies an ad-hoc Universal `.app/.dmg`, builds E2E in an isolated `CARGO_TARGET_DIR`, runs macOS embedded E2E, collects native evidence, and uploads evidence on failure.
-- Cross-platform workflow creates a temporary encrypted GitHub Issue rendezvous, runs Windows `windows-2025` and macOS `macos-15` jobs concurrently, uses `INTEROP_SESSION_ID=main` for the main suite and `restart` for restart, validates both JSONL logs, and always cleans up the temporary Issue.
-- Formal workflow uses GitHub-hosted `macos-15`, preflights Apple Developer ID secrets, runs full regression, runs `pnpm macos:formal-build`, records post-build signing/notarization/Gatekeeper evidence, uploads evidence on failure, and uploads the notarized DMG on success.
+- Cross-platform workflow creates a temporary encrypted GitHub Issue rendezvous, runs Windows `windows-2025` and macOS `macos-15` jobs concurrently, uses `INTEROP_SESSION_ID=main` for the main suite and `restart` for restart, downloads the two role artifacts by explicit name into deterministic validator directories, validates both JSONL logs at fixed paths, and always cleans up the temporary Issue.
+- Formal workflow uses GitHub-hosted `macos-15`, preflights Apple Developer ID secrets, runs full regression, runs `pnpm macos:formal-build`, records post-build signing/notarization/Gatekeeper evidence, uploads evidence on failure, and uploads the notarized DMG on success. Apple Developer credentials are not set on the job or workflow environment; they are scoped only to the preflight step, formal build step, and the post-build evidence step that needs notary credentials.
 - Formal secrets:
   - `APPLE_CERTIFICATE`
   - `APPLE_CERTIFICATE_PASSWORD`
@@ -1665,6 +1667,7 @@ jobs:
         with:
           name: macos-qa-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             .superpowers/sdd/2026-08-07-macos-cross-platform/build/**
@@ -1769,7 +1772,22 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      - run: pnpm interop:validate -- --log windows/events.jsonl --log macos/events.jsonl
+        continue-on-error: true
+        with:
+          name: interop-windows-evidence
+          path: .superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator/artifacts/windows
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: interop-macos-evidence
+          path: .superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator/artifacts/macos
+      - run: |
+          VALIDATOR_DIR=.superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator
+          WINDOWS_LOG="$VALIDATOR_DIR/artifacts/windows/events.jsonl"
+          MACOS_LOG="$VALIDATOR_DIR/artifacts/macos/events.jsonl"
+          test -f "$WINDOWS_LOG"
+          test -f "$MACOS_LOG"
+          pnpm interop:validate -- --log "$WINDOWS_LOG" --log "$MACOS_LOG"
 
   cleanup:
     if: always()
@@ -1802,13 +1820,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      RELEASE_EVIDENCE_DIR: .superpowers/sdd/2026-08-07-macos-cross-platform/build
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1821,7 +1833,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
-      - run: |
+      - name: Preflight Apple Developer ID secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
           for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing required Apple signing secret: $name"
@@ -1835,11 +1856,36 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml
       - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
-      - run: pnpm macos:formal-build
+      - name: Build Developer ID Universal DMG
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm macos:formal-build
       - name: Validate stapling and Gatekeeper assessment
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          APP_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
-          DMG_PATH="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          APP_PATH=""
+          for candidate in src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app; do
+            [ -d "$candidate" ] || continue
+            APP_PATH="$candidate"
+            break
+          done
+          DMG_PATH=""
+          for candidate in src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg; do
+            [ -f "$candidate" ] || continue
+            DMG_PATH="$candidate"
+            break
+          done
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
           xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/notarytool.log
           xcrun stapler validate "$APP_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/stapler-validate-app.log
           xcrun stapler validate "$DMG_PATH" | tee .superpowers/sdd/2026-08-07-macos-cross-platform/build/stapler-validate-dmg.log
@@ -1852,6 +1898,7 @@ jobs:
         with:
           name: macos-release-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             .superpowers/sdd/2026-08-07-macos-cross-platform/build/**

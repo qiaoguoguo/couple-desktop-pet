@@ -97,7 +97,13 @@ jobs:
           set -o pipefail
           mkdir -p "$MACOS_EVIDENCE_DIR"
           CARGO_TARGET_DIR="${{ runner.temp }}/macos-e2e-target" pnpm e2e:macos:build 2>&1 | tee "$MACOS_EVIDENCE_DIR/e2e-macos-build.log"
-          E2E_APP_BINARY="$(find "${{ runner.temp }}/macos-e2e-target/universal-apple-darwin/release/bundle/macos" -path '*/Contents/MacOS/couple-desktop-pet' -type f -print -quit)"
+          E2E_BUNDLE_ROOT="${{ runner.temp }}/macos-e2e-target/universal-apple-darwin/release/bundle/macos"
+          E2E_APP_BINARY=""
+          for candidate in "$E2E_BUNDLE_ROOT"/*.app/Contents/MacOS/couple-desktop-pet; do
+            [ -f "$candidate" ] || continue
+            E2E_APP_BINARY="$candidate"
+            break
+          done
           test -n "$E2E_APP_BINARY"
           echo "MACOS_TAURI_APP_BINARY=$E2E_APP_BINARY" >> "$GITHUB_ENV"
 
@@ -110,7 +116,13 @@ jobs:
       - name: Collect native QA evidence
         run: |
           set -o pipefail
-          APP_PATH="$(find "$PWD/src-tauri/target/universal-apple-darwin/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          APP_ROOT="$PWD/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          APP_PATH=""
+          for candidate in "$APP_ROOT"/*.app; do
+            [ -d "$candidate" ] || continue
+            APP_PATH="$candidate"
+            break
+          done
           test -n "$APP_PATH"
           pnpm macos:native-evidence -- --mode qa --app "$APP_PATH" --output "$PWD/$NATIVE_EVIDENCE_DIR"
 
@@ -119,6 +131,7 @@ jobs:
         with:
           name: macos-qa-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             .superpowers/sdd/2026-08-07-macos-cross-platform/build/**

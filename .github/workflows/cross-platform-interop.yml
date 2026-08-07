@@ -102,6 +102,7 @@ jobs:
         with:
           name: interop-windows-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows/events.jsonl
             .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows/screenshots/**
@@ -137,7 +138,13 @@ jobs:
           set -o pipefail
           mkdir -p "$MACOS_EVIDENCE_DIR"
           CARGO_TARGET_DIR="${{ runner.temp }}/interop-macos-target" pnpm e2e:macos:build
-          E2E_APP_BINARY="$(find "${{ runner.temp }}/interop-macos-target/universal-apple-darwin/release/bundle/macos" -path '*/Contents/MacOS/couple-desktop-pet' -type f -print -quit)"
+          E2E_BUNDLE_ROOT="${{ runner.temp }}/interop-macos-target/universal-apple-darwin/release/bundle/macos"
+          E2E_APP_BINARY=""
+          for candidate in "$E2E_BUNDLE_ROOT"/*.app/Contents/MacOS/couple-desktop-pet; do
+            [ -f "$candidate" ] || continue
+            E2E_APP_BINARY="$candidate"
+            break
+          done
           test -n "$E2E_APP_BINARY"
           echo "MACOS_INTEROP_APP_BINARY=$E2E_APP_BINARY" >> "$GITHUB_ENV"
 
@@ -172,6 +179,7 @@ jobs:
         with:
           name: interop-macos-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos/events.jsonl
             .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos/screenshots/**
@@ -200,18 +208,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download Windows interop evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
-          path: ${{ env.VALIDATOR_DIR }}/artifacts
+          name: interop-windows-evidence
+          path: .superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator/artifacts/windows
+
+      - name: Download macOS interop evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: interop-macos-evidence
+          path: .superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator/artifacts/macos
 
       - name: Validate interop evidence matrix
         run: |
           set -o pipefail
           mkdir -p "$VALIDATOR_DIR"
-          WINDOWS_LOG="$(find "$VALIDATOR_DIR/artifacts" -path '*/windows/events.jsonl' -type f -print -quit)"
-          MACOS_LOG="$(find "$VALIDATOR_DIR/artifacts" -path '*/macos/events.jsonl' -type f -print -quit)"
-          if [ -z "$WINDOWS_LOG" ] || [ -z "$MACOS_LOG" ]; then
+          WINDOWS_LOG="$VALIDATOR_DIR/artifacts/windows/events.jsonl"
+          MACOS_LOG="$VALIDATOR_DIR/artifacts/macos/events.jsonl"
+          if [ ! -f "$WINDOWS_LOG" ] || [ ! -f "$MACOS_LOG" ]; then
             echo "missing windows or macos interop JSONL log" | tee "$VALIDATOR_DIR/validator.log"
             exit 1
           fi
@@ -222,6 +239,7 @@ jobs:
         with:
           name: interop-validator-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: .superpowers/sdd/2026-08-07-macos-cross-platform/interop/validator/**
 
   cleanup:

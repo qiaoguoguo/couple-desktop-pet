@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
 const evidenceRoot = ".superpowers/sdd/2026-08-07-macos-cross-platform";
+const appleSecrets = [
+  "APPLE_CERTIFICATE",
+  "APPLE_CERTIFICATE_PASSWORD",
+  "KEYCHAIN_PASSWORD",
+  "APPLE_SIGNING_IDENTITY",
+  "APPLE_ID",
+  "APPLE_PASSWORD",
+  "APPLE_TEAM_ID",
+];
 
 const actionPins = {
   "actions/checkout": {
@@ -65,6 +74,12 @@ function allRunText(workflow) {
     .join("\n");
 }
 
+function jobRunText(job) {
+  return (job.steps ?? [])
+    .map((step) => step.run ?? "")
+    .join("\n");
+}
+
 function workflowUses(workflow) {
   return allSteps(workflow)
     .map((step) => step.uses)
@@ -120,6 +135,16 @@ function uploadSteps(workflow) {
   return allSteps(workflow).filter((step) => step.uses?.startsWith("actions/upload-artifact@"));
 }
 
+function downloadSteps(workflow) {
+  return allSteps(workflow).filter((step) => step.uses?.startsWith("actions/download-artifact@"));
+}
+
+function stepByName(job, name) {
+  const step = (job.steps ?? []).find((candidate) => candidate.name === name);
+  expect(step, `missing workflow step ${name}`).toBeTruthy();
+  return step;
+}
+
 describe("macOS and cross-platform GitHub Actions workflows", () => {
   it("pins the package manager, Node version, checkout credentials, and every third-party action", () => {
     const packageJson = readJson("package.json");
@@ -135,6 +160,22 @@ describe("macOS and cross-platform GitHub Actions workflows", () => {
       setupStepsAreNode22(workflow);
     }
     assertPinnedActions(workflows);
+  });
+
+  it("includes hidden .superpowers evidence in artifact uploads", () => {
+    const workflows = [
+      readWorkflow(".github/workflows/macos-qa.yml").workflow,
+      readWorkflow(".github/workflows/macos-release.yml").workflow,
+      readWorkflow(".github/workflows/cross-platform-interop.yml").workflow,
+    ];
+
+    for (const workflow of workflows) {
+      for (const upload of uploadSteps(workflow)) {
+        if (JSON.stringify(upload.with?.path ?? "").includes(".superpowers")) {
+          expect(upload.with?.["include-hidden-files"]).toBe(true);
+        }
+      }
+    }
   });
 
   it("defines macOS QA on a real hosted Mac runner with isolated E2E target and evidence uploads", () => {
@@ -168,6 +209,21 @@ describe("macOS and cross-platform GitHub Actions workflows", () => {
     expect(uploads.every((step) => step.with?.["if-no-files-found"] === "warn")).toBe(true);
     expect(JSON.stringify(uploads)).toContain("src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg");
     expect(JSON.stringify(uploads)).toContain(`${evidenceRoot}/macos/**`);
+  });
+
+  it("keeps macOS runner shell scripts compatible with BSD find", () => {
+    const qa = readWorkflow(".github/workflows/macos-qa.yml").workflow;
+    const release = readWorkflow(".github/workflows/macos-release.yml").workflow;
+    const interop = readWorkflow(".github/workflows/cross-platform-interop.yml").workflow;
+
+    for (const job of [
+      jobs(qa)["macos-qa"],
+      jobs(release)["developer-id-release"],
+      jobs(interop).macos,
+    ]) {
+      expect(job["runs-on"]).toBe("macos-15");
+      expect(jobRunText(job)).not.toMatch(/find\b[^\n]*(?:-maxdepth|-quit)/);
+    }
   });
 
   it("defines cross-platform interop as concurrent Windows and macOS runner jobs with cleanup and validation", () => {
@@ -224,27 +280,53 @@ describe("macOS and cross-platform GitHub Actions workflows", () => {
       expect(upload?.with?.["if-no-files-found"]).toBe("warn");
       expect(JSON.stringify(upload)).not.toContain("wdio.log");
     }
+    const validatorDownloads = downloadSteps(workflow).filter((step) =>
+      step.with?.path?.includes("interop/validator/artifacts"),
+    );
+    expect(validatorDownloads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          with: expect.objectContaining({
+            name: "interop-windows-evidence",
+            path: `${evidenceRoot}/interop/validator/artifacts/windows`,
+          }),
+        }),
+        expect.objectContaining({
+          with: expect.objectContaining({
+            name: "interop-macos-evidence",
+            path: `${evidenceRoot}/interop/validator/artifacts/macos`,
+          }),
+        }),
+      ]),
+    );
+    expect(jobRunText(validator)).toContain('WINDOWS_LOG="$VALIDATOR_DIR/artifacts/windows/events.jsonl"');
+    expect(jobRunText(validator)).toContain('MACOS_LOG="$VALIDATOR_DIR/artifacts/macos/events.jsonl"');
+    expect(jobRunText(validator)).not.toContain("find \"$VALIDATOR_DIR/artifacts\"");
   });
 
   it("defines formal Developer ID release with secret preflight and post-build assessment evidence", () => {
     const { workflow } = readWorkflow(".github/workflows/macos-release.yml");
     const job = jobs(workflow)["developer-id-release"];
-    const requiredSecrets = [
-      "APPLE_CERTIFICATE",
-      "APPLE_CERTIFICATE_PASSWORD",
-      "KEYCHAIN_PASSWORD",
-      "APPLE_SIGNING_IDENTITY",
-      "APPLE_ID",
-      "APPLE_PASSWORD",
-      "APPLE_TEAM_ID",
-    ];
 
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(job["runs-on"]).toBe("macos-15");
     expect(job["timeout-minutes"]).toBeGreaterThanOrEqual(90);
-    for (const secret of requiredSecrets) {
-      expect(job.env?.[secret]).toBe(`\${{ secrets.${secret} }}`);
+    for (const secret of appleSecrets) {
+      expect(job.env ?? {}).not.toHaveProperty(secret);
     }
+    const preflight = stepByName(job, "Preflight Apple Developer ID secrets");
+    const formalBuild = stepByName(job, "Build Developer ID Universal DMG");
+    const postBuild = stepByName(job, "Post-build signing notarization and Gatekeeper evidence");
+
+    for (const secret of appleSecrets) {
+      expect(preflight.env?.[secret]).toBe(`\${{ secrets.${secret} }}`);
+      expect(formalBuild.env?.[secret]).toBe(`\${{ secrets.${secret} }}`);
+    }
+    expect(postBuild.env).toEqual({
+      APPLE_ID: "${{ secrets.APPLE_ID }}",
+      APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}",
+      APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}",
+    });
     expectRunContains(workflow, [
       "pnpm install --frozen-lockfile",
       "pnpm test",

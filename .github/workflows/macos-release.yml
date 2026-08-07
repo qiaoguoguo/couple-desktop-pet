@@ -11,13 +11,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       RELEASE_EVIDENCE_DIR: .superpowers/sdd/2026-08-07-macos-cross-platform/build
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,6 +29,14 @@ jobs:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Preflight Apple Developer ID secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
           missing=0
@@ -62,14 +63,38 @@ jobs:
           cargo fmt --check --manifest-path src-tauri/Cargo.toml 2>&1 | tee "$RELEASE_EVIDENCE_DIR/cargo-fmt-check.log"
 
       - name: Build Developer ID Universal DMG
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm macos:formal-build
 
       - name: Post-build signing notarization and Gatekeeper evidence
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
           mkdir -p "$RELEASE_EVIDENCE_DIR"
-          APP_PATH="$(find "$PWD/src-tauri/target/universal-apple-darwin/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)"
-          DMG_PATH="$(find "$PWD/src-tauri/target/universal-apple-darwin/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          APP_ROOT="$PWD/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          DMG_ROOT="$PWD/src-tauri/target/universal-apple-darwin/release/bundle/dmg"
+          APP_PATH=""
+          for candidate in "$APP_ROOT"/*.app; do
+            [ -d "$candidate" ] || continue
+            APP_PATH="$candidate"
+            break
+          done
+          DMG_PATH=""
+          for candidate in "$DMG_ROOT"/*.dmg; do
+            [ -f "$candidate" ] || continue
+            DMG_PATH="$candidate"
+            break
+          done
           test -n "$APP_PATH"
           test -n "$DMG_PATH"
           APP_BINARY="$APP_PATH/Contents/MacOS/couple-desktop-pet"
@@ -89,6 +114,7 @@ jobs:
         with:
           name: macos-release-evidence
           if-no-files-found: warn
+          include-hidden-files: true
           path: .superpowers/sdd/2026-08-07-macos-cross-platform/build/**
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
