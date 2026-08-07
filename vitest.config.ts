@@ -11,6 +11,7 @@ export default defineConfig({
       "src/**/*.test.tsx",
       "shared/**/*.test.ts",
       "deploy/**/*.test.ts",
+      "e2e/**/*.test.ts",
       "scripts/**/*.test.mjs",
     ],
     setupFiles: ["src/test/setup.ts"],

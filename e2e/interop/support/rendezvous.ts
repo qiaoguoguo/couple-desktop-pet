@@ -19,6 +19,11 @@ interface RendezvousEnv {
   sessionId: string;
 }
 
+const localRendezvousTimeoutMs = 120_000;
+const ciRendezvousTimeoutMs = 20 * 60_000;
+const localMochaTimeoutMs = 300_000;
+const ciMochaTimeoutMs = 30 * 60_000;
+
 export function readRendezvousEnv(env: NodeJS.ProcessEnv = process.env): RendezvousEnv {
   const repository = requireEnv(env, "INTEROP_GITHUB_REPOSITORY");
   const [owner, repo] = repository.split("/");
@@ -47,8 +52,50 @@ function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+export function resolveInteropRendezvousTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return readPositiveIntegerEnv(
+    env,
+    "INTEROP_RENDEZVOUS_TIMEOUT_MS",
+    isCi(env) ? ciRendezvousTimeoutMs : localRendezvousTimeoutMs,
+  );
+}
+
+export function resolveInteropMochaTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  return readPositiveIntegerEnv(
+    env,
+    "INTEROP_MOCHA_TIMEOUT_MS",
+    isCi(env) ? ciMochaTimeoutMs : localMochaTimeoutMs,
+  );
+}
+
+function isCi(env: NodeJS.ProcessEnv): boolean {
+  return env.CI === "true";
+}
+
+function readPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+): number {
+  const value = env[name];
+  if (value === undefined) {
+    return fallback;
+  }
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
 export async function createRendezvousSession() {
   const env = readRendezvousEnv();
+  const timeoutMs = resolveInteropRendezvousTimeoutMs();
   const keys = createInteropKeyPair();
   const client = createGitHubRendezvousClient({
     owner: env.owner,
@@ -65,6 +112,7 @@ export async function createRendezvousSession() {
     issueNumber: env.issueNumber,
     selfRole: env.role,
     sessionId: env.sessionId,
+    timeoutMs,
   });
   const key = deriveSharedKey({
     privateKey: keys.privateKey,
@@ -96,6 +144,7 @@ export async function createRendezvousSession() {
         selfRole: env.role,
         event,
         sessionId: env.sessionId,
+        timeoutMs,
       })) as EncryptedEvent;
       return decryptEncryptedEvent<TPayload>({
         encryptedEvent,

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { createIsolatedAppEnv, filterChildAppEnv } from "./support/env";
+import { resolveInteropMochaTimeoutMs } from "./support/rendezvous";
 
 const appBinaryPath =
   process.env.INTEROP_APP_BINARY ??
@@ -45,6 +46,6 @@ export const config: WebdriverIO.Config = {
   ],
   waitforTimeout: 10000,
   mochaOpts: {
-    timeout: 300000,
+    timeout: resolveInteropMochaTimeoutMs(),
   },
 };

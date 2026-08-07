@@ -1,5 +1,9 @@
 import { browser, expect } from "@wdio/globals";
-import { createEvidenceRecorder } from "../support/evidence";
+import {
+  createEvidenceRecorder,
+  readEvidenceRoleFromEnv,
+  summarizeInteropError,
+} from "../support/evidence";
 import { createRendezvousSession } from "../support/rendezvous";
 import {
   acceptPairCode,
@@ -27,12 +31,13 @@ const incomingMessageLabel = "对方桌宠消息";
 
 describe("Windows macOS encrypted interop smoke", () => {
   it("binds, syncs statuses, exchanges messages, unpairs, and records required events", async () => {
-    const rendezvous = await createRendezvousSession();
-    const evidence = createEvidenceRecorder(rendezvous.role);
-    const recordAndSend = evidence.recordAndSend;
+    const evidence = createEvidenceRecorder(readEvidenceRoleFromEnv());
     const captureEvidenceScreenshot = evidence.captureEvidenceScreenshot;
 
     try {
+      const rendezvous = await createRendezvousSession();
+      const recordAndSend = evidence.recordAndSend;
+
       await rendezvous.send(`${rendezvous.role}-ready`, { ready: true });
       await rendezvous.receive(rendezvous.role === "windows" ? "macos-ready" : "windows-ready");
 
@@ -160,7 +165,7 @@ describe("Windows macOS encrypted interop smoke", () => {
       await captureEvidenceScreenshot("failure");
       evidence.record("failure", {
         assertion: "interop spec failed after saving screenshot",
-        message: error instanceof Error ? error.message : String(error),
+        errorSummary: summarizeInteropError(error),
       });
       throw error;
     }

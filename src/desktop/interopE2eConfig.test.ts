@@ -122,4 +122,21 @@ describe("cross-platform interop E2E harness config", () => {
     expect(crossPlatformSpec).toContain("failure");
     expect(restartSpec).toContain("recordAndSend");
   });
+
+  it("creates evidence before opening the encrypted rendezvous session", () => {
+    for (const specPath of [
+      "e2e/interop/specs/cross-platform.e2e.ts",
+      "e2e/interop/specs/restart-unpaired.e2e.ts",
+    ]) {
+      const spec = readText(specPath);
+      const evidenceIndex = spec.indexOf("createEvidenceRecorder(readEvidenceRoleFromEnv())");
+      const rendezvousIndex = spec.indexOf("createRendezvousSession()");
+
+      expect(evidenceIndex, `${specPath} should create evidence first`).toBeGreaterThanOrEqual(0);
+      expect(rendezvousIndex, `${specPath} should create rendezvous`).toBeGreaterThanOrEqual(0);
+      expect(evidenceIndex).toBeLessThan(rendezvousIndex);
+      expect(spec).toMatch(/try\s*\{[\s\S]*createRendezvousSession\(\)/);
+      expect(spec).toContain('evidence.record("failure"');
+    }
+  });
 });

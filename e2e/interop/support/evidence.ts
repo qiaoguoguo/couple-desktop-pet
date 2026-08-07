@@ -53,6 +53,21 @@ export function createEvidenceRecorder(role: InteropRole) {
   };
 }
 
+export function readEvidenceRoleFromEnv(env: NodeJS.ProcessEnv = process.env): InteropRole {
+  const role = env.INTEROP_ROLE;
+  if (role !== "windows" && role !== "macos") {
+    throw new Error("INTEROP_ROLE must be windows or macos");
+  }
+  return role;
+}
+
+export function summarizeInteropError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/\b\d{6,}\b/g, "<redacted-number>")
+    .replace(/\b(?:gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, "<redacted-token>");
+}
+
 function sanitizeScreenshotName(name: string): string {
   return name.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "");
 }

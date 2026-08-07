@@ -1436,11 +1436,13 @@ git commit -m "test: add macos native evidence collection"
 - Create: `e2e/interop/wdio.macos.conf.ts`
 - Create: `e2e/interop/support/env.ts`
 - Create: `e2e/interop/support/rendezvous.ts`
+- Create: `e2e/interop/support/rendezvous.test.ts`
 - Create: `e2e/interop/support/ui.ts`
 - Create: `e2e/interop/specs/cross-platform.e2e.ts`
 - Create: `e2e/interop/specs/restart-unpaired.e2e.ts`
 - Modify: `src/sync/SyncPanel.tsx`
 - Modify: `src/sync/SyncPanel.test.tsx`
+- Modify: `vitest.config.ts`
 - Modify: `package.json`
 - Modify: `docs/superpowers/plans/2026-08-07-macos-cross-platform-release.md`
 
@@ -1450,11 +1452,14 @@ git commit -m "test: add macos native evidence collection"
 - Pair code, message text, device secret, and runner tokens are never written as cleartext Issue comments, stdout, or evidence logs.
 - X25519 derives a shared secret; HKDF derives the AES-256-GCM key; encrypted comments carry non-sensitive event names plus ciphertext payload.
 - `scripts/interop/github-rendezvous.mjs create|cleanup` creates the temporary Issue and deletes comments before closing it.
+- Rendezvous waits use `INTEROP_RENDEZVOUS_TIMEOUT_MS` when it is a strict positive integer; otherwise they default to 120 seconds locally and 20 minutes when `CI=true`, covering hosted runner cold build skew.
+- Interop WDIO Mocha suite timeouts use `INTEROP_MOCHA_TIMEOUT_MS` when it is a strict positive integer; otherwise they default to 5 minutes locally and 30 minutes when `CI=true`, so the suite budget is longer than the rendezvous window.
 - `scripts/interop/cross-platform-smoke.mjs validate` merges sanitized JSONL and verifies the required event matrix.
 - Windows WDIO and macOS WDIO configs use `@wdio/tauri-service` embedded provider with `browserName: "tauri"` and `tauri:options.application`.
 - Child app environments use isolated app data and mask `GITHUB_TOKEN`, `INTEROP_GITHUB_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, and `APPLE_*` to empty strings so `@wdio/tauri-service` cannot reintroduce parent secrets during its environment merge; the WDIO runner process keeps the token for rendezvous.
 - The real role spec drives the UI: Windows creates a binding code, sends it encrypted, macOS accepts it, both wait online, both sync `slacking/dazing/overtime/null`, both exchange messages, both acknowledge bubbles and observe message animation, then unpair.
 - The restart spec uses the same isolated directory and verifies both sides restart unpaired.
+- Both role specs create the sanitized evidence recorder before opening the encrypted rendezvous session and wrap the connection phase in `try/catch`; if the peer runner has not started, they still write a redacted `failure` JSONL event and attempt only safe element screenshots.
 - `SyncPanel` exposes `aria-label="输入绑定码"` as the minimal stable selector needed for the real macOS role.
 
 Required event names:
@@ -1493,7 +1498,9 @@ Required event names:
 Add tests for:
 - X25519 shared key agreement, AES-256-GCM round trip, tamper failure, GitHub REST request bodies not containing pair code or message text, and log redaction.
 - Cross-platform event matrix, isolated `APPDATA` / `LOCALAPPDATA` / `USERPROFILE` and `HOME`, child app env filtering, JSONL sensitive plaintext rejection, and event validation.
-- WDIO config scripts and embedded-provider capabilities for both platforms.
+- Rendezvous timeout defaults and overrides: local 120 seconds, CI 20 minutes, explicit valid `INTEROP_RENDEZVOUS_TIMEOUT_MS`, and invalid timeout rejection.
+- WDIO config scripts, embedded-provider capabilities, and shared Mocha timeout resolution for both platforms.
+- Connection-before-peer failure evidence structure: specs must create evidence before `createRendezvousSession()` and record redacted `failure` events in catch blocks.
 - `SyncPanel` binding input accessible by `aria-label="输入绑定码"`.
 
 - [ ] **Step 2: Run RED**
@@ -1501,7 +1508,7 @@ Add tests for:
 Run:
 
 ```bash
-pnpm vitest run scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
+pnpm vitest run e2e/interop/support/rendezvous.test.ts scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
 ```
 
 Expected: FAIL because the rendezvous scripts, interop WDIO config, specs, and binding input label are absent.
@@ -1513,7 +1520,9 @@ Implement:
 - `scripts/interop/github-rendezvous.d.mts` so E2E TypeScript can import the `.mjs` module without `any`.
 - `scripts/interop/cross-platform-smoke.mjs` with the required event list, isolated env helpers, child env filter, JSONL sanitizer, redactor, and `validate` CLI.
 - `e2e/interop/wdio.windows.conf.ts` and `e2e/interop/wdio.macos.conf.ts` with embedded provider and real app binary path from `INTEROP_APP_BINARY`.
-- `e2e/interop/specs/cross-platform.e2e.ts` and `restart-unpaired.e2e.ts`, using stable ARIA/role selectors only.
+- `e2e/interop/support/rendezvous.ts` timeout helpers used by the rendezvous client and both WDIO configs.
+- `e2e/interop/specs/cross-platform.e2e.ts` and `restart-unpaired.e2e.ts`, using stable ARIA/role selectors only and creating evidence before connection waits.
+- `vitest.config.ts` include for `e2e/**/*.test.ts` support-unit coverage.
 - `src/sync/SyncPanel.tsx` aria label and its component test.
 - Package scripts: `e2e:windows:build`, `e2e:interop:windows`, `e2e:interop:windows:restart`, `e2e:interop:macos`, `e2e:interop:macos:restart`, `interop:validate`.
 
@@ -1522,7 +1531,7 @@ Implement:
 Run:
 
 ```bash
-pnpm vitest run scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
+pnpm vitest run e2e/interop/support/rendezvous.test.ts scripts/interop/github-rendezvous.test.mjs scripts/interop/cross-platform-smoke.test.mjs src/desktop/interopE2eConfig.test.ts src/sync/SyncPanel.test.tsx
 pnpm typecheck
 ```
 
