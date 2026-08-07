@@ -22,6 +22,8 @@
     "platform-web:test": "pnpm --dir platform-web test",
     "platform-web:typecheck": "pnpm --dir platform-web typecheck",
     "platform-web:build": "pnpm --dir platform-web build",
+    "tauri:build:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
+    "tauri:build:mac:qa": "tauri build --target universal-apple-darwin --bundles app,dmg --config src-tauri/tauri.macos.qa.conf.json",
     "tauri": "tauri"
   },
   "dependencies": {
