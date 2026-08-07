@@ -1,5 +1,6 @@
 import { $, browser, expect } from "@wdio/globals";
 import { openPetContextMenu } from "../../support/contextMenu";
+import { openInteractionMenu } from "../../support/interactionMenu";
 
 describe("macOS app shell", () => {
   it("opens settings and the activity status dialog from stable app controls", async () => {
@@ -16,10 +17,7 @@ describe("macOS app shell", () => {
     await $('button[aria-label="关闭设置"]').click();
     await expect($('section[aria-label="桌宠设置"]')).not.toBeDisplayed();
 
-    await surface.click();
-    const interactionMenu = await $('[role="menu"][aria-label="互动选项"]');
-    await expect(interactionMenu).toBeDisplayed();
-
+    const interactionMenu = await openInteractionMenu();
     await interactionMenu.$('//button[@role="menuitem" and normalize-space(.)="我的状态"]').click();
     const statusDialog = await $('[role="dialog"][aria-label="我的状态"]');
     await expect(statusDialog).toBeDisplayed();

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -151,14 +151,15 @@ describe("macOS Tauri embedded E2E config", () => {
   it("defines specs with existing stable selectors", () => {
     const spec = readText("e2e/macos/specs/app-shell.e2e.ts");
     const contextMenuHelper = readText("e2e/support/contextMenu.ts");
-    const stableSelectors = `${spec}\n${contextMenuHelper}`;
+    const interactionMenuHelper = readText("e2e/support/interactionMenu.ts");
+    const stableSelectors = `${spec}\n${contextMenuHelper}\n${interactionMenuHelper}`;
 
     expect(spec).toContain('aria-label="情侣桌宠 MVP"');
     expect(stableSelectors).toContain("桌宠菜单");
     expect(spec).toContain("桌宠设置");
     expect(spec).toContain("形象管理");
     expect(spec).toContain("远程互动");
-    expect(spec).toContain("互动选项");
+    expect(stableSelectors).toContain("互动选项");
     expect(spec).toContain("我的状态");
     expect(spec).toContain("dialog");
     expect(spec).not.toContain("$('button[role=\"menuitem\"]')");
@@ -185,6 +186,26 @@ describe("macOS Tauri embedded E2E config", () => {
     for (const source of [appShellSpec, interopUi]) {
       expect(source).toContain("openPetContextMenu");
       expect(source).not.toContain('click({ button: "right" })');
+    }
+  });
+
+  it("opens the interaction menu through a shared pet frame click helper", () => {
+    const helperPath = "e2e/support/interactionMenu.ts";
+    expect(existsSync(join(repoRoot, helperPath))).toBe(true);
+
+    const helper = readText(helperPath);
+    const appShellSpec = readText("e2e/macos/specs/app-shell.e2e.ts");
+    const interopUi = readText("e2e/interop/support/ui.ts");
+
+    expect(helper).toContain('const petFrameStageSelector = ".pet-frame-stage"');
+    expect(helper).toContain("await stage.click()");
+    expect(helper).toContain('[role="menu"][aria-label="互动选项"]');
+    expect(helper).not.toContain('section[aria-label="情侣桌宠 MVP"]');
+
+    for (const source of [appShellSpec, interopUi]) {
+      expect(source).toContain("openInteractionMenu");
+      expect(source).not.toMatch(/await\s+surface\.click\(\)/);
+      expect(source).not.toMatch(/\$\('section\[aria-label="情侣桌宠 MVP"\]'\)[\s\S]{0,120}\.click\(\)/);
     }
   });
 });

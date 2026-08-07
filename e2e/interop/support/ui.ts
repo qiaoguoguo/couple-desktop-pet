@@ -1,6 +1,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import { isMessageAnimationMotion } from "../../../scripts/interop/cross-platform-smoke.mjs";
 import { openPetContextMenu } from "../../support/contextMenu";
+import { openInteractionMenu } from "../../support/interactionMenu";
 
 export const testMessageText = "interop message text";
 
@@ -47,10 +48,7 @@ export async function waitForPeerOnline() {
 }
 
 export async function selectMyStatus(label: string) {
-  const surface = await $('section[aria-label="情侣桌宠 MVP"]');
-  await surface.click();
-  const menu = await $('[role="menu"][aria-label="互动选项"]');
-  await expect(menu).toBeDisplayed();
+  const menu = await openInteractionMenu();
   await menu.$('//button[@role="menuitem" and normalize-space(.)="我的状态"]').click();
   const dialog = await $('[role="dialog"][aria-label="我的状态"]');
   await expect(dialog).toBeDisplayed();
@@ -87,10 +85,7 @@ export async function waitForMessageAnimation() {
 }
 
 export async function sendMessage(text = testMessageText) {
-  const surface = await $('section[aria-label="情侣桌宠 MVP"]');
-  await surface.click();
-  const menu = await $('[role="menu"][aria-label="互动选项"]');
-  await expect(menu).toBeDisplayed();
+  const menu = await openInteractionMenu();
   await menu.$('//button[@role="menuitem" and normalize-space(.)="敲电脑"]').click();
   const composer = await $('section[aria-label="发送消息"]');
   await expect(composer).toBeDisplayed();
