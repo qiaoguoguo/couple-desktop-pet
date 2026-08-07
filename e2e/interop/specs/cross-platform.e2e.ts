@@ -2,7 +2,7 @@ import { browser, expect } from "@wdio/globals";
 import {
   createEvidenceRecorder,
   readEvidenceRoleFromEnv,
-  summarizeInteropError,
+  recordFailureAndRethrow,
 } from "../support/evidence";
 import { createRendezvousSession } from "../support/rendezvous";
 import {
@@ -162,12 +162,10 @@ describe("Windows macOS encrypted interop smoke", () => {
       await browser.pause(1000);
       await expect(browser.$('section[aria-label="情侣桌宠 MVP"]')).toBeDisplayed();
     } catch (error) {
-      await captureEvidenceScreenshot("failure");
-      evidence.record("failure", {
-        assertion: "interop spec failed after saving screenshot",
-        errorSummary: summarizeInteropError(error),
+      await recordFailureAndRethrow(evidence, error, {
+        assertion: "interop spec failed",
+        screenshotName: "failure",
       });
-      throw error;
     }
   });
 });

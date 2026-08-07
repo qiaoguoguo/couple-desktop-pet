@@ -2,7 +2,7 @@ import { $, expect } from "@wdio/globals";
 import {
   createEvidenceRecorder,
   readEvidenceRoleFromEnv,
-  summarizeInteropError,
+  recordFailureAndRethrow,
 } from "../support/evidence";
 import { createRendezvousSession } from "../support/rendezvous";
 import { closeSettings, openSettings } from "../support/ui";
@@ -23,12 +23,10 @@ describe("Windows macOS restart unpaired state", () => {
         assertion: "restart with isolated app data showed unpaired UI",
       });
     } catch (error) {
-      await evidence.captureEvidenceScreenshot("restart-failure");
-      evidence.record("failure", {
-        assertion: "restart interop spec failed after saving screenshot",
-        errorSummary: summarizeInteropError(error),
+      await recordFailureAndRethrow(evidence, error, {
+        assertion: "restart interop spec failed",
+        screenshotName: "restart-failure",
       });
-      throw error;
     }
   });
 });

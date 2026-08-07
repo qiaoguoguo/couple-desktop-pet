@@ -198,6 +198,33 @@ describe("cross platform interop smoke utilities", () => {
     });
   });
 
+  it("redacts dynamic failure summaries before writing JSONL evidence", () => {
+    const root = makeTempRoot();
+    const logPath = join(root, "events.jsonl");
+    const logger = createInteropEventLogger({
+      logPath,
+      role: "macos",
+      platform: "macos",
+      now: () => new Date("2026-08-07T12:01:00.000Z"),
+    });
+
+    logger.record("failure", {
+      assertion: "interop failed before peer connected",
+      errorSummary:
+        "pairCode=123456 message=interop message text github_pat_secret deviceSecret=abc",
+    });
+
+    const logText = readFileSync(logPath, "utf8");
+    expect(logText).not.toContain("123456");
+    expect(logText).not.toContain("interop message text");
+    expect(logText).not.toContain("github_pat_secret");
+    expect(logText).not.toContain("deviceSecret=abc");
+    expect(JSON.parse(logText).details).toEqual({
+      assertion: "interop failed before peer connected",
+      errorSummary: "<redacted>",
+    });
+  });
+
   it("only treats the pair message motion as received message animation evidence", () => {
     expect(isMessageAnimationMotion("motion-message-pair")).toBe(true);
     expect(isMessageAnimationMotion("idle-breathe")).toBe(false);

@@ -8,6 +8,17 @@ interface RendezvousLike {
   send<TPayload>(event: string, payload: TPayload): Promise<void>;
 }
 
+interface FailureEvidenceRecorder {
+  record(event: string, details?: Record<string, unknown>): unknown;
+  captureEvidenceScreenshot(name: string, selector?: string): Promise<unknown>;
+}
+
+interface FailureEvidenceOptions {
+  assertion: string;
+  screenshotName: string;
+  selector?: string;
+}
+
 export function createEvidenceRecorder(role: InteropRole) {
   const logPath = process.env.INTEROP_EVENT_LOG;
   if (!logPath) {
@@ -61,11 +72,40 @@ export function readEvidenceRoleFromEnv(env: NodeJS.ProcessEnv = process.env): I
   return role;
 }
 
-export function summarizeInteropError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message
-    .replace(/\b\d{6,}\b/g, "<redacted-number>")
-    .replace(/\b(?:gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, "<redacted-token>");
+export function buildSafeInteropFailureDetails(
+  error: unknown,
+  options: { assertion: string },
+): Record<string, unknown> {
+  return {
+    assertion: options.assertion,
+    errorType: classifyInteropError(error),
+  };
+}
+
+export async function recordFailureAndRethrow(
+  evidence: FailureEvidenceRecorder,
+  error: unknown,
+  options: FailureEvidenceOptions,
+): Promise<never> {
+  evidence.record("failure", buildSafeInteropFailureDetails(error, options));
+
+  try {
+    await evidence.captureEvidenceScreenshot(options.screenshotName, options.selector);
+  } catch (screenshotError) {
+    evidence.record("screenshot-failed", {
+      assertion: "failure screenshot capture failed",
+      screenshotName: sanitizeScreenshotName(options.screenshotName),
+      errorType: classifyInteropError(screenshotError),
+    });
+  }
+
+  throw error;
+}
+
+function classifyInteropError(error: unknown): string {
+  const rawName = error instanceof Error ? error.name : typeof error;
+  const safeName = rawName.replace(/[^A-Za-z0-9_.:-]+/g, "").slice(0, 80);
+  return safeName || "UnknownError";
 }
 
 function sanitizeScreenshotName(name: string): string {

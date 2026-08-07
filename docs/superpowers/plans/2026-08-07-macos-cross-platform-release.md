@@ -1467,7 +1467,7 @@ git commit -m "test: add macos native evidence collection"
 - Child app environments use isolated app data and mask `GITHUB_TOKEN`, `INTEROP_GITHUB_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, and `APPLE_*` to empty strings so `@wdio/tauri-service` cannot reintroduce parent secrets during its environment merge; the WDIO runner process keeps the token for rendezvous.
 - The real role spec drives the UI: Windows creates a binding code, sends it encrypted, macOS accepts it, both wait online, both sync `slacking/dazing/overtime/null`, both exchange messages, both acknowledge bubbles and observe message animation, then unpair.
 - The restart spec uses the same isolated directory and verifies both sides restart unpaired.
-- Both role specs create the sanitized evidence recorder before opening the encrypted rendezvous session and wrap the connection phase in `try/catch`; if the peer runner has not started, they still write a redacted `failure` JSONL event and attempt only safe element screenshots.
+- Both role specs create the sanitized evidence recorder before opening the encrypted rendezvous session and wrap the connection phase in `try/catch`; if the peer runner has not started, they synchronously write a redacted `failure` JSONL event before attempting any screenshot. Failure screenshots are best-effort safe-element captures; screenshot failures record only a sanitized `screenshot-failed` event and then rethrow the original test error.
 - `SyncPanel` exposes `aria-label="输入绑定码"` as the minimal stable selector needed for the real macOS role.
 
 Required event names:
@@ -1508,7 +1508,7 @@ Add tests for:
 - Cross-platform event matrix, isolated `APPDATA` / `LOCALAPPDATA` / `USERPROFILE` and `HOME`, child app env filtering, JSONL sensitive plaintext rejection, and event validation.
 - Rendezvous timeout defaults and overrides: local 120 seconds, CI 20 minutes, explicit valid `INTEROP_RENDEZVOUS_TIMEOUT_MS`, and invalid timeout rejection.
 - WDIO config scripts, embedded-provider capabilities, and shared Mocha timeout resolution for both platforms.
-- Connection-before-peer failure evidence structure: specs must create evidence before `createRendezvousSession()` and record redacted `failure` events in catch blocks.
+- Connection-before-peer failure evidence structure: specs must create evidence before `createRendezvousSession()`, record redacted `failure` events before screenshots in catch blocks, never log raw `error.message`, and keep screenshot failures from replacing the original assertion error.
 - `SyncPanel` binding input accessible by `aria-label="输入绑定码"`.
 
 - [ ] **Step 2: Run RED**

@@ -38,7 +38,12 @@ const sensitiveEnvNames = [
 const sensitiveDetailKeys = new Set([
   "pairCode",
   "deviceSecret",
+  "errorMessage",
+  "errorSummary",
   "secret",
+  "stack",
+  "stderr",
+  "stdout",
   "token",
   "message",
   "messageText",
