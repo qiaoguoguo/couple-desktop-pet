@@ -1,0 +1,139 @@
+name: macOS QA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-qa:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      MACOS_EVIDENCE_DIR: .superpowers/sdd/2026-08-07-macos-cross-platform/macos
+      BUILD_EVIDENCE_DIR: .superpowers/sdd/2026-08-07-macos-cross-platform/build
+      NATIVE_EVIDENCE_DIR: .superpowers/sdd/2026-08-07-macos-cross-platform/native
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend and Rust regression
+        run: |
+          set -o pipefail
+          mkdir -p "$MACOS_EVIDENCE_DIR"
+          pnpm test 2>&1 | tee "$MACOS_EVIDENCE_DIR/pnpm-test.log"
+          pnpm typecheck 2>&1 | tee "$MACOS_EVIDENCE_DIR/pnpm-typecheck.log"
+          pnpm build 2>&1 | tee "$MACOS_EVIDENCE_DIR/pnpm-build.log"
+          cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | tee "$MACOS_EVIDENCE_DIR/cargo-test.log"
+          cargo check --manifest-path src-tauri/Cargo.toml 2>&1 | tee "$MACOS_EVIDENCE_DIR/cargo-check.log"
+          cargo fmt --check --manifest-path src-tauri/Cargo.toml 2>&1 | tee "$MACOS_EVIDENCE_DIR/cargo-fmt-check.log"
+
+      - name: Production negative scan
+        run: |
+          set -o pipefail
+          mkdir -p "$MACOS_EVIDENCE_DIR"
+          node <<'NODE' 2>&1 | tee "$MACOS_EVIDENCE_DIR/production-permission-scan.log"
+          import { existsSync, readFileSync, readdirSync } from "node:fs";
+          import { join } from "node:path";
+
+          const roots = ["dist", "src-tauri/capabilities/default.json", "src-tauri/tauri.conf.json"];
+          const forbidden = ["@wdio/tauri-plugin", "wdio:default", "wdio-webdriver:default", "tauri_plugin_wdio", "tauri-plugin-wdio"];
+          const files = [];
+          function visit(path) {
+            if (!existsSync(path)) return;
+            const stat = readdirSafe(path);
+            if (!stat) {
+              files.push(path);
+              return;
+            }
+            for (const entry of stat) visit(join(path, entry));
+          }
+          function readdirSafe(path) {
+            try {
+              return readdirSync(path);
+            } catch {
+              return null;
+            }
+          }
+          for (const root of roots) visit(root);
+          for (const file of files) {
+            const text = readFileSync(file, "utf8");
+            for (const needle of forbidden) {
+              if (text.includes(needle)) {
+                console.error(`production scan found WDIO symbols: ${needle} in ${file}`);
+                process.exit(1);
+              }
+            }
+          }
+          console.log("no production WDIO symbols found");
+          NODE
+          cargo tree --manifest-path src-tauri/Cargo.toml > "$MACOS_EVIDENCE_DIR/cargo-tree-production.log"
+          if grep -E 'tauri-plugin-wdio|tauri_plugin_wdio|tauri-plugin-wdio-webdriver|tauri_plugin_wdio_webdriver' "$MACOS_EVIDENCE_DIR/cargo-tree-production.log"; then
+            echo "production scan found WDIO symbols in default cargo tree" | tee -a "$MACOS_EVIDENCE_DIR/cargo-tree-production.log"
+            exit 1
+          fi
+
+      - name: Build and verify QA Universal DMG
+        run: pnpm macos:qa-build
+
+      - name: Build E2E app in isolated target
+        run: |
+          set -o pipefail
+          mkdir -p "$MACOS_EVIDENCE_DIR"
+          CARGO_TARGET_DIR="${{ runner.temp }}/macos-e2e-target" pnpm e2e:macos:build 2>&1 | tee "$MACOS_EVIDENCE_DIR/e2e-macos-build.log"
+          E2E_BUNDLE_ROOT="${{ runner.temp }}/macos-e2e-target/universal-apple-darwin/release/bundle/macos"
+          E2E_APP_BINARY=""
+          for candidate in "$E2E_BUNDLE_ROOT"/*.app/Contents/MacOS/couple-desktop-pet; do
+            [ -f "$candidate" ] || continue
+            E2E_APP_BINARY="$candidate"
+            break
+          done
+          test -n "$E2E_APP_BINARY"
+          echo "MACOS_TAURI_APP_BINARY=$E2E_APP_BINARY" >> "$GITHUB_ENV"
+
+      - name: Run macOS embedded E2E
+        run: |
+          set -o pipefail
+          mkdir -p "$MACOS_EVIDENCE_DIR"
+          pnpm e2e:macos 2>&1 | tee "$MACOS_EVIDENCE_DIR/e2e-macos.log"
+
+      - name: Collect native QA evidence
+        run: |
+          set -o pipefail
+          APP_ROOT="$PWD/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          APP_PATH=""
+          for candidate in "$APP_ROOT"/*.app; do
+            [ -d "$candidate" ] || continue
+            APP_PATH="$candidate"
+            break
+          done
+          test -n "$APP_PATH"
+          pnpm macos:native-evidence -- --mode qa --app "$APP_PATH" --output "$PWD/$NATIVE_EVIDENCE_DIR"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: macos-qa-evidence
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            .superpowers/sdd/2026-08-07-macos-cross-platform/build/**
+            .superpowers/sdd/2026-08-07-macos-cross-platform/macos/**
+            .superpowers/sdd/2026-08-07-macos-cross-platform/native/**
