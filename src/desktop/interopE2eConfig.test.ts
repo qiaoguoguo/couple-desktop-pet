@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -144,5 +144,24 @@ describe("cross-platform interop E2E harness config", () => {
       expect(spec).toMatch(/try\s*\{[\s\S]*createRendezvousSession\(\)/);
       expect(spec).toContain("recordFailureAndRethrow");
     }
+  });
+
+  it("acknowledges remote messages through a shared pointerenter-compatible hover helper", () => {
+    const helperPath = "e2e/support/pointerHover.ts";
+    expect(existsSync(join(repoRoot, helperPath))).toBe(true);
+
+    const helper = readText(helperPath);
+    const uiHelper = readText("e2e/interop/support/ui.ts");
+
+    expect(helper).toContain("PointerEvent");
+    expect(helper).toContain('new PointerEvent("pointerover"');
+    expect(helper).toContain("bubbles: true");
+    expect(helper).toContain("cancelable: true");
+    expect(helper).toContain("composed: true");
+    expect(helper).toContain('pointerType: "mouse"');
+    expect(helper).toContain("clientX");
+    expect(helper).toContain("clientY");
+    expect(uiHelper).toContain("dispatchPointerHover");
+    expect(uiHelper).not.toContain(".moveTo()");
   });
 });

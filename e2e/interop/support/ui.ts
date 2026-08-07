@@ -2,6 +2,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { isMessageAnimationMotion } from "../../../scripts/interop/cross-platform-smoke.mjs";
 import { openPetContextMenu } from "../../support/contextMenu";
 import { openInteractionMenu } from "../../support/interactionMenu";
+import { dispatchPointerHover } from "../../support/pointerHover";
 
 export const testMessageText = "interop message text";
 
@@ -97,8 +98,11 @@ export async function sendMessage(text = testMessageText) {
 export async function acknowledgeIncomingMessage() {
   await waitForIncomingMessage();
   const layer = await $('[aria-label="对方桌宠消息"]');
-  await layer.moveTo();
-  await expect(layer).not.toBeDisplayed();
+  await dispatchPointerHover(layer);
+  await browser.waitUntil(async () => !(await layer.isDisplayed()), {
+    timeout: 10_000,
+    timeoutMsg: "incoming message bubble did not acknowledge after pointer hover",
+  });
 }
 
 export async function confirmUnpaired() {
