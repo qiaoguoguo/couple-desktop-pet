@@ -114,26 +114,47 @@ export function createMacosBuildPlan({ mode }) {
 
 export function findMacosArtifacts(bundleRoot = defaultBundleRoot) {
   const paths = listPaths(bundleRoot);
-  const appPath = paths
-    .filter((path) => path.endsWith(".app") && statSync(path).isDirectory())
-    .sort()[0];
-  const dmgPath = paths
-    .filter((path) => path.endsWith(".dmg") && statSync(path).isFile())
-    .sort()[0];
+  const stagingAppPath = selectNewestPath(
+    paths.filter((path) => path.endsWith(".app") && statSync(path).isDirectory()),
+    ".app artifact",
+    bundleRoot,
+  );
+  const dmgPath = selectNewestPath(
+    paths.filter((path) => path.endsWith(".dmg") && statSync(path).isFile()),
+    ".dmg artifact",
+    bundleRoot,
+  );
 
-  if (!appPath) {
-    throw new Error(`No .app artifact found under ${bundleRoot}`);
+  return { stagingAppPath, dmgPath };
+}
+
+export function findMountedApp(mountPoint) {
+  const paths = listPaths(mountPoint).filter(
+    (path) => path.endsWith(".app") && statSync(path).isDirectory(),
+  );
+
+  if (paths.length !== 1) {
+    throw new Error(`Expected exactly one .app under mounted DMG ${mountPoint}, found ${paths.length}`);
   }
-  if (!dmgPath) {
-    throw new Error(`No .dmg artifact found under ${bundleRoot}`);
-  }
+
+  const appPath = paths[0];
 
   return {
     appPath,
-    dmgPath,
     appBinaryPath: join(appPath, "Contents", "MacOS", "couple-desktop-pet"),
     generatedInfoPlistPath: join(appPath, "Contents", "Info.plist"),
   };
+}
+
+function selectNewestPath(paths, artifactName, root) {
+  if (paths.length === 0) {
+    throw new Error(`No ${artifactName} found under ${root}`);
+  }
+
+  return paths
+    .map((path) => ({ path, mtimeMs: statSync(path).mtimeMs }))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs || left.path.localeCompare(right.path))[0]
+    .path;
 }
 
 export function listPaths(root) {
@@ -157,14 +178,31 @@ export function listPaths(root) {
 }
 
 export function parseHdiutilMountPoint(output) {
-  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = output.split(/\r?\n/).filter((line) => line.trim());
   for (const line of lines.reverse()) {
-    const match = line.match(/\/Volumes\/.+$/);
+    const columns = line.split(/\t+/);
+    const candidate = columns.at(-1)?.trim();
+    if (columns.length >= 3 && candidate && (candidate.startsWith("/") || /^[A-Za-z]:[\\/]/.test(candidate))) {
+      return candidate;
+    }
+    const match = line.trim().match(/\/Volumes\/.+$/);
     if (match) {
       return match[0].trim();
     }
   }
   throw new Error("Unable to parse hdiutil attach mount point");
+}
+
+export function parseHdiutilAttachTargets(output) {
+  const deviceNode = output.match(/\/dev\/disk\S*/)?.[0];
+  let mountPoint;
+  try {
+    mountPoint = parseHdiutilMountPoint(output);
+  } catch {
+    mountPoint = undefined;
+  }
+
+  return { deviceNode, mountPoint };
 }
 
 export function resolveStepArgs(args, artifacts) {
@@ -204,6 +242,24 @@ export function redactBuildLog(text, env = process.env) {
 }
 
 export function runStep(step, env = process.env) {
+  if (step.command === "__assertPathExists") {
+    const [path] = step.args;
+    if (!existsSync(path)) {
+      return Promise.reject(
+        Object.assign(new Error(`${step.name} missing path: ${path}`), {
+          code: 1,
+          stdout: "",
+          stderr: `${path} does not exist`,
+        }),
+      );
+    }
+    return Promise.resolve({
+      code: 0,
+      stdout: `${path} exists\n`,
+      stderr: "",
+    });
+  }
+
   return new Promise((resolveStep, rejectStep) => {
     const child = spawn(step.command, step.args, {
       cwd: repoRoot,
@@ -219,7 +275,15 @@ export function runStep(step, env = process.env) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", rejectStep);
+    child.on("error", (error) => {
+      rejectStep(
+        Object.assign(error, {
+          code: 1,
+          stdout,
+          stderr: error.message,
+        }),
+      );
+    });
     child.on("close", (code) => {
       const result = { code, stdout, stderr };
       if (code === 0) {
@@ -229,6 +293,28 @@ export function runStep(step, env = process.env) {
       rejectStep(Object.assign(new Error(`${step.name} exited with ${code}`), result));
     });
   });
+}
+
+export async function runRecordedStep(step, { runner = runStep, evidenceDir, env = process.env }) {
+  try {
+    const result = await runner(step, env);
+    if (result.code !== 0) {
+      throw Object.assign(new Error(`${step.name} exited with ${result.code}`), result);
+    }
+    writeStepLog(evidenceDir, step.name, result, env);
+    return result;
+  } catch (error) {
+    writeStepLog(evidenceDir, step.name, resultFromError(error), env);
+    throw error;
+  }
+}
+
+function resultFromError(error) {
+  return {
+    code: typeof error.code === "number" ? error.code : 1,
+    stdout: error.stdout ?? "",
+    stderr: error.stderr ?? error.message ?? String(error),
+  };
 }
 
 export function writeStepLog(evidenceDir, name, result, env = process.env) {
@@ -243,55 +329,82 @@ export function writeStepLog(evidenceDir, name, result, env = process.env) {
   writeFileSync(join(evidenceDir, `${name}.log`), redactBuildLog(output, env));
 }
 
+function writeHashLog(evidenceDir, name, path) {
+  mkdirSync(evidenceDir, { recursive: true });
+  writeFileSync(join(evidenceDir, name), `${sha256File(path)}  ${path}\n`);
+}
+
 export async function runMacosBuildVerification({
   mode,
   bundleRoot = defaultBundleRoot,
   evidenceDir = defaultEvidenceDir,
   env = process.env,
+  platform = process.platform,
+  runner = runStep,
 } = {}) {
-  if (process.platform !== "darwin") {
+  if (platform !== "darwin") {
     throw new Error("macOS build verification must run on a real macOS host");
   }
 
   const plan = createMacosBuildPlan({ mode });
-  const buildResult = await runStep(plan.buildStep, env);
-  writeStepLog(evidenceDir, plan.buildStep.name, buildResult, env);
+  await runRecordedStep(plan.buildStep, { runner, evidenceDir, env });
 
   const artifacts = findMacosArtifacts(bundleRoot);
-  let mountPoint;
+  await runRecordedStep(
+    {
+      name: "staging-app-exists",
+      command: "__assertPathExists",
+      args: [artifacts.stagingAppPath],
+      shell: false,
+    },
+    { runner, evidenceDir, env },
+  );
+
+  writeHashLog(evidenceDir, "sha256-dmg.log", artifacts.dmgPath);
+  let mountedApp;
+  let detachTarget;
 
   try {
     for (const step of plan.verificationSteps) {
+      const stepArtifacts = mountedApp ?? {
+        ...artifacts,
+        appPath: artifacts.stagingAppPath,
+        appBinaryPath: join(artifacts.stagingAppPath, "Contents", "MacOS", "couple-desktop-pet"),
+        generatedInfoPlistPath: join(artifacts.stagingAppPath, "Contents", "Info.plist"),
+      };
       const resolvedStep = {
         ...step,
-        args: resolveStepArgs(step.args, { ...artifacts, mountPoint }),
+        args: resolveStepArgs(step.args, {
+          ...artifacts,
+          ...stepArtifacts,
+          mountPoint: detachTarget,
+        }),
       };
-      const result = await runStep(resolvedStep, env);
+      const result = await runRecordedStep(resolvedStep, { runner, evidenceDir, env });
       if (step.name === "hdiutil-attach-dmg") {
-        mountPoint = parseHdiutilMountPoint(`${result.stdout}\n${result.stderr}`);
+        const targets = parseHdiutilAttachTargets(`${result.stdout}\n${result.stderr}`);
+        detachTarget = targets.mountPoint ?? targets.deviceNode;
+        if (!targets.mountPoint) {
+          throw new Error("Unable to parse hdiutil attach mount point");
+        }
+        mountedApp = findMountedApp(targets.mountPoint);
+        writeHashLog(evidenceDir, "sha256-app-binary.log", mountedApp.appBinaryPath);
       }
       if (step.name === "lipo-verify-universal") {
         assertUniversalSlices(`${result.stdout}\n${result.stderr}`);
       }
-      writeStepLog(evidenceDir, step.name, result, env);
     }
-
-    writeFileSync(
-      join(evidenceDir, "sha256-dmg.log"),
-      `${sha256File(artifacts.dmgPath)}  ${artifacts.dmgPath}\n`,
-    );
   } finally {
-    if (mountPoint) {
+    if (detachTarget) {
       const detachStep = {
         ...plan.detachStep,
-        args: resolveStepArgs(plan.detachStep.args, { ...artifacts, mountPoint }),
+        args: resolveStepArgs(plan.detachStep.args, { ...artifacts, mountPoint: detachTarget }),
       };
-      const detachResult = await runStep(detachStep, env);
-      writeStepLog(evidenceDir, plan.detachStep.name, detachResult, env);
+      await runRecordedStep(detachStep, { runner, evidenceDir, env });
     }
   }
 
-  return artifacts;
+  return { ...artifacts, mountedApp };
 }
 
 function parseCliMode(argv) {

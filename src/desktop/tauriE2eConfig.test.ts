@@ -27,6 +27,9 @@ describe("macOS Tauri embedded E2E config", () => {
       "@wdio/mocha-framework",
       "@wdio/spec-reporter",
       "@wdio/globals",
+      "@wdio/types",
+      "@types/node",
+      "@types/mocha",
     ]) {
       expect(packageJson.devDependencies).toHaveProperty(dependency);
     }
@@ -107,9 +110,42 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(wdioConfig).toContain('services: [["tauri"');
     expect(wdioConfig).toContain('driverProvider: "embedded"');
     expect(wdioConfig).toContain("appBinaryPath");
+    expect(wdioConfig).toContain('browserName: "tauri"');
+    expect(wdioConfig).toContain('"tauri:options"');
+    expect(wdioConfig).toContain("application: appBinaryPath");
     expect(wdioConfig).not.toContain("tauri-driver");
     expect(wdioConfig).not.toContain("hostname: \"127.0.0.1\"");
     expect(wdioConfig).not.toContain("port: 4444");
+  });
+
+  it("includes E2E TypeScript in the root typecheck project graph", () => {
+    const rootTsconfig = readJson<{
+      references?: Array<{ path?: string }>;
+    }>("tsconfig.json");
+    const e2eTsconfig = readJson<{
+      compilerOptions?: {
+        types?: string[];
+        declaration?: boolean;
+        emitDeclarationOnly?: boolean;
+        outDir?: string;
+        tsBuildInfoFile?: string;
+      };
+      include?: string[];
+    }>("tsconfig.e2e.json");
+
+    expect(rootTsconfig.references).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "./tsconfig.e2e.json" })]),
+    );
+    expect(e2eTsconfig.compilerOptions?.declaration).toBe(true);
+    expect(e2eTsconfig.compilerOptions?.emitDeclarationOnly).toBe(true);
+    expect(e2eTsconfig.compilerOptions?.outDir).toBe("node_modules/.cache/tsbuild/e2e");
+    expect(e2eTsconfig.compilerOptions?.tsBuildInfoFile).toBe(
+      "node_modules/.cache/tsbuild/e2e.tsbuildinfo",
+    );
+    expect(e2eTsconfig.compilerOptions?.types).toEqual(
+      expect.arrayContaining(["node", "mocha", "@wdio/globals/types"]),
+    );
+    expect(e2eTsconfig.include).toEqual(["e2e/**/*.ts"]);
   });
 
   it("defines specs with existing stable selectors", () => {
@@ -118,6 +154,12 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).toContain('aria-label="情侣桌宠 MVP"');
     expect(spec).toContain("桌宠菜单");
     expect(spec).toContain("桌宠设置");
+    expect(spec).toContain("形象管理");
+    expect(spec).toContain("远程互动");
+    expect(spec).toContain("互动选项");
+    expect(spec).toContain("我的状态");
+    expect(spec).toContain("dialog");
+    expect(spec).not.toContain("$('button[role=\"menuitem\"]')");
     expect(spec).toContain("关闭设置");
     expect(spec).not.toContain("data-testid");
   });

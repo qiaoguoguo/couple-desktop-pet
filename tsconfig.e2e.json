@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "node_modules/.cache/tsbuild/e2e",
+    "tsBuildInfoFile": "node_modules/.cache/tsbuild/e2e.tsbuildinfo",
+    "types": ["node", "mocha", "@wdio/globals/types"]
+  },
+  "include": ["e2e/**/*.ts"]
+}
