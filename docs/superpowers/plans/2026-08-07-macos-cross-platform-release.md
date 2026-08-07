@@ -1975,7 +1975,7 @@ git commit -m "ci: add macos and cross platform workflows"
 **Files:**
 - Create: `.superpowers/sdd/2026-08-07-macos-cross-platform/README.md`
 - Create: `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md`
-- Create: `scripts/macos/evidence-manifest.test.ts`
+- Create: `scripts/macos/evidence-manifest.test.mjs`
 
 **Interfaces:**
 - Defines committed evidence structure.
@@ -1983,7 +1983,7 @@ git commit -m "ci: add macos and cross platform workflows"
 
 - [ ] **Step 1: Write RED evidence manifest test**
 
-Create `scripts/macos/evidence-manifest.test.ts`:
+Create `scripts/macos/evidence-manifest.test.mjs`:
 
 ```ts
 import { readFileSync } from "node:fs";
@@ -2025,7 +2025,7 @@ describe("macOS evidence manifest", () => {
 
 - [ ] **Step 2: Run RED**
 
-Run: `pnpm vitest run scripts/macos/evidence-manifest.test.ts`
+Run: `pnpm vitest run scripts/macos/evidence-manifest.test.mjs`
 
 Expected: FAIL because evidence templates do not exist.
 
@@ -2042,7 +2042,7 @@ Record macOS version, CPU architecture, Xcode version, Rust toolchains, Node ver
 
 ## Raw Logs
 
-Store exact command output from Windows tests, macOS tests, macOS build, DMG verification, binary inspection, signing, notarization, stapling, Gatekeeper assessment, HTTP/WS Relay smoke, and interop.
+Store exact command output from Windows tests, macOS tests, macOS build, DMG verification, binary inspection, signing, notarization, stapling, Gatekeeper assessment, HTTP/WS Relay smoke, and interop. Current QA build logs include `build/hdiutil-verify-dmg.log`, `build/hdiutil-attach-dmg.log`, `build/plutil-generated-info-plist.log`, `build/file-app-binary.log`, `build/lipo-verify-universal.log`, `build/codesign-verify-app.log`, `build/codesign-describe-app.log`, `build/hdiutil-detach-dmg.log`, `build/sha256-dmg.log`, and `build/sha256-app-binary.log`. macOS QA regression logs live under `macos/`; native evidence logs live under `native/`.
 
 ## Screenshots
 
@@ -2050,7 +2050,7 @@ Store transparent window, menu bar tray, Dock before/after, settings, imported p
 
 ## Interop
 
-Store sanitized Windows-to-macOS JSONL logs with device IDs shortened, no device secrets, and no message bodies.
+Store sanitized Windows-to-macOS JSONL logs split by runner role: `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/validator/validator.log`, `interop/windows/screenshots/`, and `interop/macos/screenshots/`. Device secrets, tokens, binding codes, and message bodies are forbidden.
 
 ## DMG Hashes
 
@@ -2058,7 +2058,7 @@ Store `shasum -a 256` output for the DMG and the app binary.
 
 ## Signing And Notarization
 
-Store `codesign`, `spctl`, `notarytool`, and `stapler` output. Ad-hoc evidence is QA-only.
+Store `codesign`, `spctl`, `notarytool`, and `stapler` output. Ad-hoc evidence is QA-only. Only the formal Developer ID workflow can mark signing and notarization gates as passed; its current files include `build/codesign-verify-app-final.log`, `build/codesign-describe-app-final.log`, `build/notarytool-history.log`, `build/stapler-validate-app.log`, `build/stapler-validate-dmg.log`, `build/spctl-assess-app.log`, `build/spctl-assess-dmg.log`, `build/hdiutil-verify-formal-dmg.log`, `build/sha256-dmg-final.log`, and `build/sha256-app-binary-final.log`.
 
 ## Final Matrix
 
@@ -2074,32 +2074,33 @@ Create `.superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix
 
 | Gate | Required Evidence Path | Result |
 | --- | --- | --- |
-| Windows full regression | `windows/full-regression.log` | Not run |
-| macOS full regression | `macos/full-regression.log` | Not run |
+| Windows full regression | `windows/pnpm-test.log`, `windows/pnpm-typecheck.log`, `windows/pnpm-build.log`, `windows/cargo-test.log`, `windows/cargo-check.log` | Not run |
+| macOS full regression | `macos/pnpm-test.log`, `macos/pnpm-typecheck.log`, `macos/pnpm-build.log`, `macos/cargo-test.log`, `macos/cargo-check.log`, `macos/cargo-fmt-check.log` | Not run |
 | Universal DMG with two slices | `build/file-app-binary.log`, `build/lipo-verify-universal.log` | Not run |
-| Generated Info.plist ATS content | `build/generated-info-plist-ats.log` | Not run |
-| macOS HTTP and WebSocket Relay connection | `network/macos-http-ws.log` | Not run |
+| Generated Info.plist ATS content | `build/plutil-generated-info-plist.log`, `native/generated-info-plist.log` | Not run |
+| macOS HTTP and WebSocket Relay connection | `network/macos-http-ws-relay.log` | Not run |
 | hdiutil verify attach detach | `build/hdiutil-verify-dmg.log`, `build/hdiutil-attach-dmg.log`, `build/hdiutil-detach-dmg.log` | Not run |
 | Codesign | `build/codesign-verify-app.log`, `build/codesign-describe-app.log` | Not run |
-| Notarytool | `build/notarytool.log` | Not run |
-| Stapler validate | `build/stapler-validate.log` | Not run |
-| spctl before and after staple | `build/spctl-before-staple.log`, `build/spctl-after-staple.log` | Not run |
-| Production build excludes E2E plugins and permissions | `build/cargo-tree-production.log`, `build/production-permission-scan.log` | Not run |
-| Actual macOS launch | `native/launch.log`, `native/transparent-window.png` | Not run |
+| Formal Developer ID notarization | `build/notarytool-history.log` | Not run |
+| Formal stapler validate | `build/stapler-validate-app.log`, `build/stapler-validate-dmg.log` | Not run |
+| Formal Gatekeeper assessment | `build/spctl-assess-app.log`, `build/spctl-assess-dmg.log` | Not run |
+| Production build excludes E2E plugins and permissions | `macos/cargo-tree-production.log`, `macos/production-permission-scan.log` | Not run |
+| Actual macOS launch | `native/launch-app.log`, `native/process-exists.log`, `native/app-window.png` | Not run |
 | Native shell parity | `native/`, `docs/manual-verification/macos-cross-platform.md` | Not run |
-| Windows to macOS interop | `interop/events.jsonl`, `interop/screenshots/` | Not run |
+| Windows to macOS interop | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/validator/validator.log`, `interop/windows/screenshots/`, `interop/macos/screenshots/` | Not run |
+| Formal Developer ID SHA256 | `build/sha256-dmg-final.log`, `build/sha256-app-binary-final.log` | Not run |
 ```
 
 - [ ] **Step 5: Run GREEN**
 
-Run: `pnpm vitest run scripts/macos/evidence-manifest.test.ts`
+Run: `pnpm vitest run scripts/macos/evidence-manifest.test.mjs`
 
-Expected: PASS, 2 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/macos/evidence-manifest.test.ts
+git add scripts/macos/evidence-manifest.test.mjs
 git add -f .superpowers/sdd/2026-08-07-macos-cross-platform/README.md .superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md
 git commit -m "docs: add macos release evidence matrix"
 ```
@@ -2133,9 +2134,9 @@ import {
 
 describe("macOS final release gate", () => {
   it("requires external evidence before generating a decision", () => {
-    expect(requiredFinalEvidence).toContain("build/generated-info-plist-ats.log");
-    expect(requiredFinalEvidence).toContain("network/macos-http-ws.log");
-    expect(requiredFinalEvidence).toContain("build/cargo-tree-production.log");
+    expect(requiredFinalEvidence).toContain("build/plutil-generated-info-plist.log");
+    expect(requiredFinalEvidence).toContain("network/macos-http-ws-relay.log");
+    expect(requiredFinalEvidence).toContain("macos/cargo-tree-production.log");
     expect(requiredFinalEvidence).toContain("build/lipo-verify-universal.log");
     expect(requiredFinalEvidence).not.toContain("release-decision.md");
 
@@ -2181,8 +2182,8 @@ export const requiredFinalEvidence = [
   "macos/full-regression.log",
   "build/file-app-binary.log",
   "build/lipo-verify-universal.log",
-  "build/generated-info-plist-ats.log",
-  "network/macos-http-ws.log",
+  "build/plutil-generated-info-plist.log",
+  "network/macos-http-ws-relay.log",
   "build/hdiutil-verify-dmg.log",
   "build/hdiutil-attach-dmg.log",
   "build/hdiutil-detach-dmg.log",
@@ -2192,14 +2193,17 @@ export const requiredFinalEvidence = [
   "build/stapler-validate.log",
   "build/spctl-before-staple.log",
   "build/spctl-after-staple.log",
-  "build/cargo-tree-production.log",
-  "build/production-permission-scan.log",
-  "native/launch.log",
-  "native/transparent-window.png",
+  "macos/cargo-tree-production.log",
+  "macos/production-permission-scan.log",
+  "native/launch-app.log",
+  "native/process-exists.log",
+  "native/app-window.png",
   "native/menu-bar-tray.png",
   "native/dock-before.png",
   "native/dock-after.png",
-  "interop/events.jsonl",
+  "interop/windows/events.jsonl",
+  "interop/macos/events.jsonl",
+  "interop/validator/validator.log",
 ];
 
 export function evaluateMacosReleaseGate({
@@ -2290,17 +2294,17 @@ cargo test --manifest-path src-tauri/Cargo.toml
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 pnpm macos:formal-build
-plutil -p "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist" > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/generated-info-plist-ats.log"
+plutil -p "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist" > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/plutil-generated-info-plist.log"
 INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs create --repo owner/repo --title "couple-pet interop"
-cargo tree --manifest-path src-tauri/Cargo.toml --no-default-features > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/cargo-tree-production.log"
-node scripts/macos/final-release-gate.mjs --scan-production > ".superpowers/sdd/2026-08-07-macos-cross-platform/build/production-permission-scan.log"
+cargo tree --manifest-path src-tauri/Cargo.toml --no-default-features > ".superpowers/sdd/2026-08-07-macos-cross-platform/macos/cargo-tree-production.log"
+node scripts/macos/final-release-gate.mjs --scan-production > ".superpowers/sdd/2026-08-07-macos-cross-platform/macos/production-permission-scan.log"
 pnpm macos:native-evidence
 pnpm e2e:macos
 pnpm e2e:interop:windows
 pnpm e2e:interop:windows:restart
 pnpm e2e:interop:macos
 pnpm e2e:interop:macos:restart
-pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
+pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows/events.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos/events.jsonl
 INTEROP_GITHUB_TOKEN="$INTEROP_GITHUB_TOKEN" node scripts/interop/github-rendezvous.mjs cleanup --repo owner/repo --issue "$INTEROP_ISSUE_NUMBER"
 pnpm macos:final-gate
 ```
@@ -2358,7 +2362,7 @@ pnpm e2e:interop:windows
 pnpm e2e:interop:windows:restart
 pnpm e2e:interop:macos
 pnpm e2e:interop:macos:restart
-pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos.jsonl
+pnpm interop:validate -- --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/windows/events.jsonl --log .superpowers/sdd/2026-08-07-macos-cross-platform/interop/macos/events.jsonl
 pnpm macos:formal-build
 pnpm macos:final-gate
 ```
