@@ -28,7 +28,7 @@ export const config: WebdriverIO.Config = {
     restart: ["./specs/restart-unpaired.e2e.ts"],
   },
   maxInstances: 1,
-  logLevel: "info",
+  logLevel: "error",
   framework: "mocha",
   reporters: ["spec"],
   services: [["tauri", { appBinaryPath, driverProvider: "embedded", env: childAppEnv }]],

@@ -56,6 +56,8 @@ describe("cross-platform interop E2E harness config", () => {
       expect(config).toContain("application: appBinaryPath");
       expect(config).toContain("filterChildAppEnv");
       expect(config).toContain("createIsolatedAppEnv");
+      expect(config).toContain('logLevel: "error"');
+      expect(config).not.toContain('logLevel: "info"');
       expect(config).not.toContain("tauri-driver");
       expect(config).not.toContain("hostname");
       expect(config).not.toContain("port: 4444");
@@ -107,8 +109,16 @@ describe("cross-platform interop E2E harness config", () => {
     expect(evidenceHelper).toContain("INTEROP_SCREENSHOT_DIR");
     expect(evidenceHelper).toContain("createInteropEventLogger");
     expect(evidenceHelper).toContain("saveScreenshot");
+    expect(evidenceHelper).toContain('selector = ".pet-frame-stage"');
+    expect(evidenceHelper).not.toContain("browser.saveScreenshot");
     expect(crossPlatformSpec).toContain("recordAndSend");
     expect(crossPlatformSpec).toContain("captureEvidenceScreenshot");
+    expect(crossPlatformSpec).toMatch(
+      /captureEvidenceScreenshot\(\s*"message-animation",\s*'\.pet-frame-stage\[data-motion-id="motion-message-pair"\]'/,
+    );
+    expect(crossPlatformSpec).not.toContain(
+      'captureEvidenceScreenshot("message-animation", \'section[aria-label="情侣桌宠 MVP"]\')',
+    );
     expect(crossPlatformSpec).toContain("failure");
     expect(restartSpec).toContain("recordAndSend");
   });

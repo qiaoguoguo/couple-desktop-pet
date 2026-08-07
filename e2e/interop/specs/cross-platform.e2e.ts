@@ -102,7 +102,10 @@ describe("Windows macOS encrypted interop smoke", () => {
           message: testMessageText,
         });
         await waitForMessageAnimation();
-        await captureEvidenceScreenshot("message-animation", 'section[aria-label="情侣桌宠 MVP"]');
+        await captureEvidenceScreenshot(
+          "message-animation",
+          '.pet-frame-stage[data-motion-id="motion-message-pair"]',
+        );
         await recordAndSend(rendezvous, "windows-message-animation-observed", {
           assertion: "main pet motion id was motion-message-pair",
         });
@@ -120,7 +123,10 @@ describe("Windows macOS encrypted interop smoke", () => {
           message: testMessageText,
         });
         await waitForMessageAnimation();
-        await captureEvidenceScreenshot("message-animation", 'section[aria-label="情侣桌宠 MVP"]');
+        await captureEvidenceScreenshot(
+          "message-animation",
+          '.pet-frame-stage[data-motion-id="motion-message-pair"]',
+        );
         await recordAndSend(rendezvous, "macos-message-animation-observed", {
           assertion: "main pet motion id was motion-message-pair",
         });

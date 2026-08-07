@@ -1,4 +1,4 @@
-import { $, browser } from "@wdio/globals";
+import { $ } from "@wdio/globals";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createInteropEventLogger } from "../../../scripts/interop/cross-platform-smoke.mjs";
@@ -31,7 +31,7 @@ export function createEvidenceRecorder(role: InteropRole) {
       logger.record(event, details);
       await rendezvous.send(event, details);
     },
-    async captureEvidenceScreenshot(name: string, selector = 'section[aria-label="情侣桌宠 MVP"]') {
+    async captureEvidenceScreenshot(name: string, selector = ".pet-frame-stage") {
       const screenshotDir = process.env.INTEROP_SCREENSHOT_DIR;
       if (!screenshotDir) {
         return null;
@@ -41,10 +41,14 @@ export function createEvidenceRecorder(role: InteropRole) {
       const target = await $(selector);
       if (await target.isExisting()) {
         await target.saveScreenshot(path);
-      } else {
-        await browser.saveScreenshot(path);
+        return path;
       }
-      return path;
+      logger.record("screenshot-skipped", {
+        assertion: "safe screenshot target was not present",
+        screenshotName: sanitizeScreenshotName(name),
+        selector,
+      });
+      return null;
     },
   };
 }
