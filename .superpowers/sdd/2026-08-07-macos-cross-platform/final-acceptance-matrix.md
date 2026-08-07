@@ -6,6 +6,7 @@ Initial results are `Pending` or `Not run`. Do not mark a gate as passed until d
 | --- | --- | --- |
 | Windows full regression | `windows/pnpm-test.log`, `windows/pnpm-typecheck.log`, `windows/pnpm-build.log`, `windows/cargo-test.log`, `windows/cargo-check.log` | Not run |
 | macOS full regression | `macos/pnpm-test.log`, `macos/pnpm-typecheck.log`, `macos/pnpm-build.log`, `macos/cargo-test.log`, `macos/cargo-check.log`, `macos/cargo-fmt-check.log` | Not run |
+| macOS native WDIO smoke | `macos/e2e-macos-build.log`, `macos/e2e-macos.log` with `1 passed` and `0 failed` completion markers | Not run |
 | Universal app binary has Intel and Apple Silicon slices | `build/file-app-binary.log`, `build/lipo-verify-universal.log` | Pending |
 | DMG verify attach detach | `build/hdiutil-verify-dmg.log`, `build/hdiutil-attach-dmg.log`, `build/hdiutil-detach-dmg.log` | Pending |
 | Generated Info.plist ATS content | `build/plutil-generated-info-plist.log`, `native/generated-info-plist.log` | Pending |
@@ -23,9 +24,10 @@ Initial results are `Pending` or `Not run`. Do not mark a gate as passed until d
 | Settings, package import, status card, and composer parity | `native/settings.png`, `native/package-import.png`, `native/status-card.png`, `native/message-composer.png` | Pending |
 | Current four-edge behavior parity | `native/edge-left.png`, `native/edge-right.png`, `native/edge-top.png`, `native/edge-bottom.png` | Pending |
 | Windows macOS pairing and online state | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/validator/validator.log` | Not run |
-| Activity status sync both directions | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/windows/screenshots/`, `interop/macos/screenshots/` | Not run |
-| Bidirectional messages, animation, and bubble acknowledgement | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/windows/screenshots/`, `interop/macos/screenshots/` | Not run |
+| Activity status sync both directions | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/windows/screenshots/windows-peer-status-slacking.png`, `interop/macos/screenshots/macos-peer-status-slacking.png` | Not run |
+| Bidirectional messages, animation, and bubble acknowledgement | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/windows/screenshots/windows-message-animation.png`, `interop/macos/screenshots/macos-message-animation.png` | Not run |
 | Unbind and restart show unpaired | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/validator/validator.log` | Not run |
+| Interop safe paired and unpaired screenshots | `interop/windows/screenshots/windows-paired.png`, `interop/windows/screenshots/windows-unpaired.png`, `interop/macos/screenshots/macos-paired.png`, `interop/macos/screenshots/macos-unpaired.png` | Not run |
 | QA DMG and app binary SHA256 | `build/sha256-dmg.log`, `build/sha256-app-binary.log` | Pending |
 | Formal DMG and app binary SHA256 | `build/sha256-dmg-final.log`, `build/sha256-app-binary-final.log` | Pending |
 | Formal DMG verification | `build/hdiutil-verify-formal-dmg.log` | Pending |

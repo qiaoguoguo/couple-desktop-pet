@@ -16,6 +16,7 @@ import {
   requiredFinalEvidence,
   requiredFormalEvidence,
   requiredManualNativeEvidence,
+  requiredManualCheckIds,
   requiredQaEvidence,
   runFinalReleaseGateCli,
   scanProductionArtifacts,
@@ -52,8 +53,28 @@ function writeCompleteEvidence(root, { includeFormal = true } = {}) {
     if (relativePath === "interop/windows/events.jsonl" || relativePath === "interop/macos/events.jsonl") {
       continue;
     }
+    if (relativePath === "interop/validator/validator.log") {
+      writeEvidence(root, relativePath, JSON.stringify({ ok: true, missing: [] }));
+      continue;
+    }
+    if (relativePath === "native/manual-checklist.log") {
+      writeEvidence(root, relativePath, `${requiredManualCheckIds.map((id) => `${id}=PASS`).join("\n")}\n`);
+      continue;
+    }
+    if (relativePath === "macos/e2e-macos.log") {
+      writeEvidence(root, relativePath, "Spec Files: 1 passed, 0 failed\n");
+      continue;
+    }
+    if (relativePath.endsWith(".png")) {
+      writeEvidence(root, relativePath, "\x89PNG\r\n");
+      continue;
+    }
     if (relativePath.includes("lipo-verify-universal")) {
-      writeEvidence(root, relativePath, "Architectures in the fat file: app are: x86_64 arm64\n");
+      writeEvidence(root, relativePath, "exit=0\n--- stdout ---\nArchitectures in the fat file: app are: x86_64 arm64\n");
+      continue;
+    }
+    if (isRecordedExitLogFixture(relativePath)) {
+      writeEvidence(root, relativePath, "exit=0\n--- stdout ---\nok\n--- stderr ---\n");
       continue;
     }
     if (relativePath.includes("sha256-")) {
@@ -66,6 +87,38 @@ function writeCompleteEvidence(root, { includeFormal = true } = {}) {
   writeInteropLogs(root);
 }
 
+function isRecordedExitLogFixture(relativePath) {
+  return (
+    relativePath.startsWith("native/") &&
+    [
+      "native/sw-vers.log",
+      "native/uname-machine.log",
+      "native/system-profiler.log",
+      "native/source-info-plist.log",
+      "native/generated-info-plist.log",
+      "native/codesign-display.log",
+      "native/codesign-verify.log",
+      "native/spctl-assess.log",
+      "native/launch-app.log",
+      "native/process-exists.log",
+      "native/quit-app.log",
+    ].includes(relativePath)
+  ) || (
+    relativePath.startsWith("build/") &&
+    [
+      "build/plutil-source-info-plist.log",
+      "build/hdiutil-verify-dmg.log",
+      "build/hdiutil-attach-dmg.log",
+      "build/plutil-generated-info-plist.log",
+      "build/file-app-binary.log",
+      "build/lipo-verify-universal.log",
+      "build/codesign-verify-app.log",
+      "build/codesign-describe-app.log",
+      "build/hdiutil-detach-dmg.log",
+    ].includes(relativePath)
+  );
+}
+
 function writeInteropLogs(root, omitEvent) {
   const windowsRows = [];
   const macosRows = [];
@@ -73,7 +126,13 @@ function writeInteropLogs(root, omitEvent) {
     if (event === omitEvent) {
       continue;
     }
-    const row = JSON.stringify({ event, role: event.startsWith("windows") ? "windows" : "macos" });
+    const row = JSON.stringify({
+      event,
+      role: event.startsWith("windows") ? "windows" : "macos",
+      platform: event.startsWith("windows") ? "windows" : "macos",
+      at: "2026-08-07T12:00:00.000Z",
+      details: { assertion: "non-sensitive assertion passed" },
+    });
     if (event.startsWith("macos")) {
       macosRows.push(row);
     } else {
@@ -90,11 +149,21 @@ describe("macOS final release gate", () => {
     expect(requiredQaEvidence).toContain("network/macos-http-ws-relay.log");
     expect(requiredQaEvidence).toContain("macos/cargo-tree-production.log");
     expect(requiredQaEvidence).toContain("build/lipo-verify-universal.log");
+    expect(requiredQaEvidence).toContain("macos/e2e-macos-build.log");
+    expect(requiredQaEvidence).toContain("macos/e2e-macos.log");
     expect(requiredManualNativeEvidence).toContain("native/app-window.png");
     expect(requiredFormalEvidence).toContain("build/stapler-validate-dmg.log");
     expect(requiredFinalEvidence).toContain("interop/windows/events.jsonl");
     expect(requiredFinalEvidence).toContain("interop/macos/events.jsonl");
     expect(requiredFinalEvidence).toContain("interop/validator/validator.log");
+    expect(requiredFinalEvidence).toContain("interop/windows/screenshots/windows-paired.png");
+    expect(requiredFinalEvidence).toContain("interop/windows/screenshots/windows-peer-status-slacking.png");
+    expect(requiredFinalEvidence).toContain("interop/windows/screenshots/windows-message-animation.png");
+    expect(requiredFinalEvidence).toContain("interop/windows/screenshots/windows-unpaired.png");
+    expect(requiredFinalEvidence).toContain("interop/macos/screenshots/macos-paired.png");
+    expect(requiredFinalEvidence).toContain("interop/macos/screenshots/macos-peer-status-slacking.png");
+    expect(requiredFinalEvidence).toContain("interop/macos/screenshots/macos-message-animation.png");
+    expect(requiredFinalEvidence).toContain("interop/macos/screenshots/macos-unpaired.png");
     expect(requiredFinalEvidence).not.toContain("interop/events.jsonl");
     expect(requiredFinalEvidence).not.toContain("release-decision.md");
   });
@@ -158,6 +227,112 @@ describe("macOS final release gate", () => {
         }),
       ]),
     );
+  });
+
+  it("blocks when WDIO macOS E2E, validator JSON, or required interop screenshots are not semantically valid", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    writeEvidence(root, "macos/e2e-macos.log", "Spec Files: 0 passed, 1 failed\n");
+    writeEvidence(root, "interop/validator/validator.log", JSON.stringify({ ok: false, missing: ["windows-peer-online"] }));
+    writeEvidence(root, "interop/windows/screenshots/windows-paired.png", "");
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("blocked");
+    expect(result.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "macos/e2e-macos.log", reason: expect.stringContaining("1 passed") }),
+        expect.objectContaining({ path: "interop/validator/validator.log", reason: expect.stringContaining("ok=true") }),
+        expect.objectContaining({ path: "interop/windows/screenshots/windows-paired.png", reason: expect.stringContaining("empty") }),
+      ]),
+    );
+  });
+
+  it("blocks when interop JSONL role schema or privacy constraints are violated", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    const sensitiveRows = [
+      JSON.stringify({
+        event: "windows-pair-code-created",
+        role: "macos",
+        platform: "windows",
+        details: { message: "interop message text", token: "<redacted>" },
+      }),
+      JSON.stringify({
+        event: "failure",
+        role: "windows",
+        platform: "windows",
+        details: { errorSummary: "github_pat_1234567890abcdefghijklmnopqrstuv" },
+      }),
+    ];
+    writeEvidence(root, "interop/windows/events.jsonl", `${sensitiveRows.join("\n")}\n`);
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("blocked");
+    expect(result.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "interop/windows/events.jsonl",
+          reason: expect.stringContaining("role"),
+        }),
+      ]),
+    );
+    const reasonText = result.invalid.map((entry) => entry.reason).join("\n");
+    expect(reasonText).not.toContain("interop message text");
+    expect(reasonText).not.toContain("github_pat_");
+  });
+
+  it("requires every manual native check id to pass explicitly", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    writeEvidence(
+      root,
+      "native/manual-checklist.log",
+      `${requiredManualCheckIds.filter((id) => id !== "four-edge-current-behavior").map((id) => `${id}=PASS`).join("\n")}\n`,
+    );
+
+    expect(evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }))).toMatchObject({
+      status: "blocked",
+      invalid: expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/manual-checklist.log",
+          reason: expect.stringContaining("four-edge-current-behavior"),
+        }),
+      ]),
+    });
+
+    writeEvidence(
+      root,
+      "native/manual-checklist.log",
+      `${requiredManualCheckIds.map((id) => `${id}=${id === "no-dock" ? "FAIL" : "PASS"}`).join("\n")}\n`,
+    );
+    expect(evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }))).toMatchObject({
+      status: "blocked",
+      invalid: expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/manual-checklist.log",
+          reason: expect.stringContaining("no-dock"),
+        }),
+      ]),
+    });
+  });
+
+  it("does not read PNG files as UTF-8 while rejecting recorded exit logs with nonzero exit", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    writeEvidence(root, "native/app-window.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]));
+    writeEvidence(root, "build/hdiutil-attach-dmg.log", "exit=1\n--- stdout ---\nok\n");
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("blocked");
+    expect(result.invalid).toEqual([
+      expect.objectContaining({
+        path: "build/hdiutil-attach-dmg.log",
+        reason: expect.stringContaining("exit=0"),
+      }),
+    ]);
   });
 
   it("scans only production artifacts for forbidden E2E symbols", () => {

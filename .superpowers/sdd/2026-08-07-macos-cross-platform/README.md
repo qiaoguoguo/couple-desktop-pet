@@ -25,6 +25,8 @@ Store exact command output from automated checks and build verification. Current
 - `macos/cargo-fmt-check.log`
 - `macos/production-permission-scan.log`
 - `macos/cargo-tree-production.log`
+- `macos/e2e-macos-build.log`
+- `macos/e2e-macos.log`
 - `build/plutil-source-info-plist.log`
 - `build/hdiutil-verify-dmg.log`
 - `build/hdiutil-attach-dmg.log`
@@ -42,6 +44,19 @@ Store exact command output from automated checks and build verification. Current
 - `native/launch-app.log`
 - `native/process-exists.log`
 - `native/quit-app.log`
+
+`native/manual-checklist.log` must contain one `<id>=PASS` row for each manually verified native behavior:
+
+- `no-dock=PASS`
+- `menu-bar-tray=PASS`
+- `transparent-window=PASS`
+- `always-on-top=PASS`
+- `drag-position-memory=PASS`
+- `scale-auto-move=PASS`
+- `click-through-recovery=PASS`
+- `close-to-hide=PASS`
+- `settings-package-status-composer=PASS`
+- `four-edge-current-behavior=PASS`
 
 Formal Developer ID workflow evidence is written under `build/` and includes:
 
@@ -68,7 +83,7 @@ Required screenshot evidence includes:
 
 - `native/app-window.png` from the native evidence collector.
 - Manual or semi-automated native screenshots under `native/` for transparent window compositing, no Dock icon, menu bar tray, always-on-top behavior, drag, position memory, scale, auto-move, click-through recovery, close-to-hide, settings, package import, status card, message composer, and current four-edge behavior.
-- Safe interop screenshots under `interop/windows/screenshots/` and `interop/macos/screenshots/`. These screenshots must not include binding codes, tokens, device secrets, or message text.
+- Safe interop screenshots under `interop/windows/screenshots/` and `interop/macos/screenshots/`. Required files are `windows-paired.png`, `windows-peer-status-slacking.png`, `windows-message-animation.png`, `windows-unpaired.png`, `macos-paired.png`, `macos-peer-status-slacking.png`, `macos-message-animation.png`, and `macos-unpaired.png`. These screenshots must not include binding codes, tokens, device secrets, or message text.
 
 ## Interop
 
@@ -80,7 +95,7 @@ Windows-to-macOS evidence is split by real runner role:
 - `interop/macos/screenshots/`
 - `interop/validator/validator.log`
 
-Each JSONL row must be sanitized and may include only event names, role, platform, UTC timestamp, and non-sensitive assertion details. Pair codes, device secrets, message bodies, tokens, and credentials must remain encrypted in transit and absent from evidence logs.
+Each JSONL row must be sanitized and may include only allowed event names, role, platform, UTC timestamp, and non-sensitive assertion details. Pair codes, device secrets, message bodies, dynamic error summaries, stdout, stderr, stacks, tokens, and credentials must remain encrypted in transit and absent from evidence logs. `interop/validator/validator.log` must include a JSON summary with `ok: true` and an empty `missing` array.
 
 ## DMG Hashes
 

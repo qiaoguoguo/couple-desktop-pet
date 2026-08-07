@@ -2126,8 +2126,13 @@ git commit -m "docs: add macos release evidence matrix"
 Create `scripts/macos/final-release-gate.test.mjs` with tests for:
 
 - Evidence path contract: `build/plutil-generated-info-plist.log`, `network/macos-http-ws-relay.log`, `macos/cargo-tree-production.log`, `build/lipo-verify-universal.log`, `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, and `interop/validator/validator.log` are required; `interop/events.jsonl` and `release-decision.md` are not inputs.
+- Native macOS WDIO contract: `macos/e2e-macos-build.log` and `macos/e2e-macos.log` are required, and `macos/e2e-macos.log` must contain `1 passed` and `0 failed` completion markers.
+- Interop screenshot contract: each role must provide fixed safe screenshot evidence at `interop/windows/screenshots/windows-paired.png`, `windows-peer-status-slacking.png`, `windows-message-animation.png`, `windows-unpaired.png`, and matching `macos-*` files under `interop/macos/screenshots/`.
+- Interop validator contract: `interop/validator/validator.log` must include a JSON summary with `ok: true` and an empty `missing` array.
+- Interop JSONL safety contract: every row must have a role matching the file role, an event from the required matrix or `failure`/`screenshot-skipped`/`screenshot-failed`, and no unredacted `token`, `pairCode`, `deviceSecret`, `message`, `messageText`, `errorSummary`, `errorMessage`, `stack`, `stdout`, or `stderr` details. GitHub token-shaped strings are invalid even under non-sensitive keys.
+- Manual native checklist contract: `native/manual-checklist.log` must contain `<id>=PASS` for `no-dock`, `menu-bar-tray`, `transparent-window`, `always-on-top`, `drag-position-memory`, `scale-auto-move`, `click-through-recovery`, `close-to-hide`, `settings-package-status-composer`, and `four-edge-current-behavior`.
 - Status precedence: missing or invalid QA/runtime/manual native/interop evidence produces `blocked`; complete non-formal evidence with missing Developer ID signing/notary/stapler/spctl/formal hashes produces `qa-only`; all evidence produces `complete`.
-- Evidence validity: required paths must be regular non-empty files, lipo logs must include both `arm64` and `x86_64`, SHA logs must contain a 64-character hex digest, and interop JSONL must pass the existing `readSanitizedJsonl` plus `validateInteropEvents` matrix.
+- Evidence validity: required paths must be regular non-empty files, PNG files are checked by file metadata only, lipo logs must include both `arm64` and `x86_64`, SHA logs must contain a 64-character hex digest, and recorded `qa-build`/`native-evidence` logs with an exit header must start with `exit=0`.
 - Production scan: only production `dist`, `src-tauri/capabilities/default.json`, and `src-tauri/tauri.conf.json` are scanned for `@wdio/tauri-plugin`, `wdio:default`, `wdio-webdriver:default`, `tauri-plugin-wdio`, `tauri_plugin_wdio`, `tauri-plugin-wdio-webdriver`, and `tauri_plugin_wdio_webdriver`.
 - CLI behavior: complete exits 0, `blocked`/`qa-only` exits nonzero, and the decision file contains only status/time/missing path/invalid summary metadata rather than copied evidence contents.
 
@@ -2142,6 +2147,8 @@ Expected: FAIL because final gate script does not exist.
 Create `scripts/macos/final-release-gate.mjs`:
 
 - `collectEvidenceStatus({ evidenceRoot })` inspects `requiredFinalEvidence`, verifies each path is a regular non-empty file, performs special lipo/SHA checks, and validates split interop logs using the existing sanitized JSONL reader and required event matrix.
+- The evidence collector treats PNG screenshots as binary evidence and does not read them as UTF-8. Text-only semantic validators apply to WDIO logs, validator JSON, manual checklist logs, lipo/SHA logs, recorded exit logs, and JSONL event logs.
+- `requiredQaEvidence` includes the real macOS WDIO build/run logs. `requiredInteropEvidence` includes split JSONL logs, validator output, and fixed safe screenshot files for paired, peer status, message animation, and unpaired states for both roles.
 - `evaluateMacosReleaseGate(collected)` applies the required precedence:
   - any QA, real macOS runtime, interop, or manual native issue => `blocked`;
   - non-formal evidence complete but formal Developer ID chain incomplete => `qa-only`;

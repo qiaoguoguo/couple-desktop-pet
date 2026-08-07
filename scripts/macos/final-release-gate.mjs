@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   readSanitizedJsonl,
+  requiredInteropEvents,
   validateInteropEvents,
 } from "../interop/cross-platform-smoke.mjs";
 
@@ -31,6 +32,8 @@ export const requiredQaEvidence = [
   "macos/cargo-fmt-check.log",
   "macos/production-permission-scan.log",
   "macos/cargo-tree-production.log",
+  "macos/e2e-macos-build.log",
+  "macos/e2e-macos.log",
   "build/plutil-source-info-plist.log",
   "build/hdiutil-verify-dmg.log",
   "build/hdiutil-attach-dmg.log",
@@ -88,10 +91,31 @@ export const requiredManualNativeEvidence = [
   "native/edge-bottom.png",
 ];
 
+export const requiredManualCheckIds = [
+  "no-dock",
+  "menu-bar-tray",
+  "transparent-window",
+  "always-on-top",
+  "drag-position-memory",
+  "scale-auto-move",
+  "click-through-recovery",
+  "close-to-hide",
+  "settings-package-status-composer",
+  "four-edge-current-behavior",
+];
+
 export const requiredInteropEvidence = [
   "interop/windows/events.jsonl",
   "interop/macos/events.jsonl",
   "interop/validator/validator.log",
+  "interop/windows/screenshots/windows-paired.png",
+  "interop/windows/screenshots/windows-peer-status-slacking.png",
+  "interop/windows/screenshots/windows-message-animation.png",
+  "interop/windows/screenshots/windows-unpaired.png",
+  "interop/macos/screenshots/macos-paired.png",
+  "interop/macos/screenshots/macos-peer-status-slacking.png",
+  "interop/macos/screenshots/macos-message-animation.png",
+  "interop/macos/screenshots/macos-unpaired.png",
 ];
 
 export const requiredFormalEvidence = [
@@ -135,6 +159,51 @@ const textFileExtensions = new Set([
   ".txt",
 ]);
 
+const recordedExitLogEvidence = new Set([
+  "build/plutil-source-info-plist.log",
+  "build/hdiutil-verify-dmg.log",
+  "build/hdiutil-attach-dmg.log",
+  "build/plutil-generated-info-plist.log",
+  "build/file-app-binary.log",
+  "build/lipo-verify-universal.log",
+  "build/codesign-verify-app.log",
+  "build/codesign-describe-app.log",
+  "build/hdiutil-detach-dmg.log",
+  "native/sw-vers.log",
+  "native/uname-machine.log",
+  "native/system-profiler.log",
+  "native/source-info-plist.log",
+  "native/generated-info-plist.log",
+  "native/codesign-display.log",
+  "native/codesign-verify.log",
+  "native/spctl-assess.log",
+  "native/launch-app.log",
+  "native/process-exists.log",
+  "native/quit-app.log",
+]);
+
+const allowedInteropDiagnosticEvents = new Set([
+  "failure",
+  "screenshot-skipped",
+  "screenshot-failed",
+]);
+
+const sensitiveInteropKeys = new Set([
+  "deviceSecret",
+  "errorMessage",
+  "errorSummary",
+  "message",
+  "messageText",
+  "pairCode",
+  "secret",
+  "stack",
+  "stderr",
+  "stdout",
+  "token",
+]);
+
+const githubTokenPattern = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9_]{20,})\b/;
+
 function uniquePaths(paths) {
   return [...new Set(paths)];
 }
@@ -154,6 +223,10 @@ export function inspectEvidenceFile({ evidenceRoot, relativePath }) {
     return { path: relativePath, status: "invalid", reason: "evidence file is empty" };
   }
 
+  if (relativePath.endsWith(".png")) {
+    return { path: relativePath, status: "valid" };
+  }
+
   const content = readFileSync(fullPath, "utf8");
   const validatorError = validateEvidenceContent(relativePath, content);
   if (validatorError) {
@@ -164,6 +237,11 @@ export function inspectEvidenceFile({ evidenceRoot, relativePath }) {
 }
 
 function validateEvidenceContent(relativePath, content) {
+  const exitError = validateRecordedExitLog(relativePath, content);
+  if (exitError) {
+    return exitError;
+  }
+
   if (relativePath.includes("lipo-verify-universal")) {
     const missing = ["x86_64", "arm64"].filter((arch) => !content.includes(arch));
     if (missing.length > 0) {
@@ -175,6 +253,90 @@ function validateEvidenceContent(relativePath, content) {
     return "SHA-256 evidence must contain a 64 character hexadecimal digest";
   }
 
+  if (relativePath === "macos/e2e-macos.log") {
+    if (!/\b1\s+passed\b/i.test(content) || !/\b0\s+failed\b/i.test(content)) {
+      return "macOS WDIO E2E evidence must contain a 1 passed / 0 failed completion marker";
+    }
+  }
+
+  if (relativePath === "native/manual-checklist.log") {
+    return validateManualChecklist(content);
+  }
+
+  if (relativePath === "interop/validator/validator.log") {
+    return validateInteropValidatorLog(content);
+  }
+
+  return undefined;
+}
+
+function validateRecordedExitLog(relativePath, content) {
+  if (!recordedExitLogEvidence.has(relativePath)) {
+    return undefined;
+  }
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const match = firstLine.match(/^exit=(\d+)$/);
+  if (match && match[1] !== "0") {
+    return "recorded evidence log must start with exit=0 when it includes an exit header";
+  }
+  return undefined;
+}
+
+function validateManualChecklist(content) {
+  const checks = new Map();
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const [id, value] = trimmed.split("=");
+    checks.set(id, value);
+  }
+
+  const failed = [];
+  const missing = [];
+  for (const id of requiredManualCheckIds) {
+    if (!checks.has(id)) {
+      missing.push(id);
+      continue;
+    }
+    if (checks.get(id) !== "PASS") {
+      failed.push(id);
+    }
+  }
+
+  if (missing.length > 0) {
+    return `manual checklist missing PASS rows for: ${missing.join(", ")}`;
+  }
+  if (failed.length > 0) {
+    return `manual checklist has non-PASS rows for: ${failed.join(", ")}`;
+  }
+  return undefined;
+}
+
+function validateInteropValidatorLog(content) {
+  const summary = parseLastJsonObjectLine(content);
+  if (!summary) {
+    return "interop validator evidence must contain a JSON summary";
+  }
+  if (summary.ok !== true || !Array.isArray(summary.missing) || summary.missing.length !== 0) {
+    return "interop validator JSON must report ok=true with an empty missing array";
+  }
+  return undefined;
+}
+
+function parseLastJsonObjectLine(content) {
+  for (const line of content.split(/\r?\n/).reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+      continue;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
   return undefined;
 }
 
@@ -214,7 +376,11 @@ function validateInteropEvidence(evidenceRoot, missing, invalid) {
   }
 
   try {
-    const events = readSanitizedJsonl(logs.map((relativePath) => join(evidenceRoot, relativePath)));
+    const events = [];
+    for (const relativePath of logs) {
+      const role = relativePath.includes("/windows/") ? "windows" : "macos";
+      events.push(...readAndValidateInteropLog(join(evidenceRoot, relativePath), relativePath, role));
+    }
     const result = validateInteropEvents(events);
     if (!result.ok) {
       return {
@@ -238,6 +404,58 @@ function validateInteropEvidence(evidenceRoot, missing, invalid) {
   }
 
   return { invalid: [] };
+}
+
+function readAndValidateInteropLog(fullPath, relativePath, expectedRole) {
+  const events = readSanitizedJsonl([fullPath]);
+  const allowedEvents = new Set(requiredInteropEvents);
+  for (const eventName of allowedInteropDiagnosticEvents) {
+    allowedEvents.add(eventName);
+  }
+
+  for (const event of events) {
+    if (event.role !== expectedRole) {
+      throw new Error(`${relativePath} contains an event with a role that does not match the file role`);
+    }
+    if (!allowedEvents.has(event.event)) {
+      throw new Error(`${relativePath} contains an event outside the required interop schema`);
+    }
+    const sensitiveError = findUnsafeInteropEvidence(event);
+    if (sensitiveError) {
+      throw new Error(`${relativePath} contains unsafe interop evidence: ${sensitiveError}`);
+    }
+  }
+
+  return events;
+}
+
+function findUnsafeInteropEvidence(value) {
+  if (typeof value === "string") {
+    return githubTokenPattern.test(value) ? "token pattern present" : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = findUnsafeInteropEvidence(item);
+      if (result) {
+        return result;
+      }
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (sensitiveInteropKeys.has(key) && child !== "<redacted>") {
+      return `sensitive key ${key} was not redacted`;
+    }
+    const result = findUnsafeInteropEvidence(child);
+    if (result) {
+      return result;
+    }
+  }
+  return undefined;
 }
 
 export function evaluateMacosReleaseGate(evidenceStatus) {
