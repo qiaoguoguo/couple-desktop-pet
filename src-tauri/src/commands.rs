@@ -21,8 +21,13 @@ const SAFE_WINDOW_MARGIN_PX: i32 = 24;
 const AUTO_MOVE_STEP_X_PX: i32 = 96;
 const AUTO_MOVE_STEP_Y_PX: i32 = 48;
 const EDGE_PEEK_TRIGGER_PX: i32 = 24;
+const EDGE_PEEK_LEFT_CONTACT_X_PX: i32 = 88;
+const EDGE_PEEK_RIGHT_CONTACT_X_PX: i32 = 232;
+const EDGE_PEEK_TOP_CONTACT_Y_PX: i32 = 18;
+const EDGE_PEEK_BOTTOM_CONTACT_Y_PX: i32 = 132;
 
 static MESSAGE_COMPOSER_SURFACE_STATE: Mutex<Option<WindowGeometry>> = Mutex::new(None);
+static EDGE_PEEK_HIDDEN_STATE: Mutex<Option<EdgePeekSide>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn ping() -> String {
@@ -111,10 +116,11 @@ pub fn snap_window_to_edge_if_needed(app: AppHandle) -> Result<Option<EdgePeekSi
         return Ok(None);
     };
 
-    window
-        .set_position(snap.position)
-        .map_err(|error| format!("failed to snap main window to edge: {error}"))?;
-    save_window_position(&app, snap.position)?;
+    set_edge_peek_hidden_side(Some(snap.side))?;
+    if let Err(error) = window.set_position(snap.position) {
+        let _ = set_edge_peek_hidden_side(None);
+        return Err(format!("failed to snap main window to edge: {error}"));
+    }
 
     Ok(Some(snap.side))
 }
@@ -128,6 +134,7 @@ pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Resu
     window
         .set_position(position)
         .map_err(|error| format!("failed to restore main window from edge peek: {error}"))?;
+    set_edge_peek_hidden_side(None)?;
     save_window_position(&app, position)
 }
 
@@ -266,6 +273,10 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
                 return;
             }
 
+            if is_edge_peek_hidden() {
+                return;
+            }
+
             let position = PhysicalPosition::new(position.x, position.y);
 
             if let Err(error) = save_window_position(&app_handle, position) {
@@ -342,6 +353,22 @@ fn clear_message_composer_surface_after_close(
 fn is_message_composer_surface_open() -> bool {
     saved_message_composer_surface()
         .map(|geometry| geometry.is_some())
+        .unwrap_or(false)
+}
+
+fn set_edge_peek_hidden_side(side: Option<EdgePeekSide>) -> Result<(), String> {
+    EDGE_PEEK_HIDDEN_STATE
+        .lock()
+        .map(|mut state| {
+            *state = side;
+        })
+        .map_err(|_| "failed to lock edge peek hidden state".to_string())
+}
+
+fn is_edge_peek_hidden() -> bool {
+    EDGE_PEEK_HIDDEN_STATE
+        .lock()
+        .map(|state| state.is_some())
         .unwrap_or(false)
 }
 
@@ -665,54 +692,57 @@ fn calculate_message_composer_restore_geometry(
 }
 
 fn calculate_edge_peek_snap(work_area: WorkArea, window: WindowGeometry) -> Option<EdgePeekSnap> {
-    let window_width = window.width as i32;
-    let window_height = window.height as i32;
     let work_right = work_area.x + work_area.width as i32;
     let work_bottom = work_area.y + work_area.height as i32;
-    let window_right = window.x + window_width;
-    let window_bottom = window.y + window_height;
+    let window_right = window.x + window.width as i32;
+    let window_bottom = window.y + window.height as i32;
+    let candidates = [
+        (EdgePeekSide::Left, (window.x - work_area.x).max(0), 0),
+        (EdgePeekSide::Right, (work_right - window_right).max(0), 1),
+        (EdgePeekSide::Top, (window.y - work_area.y).max(0), 2),
+        (
+            EdgePeekSide::Bottom,
+            (work_bottom - window_bottom).max(0),
+            3,
+        ),
+    ];
 
-    if window.x - work_area.x <= EDGE_PEEK_TRIGGER_PX {
-        return Some(EdgePeekSnap {
-            side: EdgePeekSide::Left,
-            position: PhysicalPosition::new(
-                work_area.x,
-                clamp_axis(window.y, work_area.y, work_area.height, window.height),
-            ),
-        });
+    candidates
+        .into_iter()
+        .filter(|(_, distance, _)| *distance <= EDGE_PEEK_TRIGGER_PX)
+        .min_by_key(|(_, distance, priority)| (*distance, *priority))
+        .map(|(side, _, _)| EdgePeekSnap {
+            side,
+            position: calculate_edge_peek_snap_position(side, work_area, window),
+        })
+}
+
+fn calculate_edge_peek_snap_position(
+    side: EdgePeekSide,
+    work_area: WorkArea,
+    window: WindowGeometry,
+) -> PhysicalPosition<i32> {
+    let work_right = work_area.x + work_area.width as i32;
+    let work_bottom = work_area.y + work_area.height as i32;
+
+    match side {
+        EdgePeekSide::Left => PhysicalPosition::new(
+            work_area.x - EDGE_PEEK_LEFT_CONTACT_X_PX,
+            clamp_axis(window.y, work_area.y, work_area.height, window.height),
+        ),
+        EdgePeekSide::Right => PhysicalPosition::new(
+            work_right - EDGE_PEEK_RIGHT_CONTACT_X_PX,
+            clamp_axis(window.y, work_area.y, work_area.height, window.height),
+        ),
+        EdgePeekSide::Top => PhysicalPosition::new(
+            clamp_axis(window.x, work_area.x, work_area.width, window.width),
+            work_area.y - EDGE_PEEK_TOP_CONTACT_Y_PX,
+        ),
+        EdgePeekSide::Bottom => PhysicalPosition::new(
+            clamp_axis(window.x, work_area.x, work_area.width, window.width),
+            work_bottom - EDGE_PEEK_BOTTOM_CONTACT_Y_PX,
+        ),
     }
-
-    if work_right - window_right <= EDGE_PEEK_TRIGGER_PX {
-        return Some(EdgePeekSnap {
-            side: EdgePeekSide::Right,
-            position: PhysicalPosition::new(
-                work_right - window_width,
-                clamp_axis(window.y, work_area.y, work_area.height, window.height),
-            ),
-        });
-    }
-
-    if window.y - work_area.y <= EDGE_PEEK_TRIGGER_PX {
-        return Some(EdgePeekSnap {
-            side: EdgePeekSide::Top,
-            position: PhysicalPosition::new(
-                clamp_axis(window.x, work_area.x, work_area.width, window.width),
-                work_area.y,
-            ),
-        });
-    }
-
-    if work_bottom - window_bottom <= EDGE_PEEK_TRIGGER_PX {
-        return Some(EdgePeekSnap {
-            side: EdgePeekSide::Bottom,
-            position: PhysicalPosition::new(
-                clamp_axis(window.x, work_area.x, work_area.width, window.width),
-                work_bottom - window_height,
-            ),
-        });
-    }
-
-    None
 }
 
 fn calculate_edge_peek_restore_position(
@@ -986,7 +1016,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(0, 240),
+                position: PhysicalPosition::new(-88, 240),
             })
         );
     }
@@ -1012,7 +1042,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(880, 240),
+                position: PhysicalPosition::new(968, 240),
             })
         );
     }
@@ -1038,7 +1068,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(440, 0),
+                position: PhysicalPosition::new(440, -18),
             })
         );
     }
@@ -1064,7 +1094,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Bottom,
-                position: PhysicalPosition::new(440, 440),
+                position: PhysicalPosition::new(440, 668),
             })
         );
     }
@@ -1091,52 +1121,139 @@ mod tests {
     }
 
     #[test]
-    fn edge_peek_snap_keeps_window_inside_work_area_bounds() {
+    fn edge_peek_snap_places_contact_anchor_on_negative_origin_work_area() {
         let work_area = TestWorkArea {
-            x: 100,
-            y: 80,
-            width: 1200,
-            height: 800,
+            x: -1440,
+            y: -120,
+            width: 1440,
+            height: 900,
         };
         let left_window = TestWindowGeometry {
-            x: 110,
-            y: 240,
+            x: -1430,
+            y: 100,
             width: 320,
             height: 360,
         };
         let right_window = TestWindowGeometry {
-            x: 972,
-            y: 240,
+            x: -328,
+            y: 100,
             width: 320,
             height: 360,
         };
         let top_window = TestWindowGeometry {
-            x: 440,
-            y: 90,
+            x: -880,
+            y: -110,
             width: 320,
             height: 360,
         };
         let bottom_window = TestWindowGeometry {
-            x: 440,
-            y: 512,
+            x: -880,
+            y: 408,
             width: 320,
             height: 360,
         };
 
-        let left_snap = calculate_edge_peek_snap(work_area, left_window).unwrap();
-        let right_snap = calculate_edge_peek_snap(work_area, right_window).unwrap();
-        let top_snap = calculate_edge_peek_snap(work_area, top_window).unwrap();
-        let bottom_snap = calculate_edge_peek_snap(work_area, bottom_window).unwrap();
-
-        assert!(left_snap.position.x >= work_area.x);
-        assert!(top_snap.position.y >= work_area.y);
-        assert!(
-            right_snap.position.x + right_window.width as i32
-                <= work_area.x + work_area.width as i32
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, left_window),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Left,
+                position: PhysicalPosition::new(-1528, 100),
+            })
         );
-        assert!(
-            bottom_snap.position.y + bottom_window.height as i32
-                <= work_area.y + work_area.height as i32
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, right_window),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Right,
+                position: PhysicalPosition::new(-232, 100),
+            })
+        );
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, top_window),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Top,
+                position: PhysicalPosition::new(-880, -138),
+            })
+        );
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, bottom_window),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Bottom,
+                position: PhysicalPosition::new(-880, 648),
+            })
+        );
+    }
+
+    #[test]
+    fn edge_peek_chooses_nearest_edge_in_corners() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let top_closer = TestWindowGeometry {
+            x: 20,
+            y: 8,
+            width: 320,
+            height: 360,
+        };
+        let left_closer = TestWindowGeometry {
+            x: 8,
+            y: 20,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, top_closer),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Top,
+                position: PhysicalPosition::new(24, -18),
+            })
+        );
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, left_closer),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Left,
+                position: PhysicalPosition::new(-88, 24),
+            })
+        );
+    }
+
+    #[test]
+    fn edge_peek_uses_horizontal_side_when_corner_distance_ties() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let top_left_tie = TestWindowGeometry {
+            x: 10,
+            y: 10,
+            width: 320,
+            height: 360,
+        };
+        let top_right_tie = TestWindowGeometry {
+            x: 870,
+            y: 10,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, top_left_tie),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Left,
+                position: PhysicalPosition::new(-88, 24),
+            })
+        );
+        assert_eq!(
+            calculate_edge_peek_snap(work_area, top_right_tie),
+            Some(EdgePeekSnap {
+                side: EdgePeekSide::Right,
+                position: PhysicalPosition::new(968, 24),
+            })
         );
     }
 
