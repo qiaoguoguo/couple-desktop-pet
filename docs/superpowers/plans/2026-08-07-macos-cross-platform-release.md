@@ -36,7 +36,7 @@
 
 - `src-tauri/tauri.macos.conf.json` - macOS platform overlay auto-merged by Tauri.
 - `src-tauri/tauri.macos.qa.conf.json` - QA-only ad-hoc signing overlay loaded explicitly.
-- `src-tauri/Info.plist` - ATS exception for the current Relay IP, merged automatically into the generated app.
+- `src-tauri/Info.plist` - WebView-only ATS compatibility for the cleartext Relay on macOS 12/13 plus the Relay IP exception for macOS 14+, merged automatically into the generated app.
 - `src/desktop/tauriMacosConfig.test.ts` - static macOS config and Info.plist contract tests.
 - `src-tauri/src/platform.rs` - cross-platform shell policy and adapter entry.
 - `src-tauri/src/platform/macos.rs` - macOS activation policy, Dock hiding, and menu bar shell behavior.
@@ -128,14 +128,15 @@ describe("macOS Tauri release config", () => {
     expect(qaConfig.bundle?.macOS?.signingIdentity).toBe("-");
   });
 
-  it("uses src-tauri/Info.plist for scoped ATS Relay exception", () => {
+  it("uses src-tauri/Info.plist for Relay ATS compatibility on macOS 12", () => {
     const plist = readFileSync(join(repoRoot, "src-tauri/Info.plist"), "utf8");
 
     expect(plist).toContain("<key>NSAppTransportSecurity</key>");
+    expect(plist).toContain("<key>NSAllowsArbitraryLoadsInWebContent</key>");
     expect(plist).toContain("<key>NSExceptionDomains</key>");
     expect(plist).toContain("<key>159.75.175.47</key>");
     expect(plist).toContain("<key>NSExceptionAllowsInsecureHTTPLoads</key>");
-    expect(plist).not.toContain("NSAllowsArbitraryLoads");
+    expect(plist).not.toContain("<key>NSAllowsArbitraryLoads</key>");
   });
 
   it("exposes separate formal and QA build scripts", () => {
@@ -207,6 +208,8 @@ Create `src-tauri/Info.plist`:
 <dict>
   <key>NSAppTransportSecurity</key>
   <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
     <key>NSExceptionDomains</key>
     <dict>
       <key>159.75.175.47</key>
@@ -251,7 +254,13 @@ Run after a macOS build:
 /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSExceptionDomains:159.75.175.47:NSExceptionAllowsInsecureHTTPLoads" "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist"
 ```
 
-Expected: `true`, proving the generated `.app/Contents/Info.plist` contains the ATS exception.
+Also validate the WebView-only macOS 12/13 compatibility key:
+
+```bash
+/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsArbitraryLoadsInWebContent" "src-tauri/target/universal-apple-darwin/release/bundle/macos/情侣桌宠.app/Contents/Info.plist"
+```
+
+Expected: both commands print `true`, proving the generated `.app/Contents/Info.plist` contains the WebView-only cleartext compatibility key for macOS 12/13 and the Relay IP exception for macOS 14+. Remove both ATS exceptions after the Relay moves to HTTPS/WSS.
 
 - [ ] **Step 6: Commit**
 

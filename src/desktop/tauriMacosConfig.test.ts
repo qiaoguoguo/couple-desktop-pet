@@ -8,6 +8,41 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(join(repoRoot, path), "utf8")) as T;
 }
 
+function extractAtsExceptionDomains(plist: string): string[] {
+  const domainsKey = "<key>NSExceptionDomains</key>";
+  const start = plist.indexOf(domainsKey);
+  if (start === -1) {
+    return [];
+  }
+
+  const tokens = plist
+    .slice(start + domainsKey.length)
+    .matchAll(/<(\/?)dict>|<key>([^<]+)<\/key>/g);
+  const domains: string[] = [];
+  let depth = 0;
+  let enteredDomainsDict = false;
+
+  for (const token of tokens) {
+    if (token[0] === "<dict>") {
+      depth += 1;
+      enteredDomainsDict = true;
+      continue;
+    }
+    if (token[0] === "</dict>") {
+      depth -= 1;
+      if (enteredDomainsDict && depth === 0) {
+        break;
+      }
+      continue;
+    }
+    if (enteredDomainsDict && depth === 1 && token[2]) {
+      domains.push(token[2]);
+    }
+  }
+
+  return domains;
+}
+
 describe("macOS Tauri release config", () => {
   it("keeps platform overlay free of signing identity and plist injection keys", () => {
     const config = readJson<{
@@ -38,14 +73,20 @@ describe("macOS Tauri release config", () => {
     expect(qaConfig.bundle?.macOS?.signingIdentity).toBe("-");
   });
 
-  it("uses src-tauri/Info.plist for scoped ATS Relay exception", () => {
+  it("uses src-tauri/Info.plist for Relay ATS compatibility on macOS 12", () => {
+    const config = readJson<{
+      bundle?: { macOS?: { minimumSystemVersion?: string } };
+    }>("src-tauri/tauri.macos.conf.json");
     const plist = readFileSync(join(repoRoot, "src-tauri/Info.plist"), "utf8");
 
+    expect(config.bundle?.macOS?.minimumSystemVersion).toBe("12.0");
     expect(plist).toContain("<key>NSAppTransportSecurity</key>");
+    expect(plist).toContain("<key>NSAllowsArbitraryLoadsInWebContent</key>");
     expect(plist).toContain("<key>NSExceptionDomains</key>");
     expect(plist).toContain("<key>159.75.175.47</key>");
     expect(plist).toContain("<key>NSExceptionAllowsInsecureHTTPLoads</key>");
-    expect(plist).not.toContain("NSAllowsArbitraryLoads");
+    expect(plist).not.toContain("<key>NSAllowsArbitraryLoads</key>");
+    expect(extractAtsExceptionDomains(plist)).toEqual(["159.75.175.47"]);
   });
 
   it("exposes separate formal and QA build scripts", () => {

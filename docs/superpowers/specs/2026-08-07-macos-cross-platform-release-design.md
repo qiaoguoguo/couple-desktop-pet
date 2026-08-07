@@ -58,8 +58,8 @@ Required Tauri/macOS behavior:
 
 - Continue using `DEFAULT_RELAY_URL` as `http://159.75.175.47:8787`.
 - Continue using the same HTTP and WebSocket protocol fields. Do not change auth, pair, status, message, capability, or unpair payloads for macOS.
-- Because the current Relay endpoint is IP-based cleartext HTTP/WS, macOS must include the minimum App Transport Security exception needed for the WKWebView/Tauri webview to reach `159.75.175.47`.
-- The ATS exception must be scoped to this Relay IP and the current cleartext transport. After the Relay moves to HTTPS/WSS, the exception must be removed in the same release line that changes the default URL.
+- Because the current Relay endpoint is IP-based cleartext HTTP/WS and the app minimum is macOS 12, ATS must include `NSAllowsArbitraryLoadsInWebContent=true` so the WKWebView/Tauri webview can reach `159.75.175.47` on macOS 12 and 13. This does not allow arbitrary loads outside web content and must not be replaced by global `NSAllowsArbitraryLoads`.
+- Keep the `159.75.175.47` `NSExceptionDomains` entry as the explicit Relay-IP exception for macOS 14 and later, where IP-address exception matching is supported. After the Relay moves to HTTPS/WSS, remove both the WebView-only temporary exception and the Relay IP exception in the same release line that changes the default URL.
 - No device secret, auth token, pair code secret, or message body should be printed in public logs or committed evidence. Evidence logs use anonymized suffixes and event names.
 
 ## Data And Storage
