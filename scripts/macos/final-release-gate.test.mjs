@@ -498,7 +498,7 @@ describe("macOS final release gate", () => {
 
   it("blocks malformed WDIO completion output even when it contains passing text", () => {
     for (const text of [
-      "Spec Files:      1 passed, 2 total (100% completed)\n1 passing\n",
+      `${nativeParitySessionMarker()}\nSpec Files:      1 passed, 2 total (100% completed)\n1 passing\n`,
       "Spec Files:      1 passed, 1 total (50% completed)\n1 passing\n",
       "Spec Files:      1 passed, 1 total (100% completed)\nFAILED in native-parity.e2e.ts\n",
       "Spec Files:      1 passed, 1 total (100% completed)\n1 failed\n",
