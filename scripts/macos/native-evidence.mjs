@@ -114,6 +114,15 @@ export function createNativeEvidencePlan({ mode, appPath, outputDir }) {
         shell: false,
       },
       {
+        name: "no-dock-runtime",
+        command: "osascript",
+        args: [
+          "-e",
+          `tell application "System Events" to tell (first application process whose bundle identifier is "${bundleIdentifier}") to return "backgroundOnly=" & (background only as text) & linefeed & "visible=" & (visible as text)`,
+        ],
+        shell: false,
+      },
+      {
         name: "screencapture",
         command: "screencapture",
         args: ["-x", join(outputDir, "app-window.png")],

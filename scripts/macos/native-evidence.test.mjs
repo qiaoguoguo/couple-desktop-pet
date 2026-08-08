@@ -78,6 +78,7 @@ describe("macOS native evidence collector", () => {
       "spctl-assess",
       "launch-app",
       "process-exists",
+      "no-dock-runtime",
       "screencapture",
     ]);
     expect(plan.steps.every((step) => step.shell === false)).toBe(true);
@@ -96,6 +97,15 @@ describe("macOS native evidence collector", () => {
       args: [
         "-e",
         'tell application "System Events" to count (application processes whose bundle identifier is "com.couple.desktoppet")',
+      ],
+      shell: false,
+    });
+    expect(plan.steps.find((step) => step.name === "no-dock-runtime")).toEqual({
+      name: "no-dock-runtime",
+      command: "osascript",
+      args: [
+        "-e",
+        'tell application "System Events" to tell (first application process whose bundle identifier is "com.couple.desktoppet") to return "backgroundOnly=" & (background only as text) & linefeed & "visible=" & (visible as text)',
       ],
       shell: false,
     });

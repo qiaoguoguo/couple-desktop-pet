@@ -349,7 +349,7 @@ pub fn track_window_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
     Ok(())
 }
 
-fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
+pub(crate) fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     app.get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| format!("window `{MAIN_WINDOW_LABEL}` not found"))
 }
@@ -514,7 +514,7 @@ fn settings_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
         .map_err(|error| format!("<app_data_dir>/{SETTINGS_FILE_NAME}: {error}"))
 }
 
-fn window_position_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+pub(crate) fn window_position_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|dir| dir.join(WINDOW_POSITION_FILE_NAME))

@@ -57,10 +57,12 @@ describe("macOS Tauri embedded E2E config", () => {
   });
 
   it("adds WDIO permissions only in the E2E overlay", () => {
+    const productionConfig = readJson<{ identifier?: string }>("src-tauri/tauri.conf.json");
     const defaultCapability = readJson<{ permissions?: string[] }>(
       "src-tauri/capabilities/default.json",
     );
     const e2eConfig = readJson<{
+      identifier?: string;
       app?: {
         withGlobalTauri?: boolean;
         security?: {
@@ -72,7 +74,17 @@ describe("macOS Tauri embedded E2E config", () => {
         };
       };
     }>("src-tauri/tauri.e2e.conf.json");
+    const packageJson = readJson<{ scripts?: Record<string, string> }>("package.json");
 
+    expect(productionConfig.identifier).toBe("com.couple.desktoppet");
+    expect(e2eConfig.identifier).toBe("com.couple.desktoppet.e2e");
+    expect(e2eConfig.identifier).not.toBe(productionConfig.identifier);
+    expect(packageJson.scripts?.["e2e:macos:build"]).toContain(
+      "--config src-tauri/tauri.e2e.conf.json",
+    );
+    expect(packageJson.scripts?.["e2e:windows:build"]).toContain(
+      "--config src-tauri/tauri.e2e.conf.json",
+    );
     expect(defaultCapability.permissions).not.toContain("wdio:default");
     expect(defaultCapability.permissions).not.toContain("wdio-webdriver:default");
     expect(e2eConfig.app?.withGlobalTauri).toBe(true);
@@ -165,6 +177,118 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).not.toContain("$('button[role=\"menuitem\"]')");
     expect(spec).toContain("关闭设置");
     expect(spec).not.toContain("data-testid");
+  });
+
+  it("invokes Tauri commands through the stable internal bridge, not the optional global API", () => {
+    const helper = readText("e2e/support/tauri.ts");
+
+    expect(helper).toContain("__TAURI_INTERNALS__");
+    expect(helper).toContain(".invoke(commandName, commandArgs)");
+    expect(helper).not.toContain("__TAURI__");
+    expect(helper).not.toContain(".core?.invoke");
+    expect(helper).not.toContain(".core.invoke");
+  });
+
+  it("adds a macOS native parity spec with e2e-only native evidence commands", () => {
+    const specPath = "e2e/macos/specs/native-parity.e2e.ts";
+    expect(existsSync(join(repoRoot, specPath))).toBe(true);
+
+    const spec = readText(specPath);
+
+    for (const command of [
+      "e2e_window_state",
+      "e2e_trigger_tray_hide",
+      "e2e_trigger_tray_show",
+      "e2e_trigger_tray_settings",
+      "e2e_close_main_window",
+      "e2e_move_window",
+      "e2e_read_window_position",
+      "e2e_trigger_auto_move",
+      "e2e_create_pet_package_fixture",
+      "e2e_remove_pet_package_fixture",
+    ]) {
+      expect(spec).toContain(command);
+    }
+    expect(spec).not.toContain("e2e_apply_saved_window_position");
+    expect(spec).toContain("browser.reloadSession()");
+    expect(spec).toContain("chooseSafeDistinctWindowPosition");
+    expect(spec).toContain("originalWindowPosition");
+    expect(spec).toContain("restoreOriginalWindowPosition");
+    expect(spec).not.toContain("before.position.x + 32");
+    expect(spec).not.toContain("before.position.y + 32");
+    expect(spec).toContain("position-restored-after-restart");
+    expect(spec).toContain("trayExists");
+    expect(spec).toContain("HTMLInputElement.prototype");
+    expect(spec).not.toContain("input.value = nextValue");
+    expect(spec).not.toMatch(/e2e_remove_pet_package_fixture"[\s\S]{0,120}sourcePath/);
+
+    for (const artifact of [
+      "tray-show.log",
+      "tray-settings.log",
+      "close-to-hide.log",
+      "drag-position-after.log",
+      "restart-position.log",
+      "scale-auto-move.log",
+      "click-through-recovered.log",
+      "package-import.png",
+      "message-composer.png",
+      "edge-left.png",
+      "edge-right.png",
+      "edge-top.png",
+      "edge-bottom.png",
+    ]) {
+      expect(spec).toContain(artifact);
+    }
+  });
+
+  it("registers native parity driver commands only behind the e2e feature", () => {
+    const mainRs = readText("src-tauri/src/main.rs");
+    const e2eCommandsPath = "src-tauri/src/e2e_commands.rs";
+    expect(existsSync(join(repoRoot, e2eCommandsPath))).toBe(true);
+
+    const e2eCommands = readText(e2eCommandsPath);
+
+    expect(mainRs).toContain("#[cfg(feature = \"e2e\")]");
+    expect(mainRs).toContain("mod e2e_commands;");
+    expect(mainRs).toContain("e2e_commands::e2e_window_state");
+    expect(mainRs).toContain("e2e_commands::e2e_trigger_tray_show");
+    expect(mainRs).toContain("#[cfg(not(feature = \"e2e\"))]");
+    expect(e2eCommands).toContain("#[tauri::command]");
+    expect(e2eCommands).toContain("tray_by_id(\"main\")");
+    expect(e2eCommands).toContain("recover_click_through_and_show_main_window");
+    expect(e2eCommands).toContain("ClickThroughRecoveryReason::Show");
+    expect(e2eCommands).toContain("ClickThroughRecoveryReason::Settings");
+    expect(e2eCommands).toContain("fn fixed_fixture_source_path");
+    expect(e2eCommands).not.toContain("pub fn e2e_remove_pet_package_fixture(source_path");
+    expect(e2eCommands).not.toContain("cfg_attr");
+
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    expect(spec).toContain('"import_pet_package"');
+    expect(spec).toContain('"list_pet_packages"');
+  });
+
+  it("routes macOS QA native parity evidence into the hidden SDD evidence directory", () => {
+    const workflow = readText(".github/workflows/macos-qa.yml");
+    const finalGate = readText("scripts/macos/final-release-gate.mjs");
+    const helper = readText("e2e/support/nativeEvidence.ts");
+    const matrix = readText(
+      ".superpowers/sdd/2026-08-07-macos-cross-platform/final-acceptance-matrix.md",
+    );
+
+    expect(workflow).not.toContain("MACOS_NATIVE_PARITY_EVIDENCE_DIR");
+    expect(helper).toContain("resolveNativeParityEvidenceDir");
+    expect(helper).toContain("MACOS_NATIVE_PARITY_EVIDENCE_DIR");
+    expect(helper).toContain("GITHUB_ACTIONS");
+    expect(helper).toContain("GITHUB_WORKSPACE");
+    expect(helper).toContain(".superpowers/sdd/2026-08-07-macos-cross-platform/native");
+    expect(workflow).toContain("e2e-macos.log");
+    expect(workflow).toContain("include-hidden-files: true");
+    expect(finalGate).toContain("native/native-parity-events.jsonl");
+    expect(finalGate).toContain("native/no-dock-runtime.log");
+    expect(finalGate).toContain("native/package-import.png");
+    expect(finalGate).toContain("native/edge-left.png");
+    expect(matrix).toContain("native/native-parity-events.jsonl");
+    expect(matrix).toContain("macOS native parity WDIO");
   });
 
   it("opens the pet context menu through a shared DOM contextmenu helper", () => {

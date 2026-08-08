@@ -6,22 +6,22 @@ Initial results are `Pending` or `Not run`. Do not mark a gate as passed until d
 | --- | --- | --- |
 | Windows full regression | `windows/pnpm-test.log`, `windows/pnpm-typecheck.log`, `windows/pnpm-build.log`, `windows/cargo-test.log`, `windows/cargo-check.log` | Not run |
 | macOS full regression | `macos/pnpm-test.log`, `macos/pnpm-typecheck.log`, `macos/pnpm-build.log`, `macos/cargo-test.log`, `macos/cargo-check.log`, `macos/cargo-fmt-check.log` | Not run |
-| macOS native WDIO smoke | `macos/e2e-macos-build.log`, `macos/e2e-macos.log` with `1 passed` and `0 failed` completion markers | Not run |
+| macOS native parity WDIO | `macos/e2e-macos-build.log`, `macos/e2e-macos.log` with `Spec Files: <n> passed, <n> total (100% completed)`, matching `<n> passing`, and `NATIVE_PARITY_EVIDENCE_SESSION`; `native/native-parity-events.jsonl` must carry the same session/run/attempt/commit marker on every required event | Not run |
 | Universal app binary has Intel and Apple Silicon slices | `build/file-app-binary.log`, `build/lipo-verify-universal.log` | Pending |
 | DMG verify attach detach | `build/hdiutil-verify-dmg.log`, `build/hdiutil-attach-dmg.log`, `build/hdiutil-detach-dmg.log` | Pending |
 | Generated Info.plist ATS content | `build/plutil-generated-info-plist.log`, `native/generated-info-plist.log` | Pending |
 | macOS HTTP and WebSocket Relay connection | `network/macos-http-ws-relay.log` | Not run |
 | Production build excludes E2E plugins and permissions | `macos/production-permission-scan.log`, `macos/cargo-tree-production.log` | Pending |
 | Real macOS app launch | `native/launch-app.log`, `native/process-exists.log`, `native/app-window.png` | Not run |
-| No Dock icon from startup | `native/no-dock-before.png`, `native/no-dock-after.png`, `native/manual-checklist.log` | Pending |
+| No Dock icon from startup | `native/no-dock-runtime.log` with `backgroundOnly=true`, `native/no-dock-before.png`, `native/no-dock-after.png`, `native/manual-checklist.log` | Pending |
 | Menu bar tray actions | `native/menu-bar-tray.png`, `native/tray-show.log`, `native/tray-settings.log`, `native/tray-quit.log` | Pending |
-| Transparent borderless window | `native/transparent-light.png`, `native/transparent-dark.png`, `native/app-window.png` | Pending |
+| Transparent borderless window evidence boundary | `native/transparent-light.png`, `native/transparent-dark.png`, `native/app-window.png`, generated plist/config evidence, and manual compositor confirmation; automated state does not by itself prove desktop compositing transparency | Pending |
 | Always-on-top behavior | `native/always-on-top-before.png`, `native/always-on-top-after.png`, `native/manual-checklist.log` | Pending |
-| Drag and position memory | `native/drag-position-before.log`, `native/drag-position-after.log`, `native/restart-position.log` | Pending |
-| Scale and auto-move behavior | `native/scale-auto-move.log`, `native/scale-auto-move.png` | Pending |
+| Drag and position memory across real restart/session reload | `native/drag-position-before.log`, `native/drag-position-after.log`, `native/restart-position.log`, `native/native-parity-events.jsonl` event `position-restored-after-restart` | Pending |
+| Scale setting plus native auto-move command integration | `native/scale-auto-move.log`, `native/scale-auto-move.png`, `native/native-parity-events.jsonl` event `scale-auto-move` with `trigger=e2e-native-auto-move-command`; real scheduler behavior is covered by frontend regression logs | Pending |
 | Click-through recovery | `native/click-through-enabled.log`, `native/click-through-recovered.log`, `native/click-through-recovered.png` | Pending |
-| Close hides and explicit quit exits | `native/close-to-hide.log`, `native/quit-app.log` | Pending |
-| Settings, package import, status card, and composer parity | `native/settings.png`, `native/package-import.png`, `native/status-card.png`, `native/message-composer.png` | Pending |
+| Close hides and cleanup quit exits | `native/close-to-hide.log`, `native/quit-app.log`; explicit tray quit remains a separate manual/runner-limited check until stable process-exit automation exists | Pending |
+| Settings, package import, status card, and composer UI parity | `native/settings.png`, `native/package-import.png`, `native/status-card.png`, `native/message-composer.png`; status/composer native parity uses paired-state UI injection only, while real pairing/message behavior is proven by interop evidence | Pending |
 | Current four-edge behavior parity | `native/edge-left.png`, `native/edge-right.png`, `native/edge-top.png`, `native/edge-bottom.png` | Pending |
 | Windows macOS pairing and online state | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/validator/validator.log` | Not run |
 | Activity status sync both directions | `interop/windows/events.jsonl`, `interop/macos/events.jsonl`, `interop/windows/screenshots/windows-peer-status-slacking.png`, `interop/macos/screenshots/macos-peer-status-slacking.png` | Not run |

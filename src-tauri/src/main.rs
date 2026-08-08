@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 mod commands;
+#[cfg(feature = "e2e")]
+mod e2e_commands;
 mod pet_packages;
 mod platform;
 
@@ -23,40 +25,79 @@ pub fn run() {
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
 
+    let builder = builder.setup(|app| {
+        platform::configure_platform_shell(app)?;
+        setup_tray(app)?;
+        if let Err(error) = commands::install_main_window_close_to_hide(app.handle()) {
+            eprintln!("failed to install main window close handler: {error}");
+        }
+        if let Err(error) = commands::restore_saved_window_position(app.handle()) {
+            eprintln!("failed to restore saved window position: {error}");
+        }
+        if let Err(error) = commands::track_window_position(app.handle()) {
+            eprintln!("failed to track window position: {error}");
+        }
+        Ok(())
+    });
+
+    #[cfg(feature = "e2e")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::ping,
+        commands::read_settings,
+        commands::write_settings,
+        commands::set_always_on_top,
+        commands::set_click_through,
+        commands::reset_window_position,
+        commands::move_window_for_auto_step,
+        commands::snap_window_to_edge_if_needed,
+        commands::restore_window_from_edge_peek,
+        commands::open_message_composer_surface,
+        commands::close_message_composer_surface,
+        commands::show_window,
+        commands::hide_window,
+        commands::quit_app,
+        pet_packages::list_pet_packages,
+        pet_packages::import_pet_package,
+        pet_packages::delete_pet_package,
+        e2e_commands::e2e_window_state,
+        e2e_commands::e2e_app_data_paths,
+        e2e_commands::e2e_trigger_tray_show,
+        e2e_commands::e2e_trigger_tray_hide,
+        e2e_commands::e2e_trigger_tray_settings,
+        e2e_commands::e2e_trigger_tray_quit,
+        e2e_commands::e2e_close_main_window,
+        e2e_commands::e2e_move_window,
+        e2e_commands::e2e_read_window_position,
+        e2e_commands::e2e_move_near_edge,
+        e2e_commands::e2e_trigger_edge_snap,
+        e2e_commands::e2e_restore_edge,
+        e2e_commands::e2e_trigger_auto_move,
+        e2e_commands::e2e_create_pet_package_fixture,
+        e2e_commands::e2e_remove_pet_package_fixture,
+    ]);
+
+    #[cfg(not(feature = "e2e"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::ping,
+        commands::read_settings,
+        commands::write_settings,
+        commands::set_always_on_top,
+        commands::set_click_through,
+        commands::reset_window_position,
+        commands::move_window_for_auto_step,
+        commands::snap_window_to_edge_if_needed,
+        commands::restore_window_from_edge_peek,
+        commands::open_message_composer_surface,
+        commands::close_message_composer_surface,
+        commands::show_window,
+        commands::hide_window,
+        commands::quit_app,
+        pet_packages::list_pet_packages,
+        pet_packages::import_pet_package,
+        pet_packages::delete_pet_package,
+    ]);
+
     builder
-        .setup(|app| {
-            platform::configure_platform_shell(app)?;
-            setup_tray(app)?;
-            if let Err(error) = commands::install_main_window_close_to_hide(app.handle()) {
-                eprintln!("failed to install main window close handler: {error}");
-            }
-            if let Err(error) = commands::restore_saved_window_position(app.handle()) {
-                eprintln!("failed to restore saved window position: {error}");
-            }
-            if let Err(error) = commands::track_window_position(app.handle()) {
-                eprintln!("failed to track window position: {error}");
-            }
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::ping,
-            commands::read_settings,
-            commands::write_settings,
-            commands::set_always_on_top,
-            commands::set_click_through,
-            commands::reset_window_position,
-            commands::move_window_for_auto_step,
-            commands::snap_window_to_edge_if_needed,
-            commands::restore_window_from_edge_peek,
-            commands::open_message_composer_surface,
-            commands::close_message_composer_surface,
-            commands::show_window,
-            commands::hide_window,
-            commands::quit_app,
-            pet_packages::list_pet_packages,
-            pet_packages::import_pet_package,
-            pet_packages::delete_pet_package,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

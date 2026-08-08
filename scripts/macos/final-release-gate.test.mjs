@@ -17,6 +17,7 @@ import {
   requiredFormalEvidence,
   requiredManualNativeEvidence,
   requiredManualCheckIds,
+  requiredNativeParityEvents,
   requiredQaEvidence,
   runFinalReleaseGateCli,
   scanProductionArtifacts,
@@ -24,6 +25,12 @@ import {
 
 const hash64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const qaOnlySpctlMarker = "qa-only spctl assessment failure; ad-hoc QA builds are not formal release passes";
+const nativeParitySession = {
+  sessionId: "native-parity-session-test",
+  githubRunId: "31194601620",
+  githubRunAttempt: "2",
+  githubSha: "05cd7a84fc03b3e2c206c8cd5598b351327708ca",
+};
 let tempRoots = [];
 
 function makeTempRoot() {
@@ -45,6 +52,85 @@ function writeEvidence(root, relativePath, text = "ok\n") {
   writeFileSync(path, text);
 }
 
+function minimalPng(width = 16, height = 16) {
+  const buffer = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buffer, 0);
+  buffer.writeUInt32BE(13, 8);
+  buffer.write("IHDR", 12, "ascii");
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  buffer[24] = 8;
+  buffer[25] = 6;
+  buffer[26] = 0;
+  buffer[27] = 0;
+  buffer[28] = 0;
+  return buffer;
+}
+
+function nativeParitySessionMarker(session = nativeParitySession) {
+  return `NATIVE_PARITY_EVIDENCE_SESSION ${JSON.stringify(session)}`;
+}
+
+function nativeParityDetailsFor(event) {
+  const shared = { assertion: "non-sensitive assertion passed" };
+  switch (event) {
+    case "window-shell-observed":
+      return {
+        visible: true,
+        decorated: false,
+        resizable: false,
+        alwaysOnTop: true,
+        trayExists: true,
+      };
+    case "settings-persisted":
+      return {
+        autoMovePersisted: true,
+        bubblesPersisted: true,
+        alwaysOnTopPersisted: true,
+      };
+    case "tray-show":
+      return { visible: true, trayExists: true };
+    case "tray-settings":
+      return { settingsVisible: true, trayExists: true };
+    case "position-persisted":
+      return { persisted: true };
+    case "position-restored-after-restart":
+      return { restored: true };
+    case "scale-auto-move":
+      return {
+        scale: 1.2,
+        moved: true,
+        trigger: "e2e-native-auto-move-command",
+        schedulerEvidence: "frontend-regression",
+      };
+    case "click-through-recovered":
+      return { clickThrough: false };
+    case "close-to-hide":
+      return { visible: false };
+    case "package-import-select-delete":
+      return { imported: true, selected: true, deleted: true };
+    case "status-card-opened":
+      return {
+        visible: true,
+        source: "paired-state-ui-injection",
+        pairingEvidence: "interop-workflow",
+      };
+    case "message-composer-opened":
+      return {
+        visible: true,
+        source: "paired-state-ui-injection",
+        pairingEvidence: "interop-workflow",
+      };
+    case "edge-left":
+    case "edge-right":
+    case "edge-top":
+    case "edge-bottom":
+      return { idle: true };
+    default:
+      return shared;
+  }
+}
+
 function writeCompleteEvidence(root, { includeFormal = true } = {}) {
   const required = includeFormal
     ? requiredFinalEvidence
@@ -62,12 +148,40 @@ function writeCompleteEvidence(root, { includeFormal = true } = {}) {
       writeEvidence(root, relativePath, `${requiredManualCheckIds.map((id) => `${id}=PASS`).join("\n")}\n`);
       continue;
     }
+    if (relativePath === "native/native-parity-events.jsonl") {
+      writeEvidence(
+        root,
+        relativePath,
+        `${requiredNativeParityEvents.map((event) => JSON.stringify({
+          event,
+          platform: "macos",
+          role: "macos-native-parity",
+          at: "2026-08-07T12:00:00.000Z",
+          ...nativeParitySession,
+          details: nativeParityDetailsFor(event),
+        })).join("\n")}\n`,
+      );
+      continue;
+    }
     if (relativePath === "macos/e2e-macos.log") {
-      writeEvidence(root, relativePath, "Spec Files: 1 passed, 0 failed\n");
+      writeEvidence(
+        root,
+        relativePath,
+        [
+          nativeParitySessionMarker(),
+          "Spec Files:      1 passed, 1 total (100% completed)",
+          "1 passing",
+          "",
+        ].join("\n"),
+      );
+      continue;
+    }
+    if (relativePath === "native/no-dock-runtime.log") {
+      writeEvidence(root, relativePath, "exit=0\n--- stdout ---\nbackgroundOnly=true\nvisible=true\n");
       continue;
     }
     if (relativePath.endsWith(".png")) {
-      writeEvidence(root, relativePath, "\x89PNG\r\n");
+      writeEvidence(root, relativePath, minimalPng());
       continue;
     }
     if (relativePath.includes("lipo-verify-universal")) {
@@ -102,6 +216,7 @@ function isRecordedExitLogFixture(relativePath) {
       "native/spctl-assess.log",
       "native/launch-app.log",
       "native/process-exists.log",
+      "native/no-dock-runtime.log",
       "native/quit-app.log",
     ].includes(relativePath)
   ) || (
@@ -152,7 +267,10 @@ describe("macOS final release gate", () => {
     expect(requiredQaEvidence).toContain("build/lipo-verify-universal.log");
     expect(requiredQaEvidence).toContain("macos/e2e-macos-build.log");
     expect(requiredQaEvidence).toContain("macos/e2e-macos.log");
+    expect(requiredManualNativeEvidence).toContain("native/native-parity-events.jsonl");
+    expect(requiredManualNativeEvidence).toContain("native/no-dock-runtime.log");
     expect(requiredManualNativeEvidence).toContain("native/app-window.png");
+    expect(requiredNativeParityEvents).toContain("position-restored-after-restart");
     expect(requiredFormalEvidence).toContain("build/stapler-validate-dmg.log");
     expect(requiredFinalEvidence).toContain("interop/windows/events.jsonl");
     expect(requiredFinalEvidence).toContain("interop/macos/events.jsonl");
@@ -266,12 +384,189 @@ describe("macOS final release gate", () => {
     expect(result.status).toBe("blocked");
     expect(result.invalid).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ path: "macos/e2e-macos.log", reason: expect.stringContaining("1 passed") }),
+        expect.objectContaining({ path: "macos/e2e-macos.log", reason: expect.stringContaining("macOS WDIO") }),
         expect.objectContaining({ path: "interop/validator/validator.log", reason: expect.stringContaining("ok=true") }),
         expect.objectContaining({ path: "interop/windows/screenshots/windows-paired.png", reason: expect.stringContaining("empty") }),
       ]),
     );
   });
+
+  it("accepts real WDIO completion output without a synthetic zero-failed line", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root, { includeFormal: false });
+    writeEvidence(
+      root,
+      "macos/e2e-macos.log",
+        [
+          nativeParitySessionMarker(),
+          "Spec Files:      1 passed, 1 total (100% completed)",
+          "1 passing",
+          "",
+      ].join("\n"),
+    );
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("qa-only");
+    expect(result.invalid).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "macos/e2e-macos.log" })]),
+    );
+  });
+
+  it("accepts native parity session markers with WDIO worker or timestamp prefixes", () => {
+    for (const markerLine of [
+      `[0-0] ${nativeParitySessionMarker()}`,
+      `2026-08-08T05:42:00.123Z INFO webdriver: ${nativeParitySessionMarker()}`,
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root, { includeFormal: false });
+      writeEvidence(
+        root,
+        "macos/e2e-macos.log",
+        [
+          markerLine,
+          "Spec Files:      1 passed, 1 total (100% completed)",
+          "1 passing",
+          "",
+        ].join("\n"),
+      );
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("qa-only");
+      expect(result.invalid).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: "macos/e2e-macos.log" })]),
+      );
+    }
+  });
+
+  it("rejects duplicate native parity markers, marker suffix garbage, and invalid marker JSON", () => {
+    for (const [markerLines, reason] of [
+      [[nativeParitySessionMarker(), `[0-0] ${nativeParitySessionMarker()}`], "exactly one"],
+      [[`[0-0] ${nativeParitySessionMarker()} trailing-garbage`], "not valid JSON"],
+      [["[0-0] NATIVE_PARITY_EVIDENCE_SESSION {not-json}"], "not valid JSON"],
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root, { includeFormal: false });
+      writeEvidence(
+        root,
+        "macos/e2e-macos.log",
+        [
+          ...markerLines,
+          "Spec Files:      1 passed, 1 total (100% completed)",
+          "1 passing",
+          "",
+        ].join("\n"),
+      );
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "macos/e2e-macos.log",
+            reason: expect.stringContaining(reason),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("blocks malformed WDIO completion output even when it contains passing text", () => {
+    for (const text of [
+      "Spec Files:      1 passed, 2 total (100% completed)\n1 passing\n",
+      "Spec Files:      1 passed, 1 total (50% completed)\n1 passing\n",
+      "Spec Files:      1 passed, 1 total (100% completed)\nFAILED in native-parity.e2e.ts\n",
+      "Spec Files:      1 passed, 1 total (100% completed)\n1 failed\n",
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root);
+      writeEvidence(root, "macos/e2e-macos.log", text);
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "macos/e2e-macos.log",
+            reason: expect.stringContaining("macOS WDIO"),
+          }),
+        ]),
+      );
+    }
+  }, 20_000);
+
+  it("blocks when native parity events are missing from the structured macOS WDIO evidence", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root);
+    writeEvidence(
+      root,
+      "native/native-parity-events.jsonl",
+      `${requiredNativeParityEvents
+        .filter((event) => event !== "edge-bottom")
+        .map((event) => JSON.stringify({
+          event,
+          platform: "macos",
+          role: "macos-native-parity",
+          at: "2026-08-07T12:00:00.000Z",
+          ...nativeParitySession,
+          details: nativeParityDetailsFor(event),
+        }))
+        .join("\n")}\n`,
+    );
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("blocked");
+    expect(result.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/native-parity-events.jsonl",
+          reason: expect.stringContaining("edge-bottom"),
+        }),
+      ]),
+    );
+  });
+
+  it("blocks when native parity event details are false or missing", () => {
+    for (const [event, details, reason] of [
+      ["window-shell-observed", { ...nativeParityDetailsFor("window-shell-observed"), trayExists: false }, "trayExists"],
+      ["position-restored-after-restart", {}, "restored"],
+      ["scale-auto-move", { scale: 1.2, moved: false }, "moved"],
+      ["scale-auto-move", { scale: 1.2, moved: true }, "trigger"],
+      ["status-card-opened", { visible: true }, "source"],
+      ["edge-left", { idle: false }, "idle"],
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root);
+      writeEvidence(
+        root,
+        "native/native-parity-events.jsonl",
+        `${requiredNativeParityEvents.map((requiredEvent) => JSON.stringify({
+          event: requiredEvent,
+          platform: "macos",
+          role: "macos-native-parity",
+          at: "2026-08-07T12:00:00.000Z",
+          ...nativeParitySession,
+          details: requiredEvent === event ? details : nativeParityDetailsFor(requiredEvent),
+        })).join("\n")}\n`,
+      );
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "native/native-parity-events.jsonl",
+            reason: expect.stringContaining(reason),
+          }),
+        ]),
+      );
+    }
+  }, 20_000);
 
   it("blocks when interop JSONL role schema or privacy constraints are violated", () => {
     const root = makeTempRoot();
@@ -406,10 +701,91 @@ describe("macOS final release gate", () => {
     });
   });
 
+  it("requires PNG evidence to have a valid signature and positive IHDR dimensions", () => {
+    for (const [relativePath, content, reason] of [
+      ["native/app-window.png", "not a png", "PNG signature"],
+      [
+        "native/edge-left.png",
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        "IHDR",
+      ],
+      ["interop/windows/screenshots/windows-paired.png", minimalPng(8, 16), "at least 16x16"],
+    ]) {
+      const root = makeTempRoot();
+      writeCompleteEvidence(root);
+      writeEvidence(root, relativePath, content);
+
+      const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+      expect(result.status).toBe("blocked");
+      expect(result.invalid).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: relativePath,
+            reason: expect.stringContaining(reason),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("blocks stale or mixed native parity sessions that do not match the WDIO log marker", () => {
+    const mixedRoot = makeTempRoot();
+    writeCompleteEvidence(mixedRoot, { includeFormal: false });
+    writeEvidence(
+      mixedRoot,
+      "native/native-parity-events.jsonl",
+      `${requiredNativeParityEvents.map((event, index) => JSON.stringify({
+        event,
+        platform: "macos",
+        role: "macos-native-parity",
+        at: "2026-08-07T12:00:00.000Z",
+        ...nativeParitySession,
+        sessionId: index === 0 ? "stale-session" : nativeParitySession.sessionId,
+        details: nativeParityDetailsFor(event),
+      })).join("\n")}\n`,
+    );
+
+    const mixedResult = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: mixedRoot }));
+    expect(mixedResult.status).toBe("blocked");
+    expect(mixedResult.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/native-parity-events.jsonl",
+          reason: expect.stringContaining("same native parity session"),
+        }),
+      ]),
+    );
+
+    const mismatchRoot = makeTempRoot();
+    writeCompleteEvidence(mismatchRoot, { includeFormal: false });
+    writeEvidence(
+      mismatchRoot,
+      "macos/e2e-macos.log",
+      [
+        nativeParitySessionMarker({ ...nativeParitySession, githubSha: "different-sha" }),
+        "Spec Files:      1 passed, 1 total (100% completed)",
+        "1 passing",
+        "",
+      ].join("\n"),
+    );
+
+    const mismatchResult = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: mismatchRoot }));
+    expect(mismatchResult.status).toBe("blocked");
+    expect(mismatchResult.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "native/native-parity-events.jsonl",
+          reason: expect.stringContaining("does not match macos/e2e-macos.log"),
+        }),
+      ]),
+    );
+  });
+
   it("does not read PNG files as UTF-8 while rejecting recorded exit logs with nonzero exit", () => {
     const root = makeTempRoot();
     writeCompleteEvidence(root);
-    writeEvidence(root, "native/app-window.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]));
+    writeEvidence(root, "native/app-window.png", minimalPng());
     writeEvidence(root, "build/hdiutil-attach-dmg.log", "exit=1\n--- stdout ---\nok\n");
 
     const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));

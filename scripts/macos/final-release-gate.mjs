@@ -49,6 +49,7 @@ export const requiredQaEvidence = [
 ];
 
 export const requiredManualNativeEvidence = [
+  "native/native-parity-events.jsonl",
   "native/sw-vers.log",
   "native/uname-machine.log",
   "native/system-profiler.log",
@@ -59,6 +60,7 @@ export const requiredManualNativeEvidence = [
   "native/spctl-assess.log",
   "native/launch-app.log",
   "native/process-exists.log",
+  "native/no-dock-runtime.log",
   "native/app-window.png",
   "native/no-dock-before.png",
   "native/no-dock-after.png",
@@ -89,6 +91,25 @@ export const requiredManualNativeEvidence = [
   "native/edge-right.png",
   "native/edge-top.png",
   "native/edge-bottom.png",
+];
+
+export const requiredNativeParityEvents = [
+  "window-shell-observed",
+  "settings-persisted",
+  "tray-show",
+  "tray-settings",
+  "position-persisted",
+  "position-restored-after-restart",
+  "scale-auto-move",
+  "click-through-recovered",
+  "close-to-hide",
+  "package-import-select-delete",
+  "status-card-opened",
+  "message-composer-opened",
+  "edge-left",
+  "edge-right",
+  "edge-top",
+  "edge-bottom",
 ];
 
 export const requiredManualCheckIds = [
@@ -179,6 +200,7 @@ const recordedExitLogEvidence = new Set([
   "native/spctl-assess.log",
   "native/launch-app.log",
   "native/process-exists.log",
+  "native/no-dock-runtime.log",
   "native/quit-app.log",
 ]);
 
@@ -204,6 +226,10 @@ const sensitiveInteropKeys = new Set([
 
 const githubTokenPattern = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[opsu]_[A-Za-z0-9_]{20,})\b/;
 const qaOnlySpctlMarker = "qa-only spctl assessment failure; ad-hoc QA builds are not formal release passes";
+const nativeParitySessionMarkerPrefix = "NATIVE_PARITY_EVIDENCE_SESSION";
+const nativeParitySessionFields = ["sessionId", "githubRunId", "githubRunAttempt", "githubSha"];
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const minimumScreenshotDimension = 16;
 
 function uniquePaths(paths) {
   return [...new Set(paths)];
@@ -225,6 +251,10 @@ export function inspectEvidenceFile({ evidenceRoot, relativePath }) {
   }
 
   if (relativePath.endsWith(".png")) {
+    const pngError = validatePngEvidence(readFileSync(fullPath));
+    if (pngError) {
+      return { path: relativePath, status: "invalid", reason: pngError };
+    }
     return { path: relativePath, status: "valid" };
   }
 
@@ -259,9 +289,17 @@ function validateEvidenceContent(relativePath, content) {
   }
 
   if (relativePath === "macos/e2e-macos.log") {
-    if (!/\b1\s+passed\b/i.test(content) || !/\b0\s+failed\b/i.test(content)) {
-      return "macOS WDIO E2E evidence must contain a 1 passed / 0 failed completion marker";
+    return validateMacosWdioLog(content);
+  }
+
+  if (relativePath === "native/no-dock-runtime.log") {
+    if (!/\bbackgroundOnly=true\b/i.test(content)) {
+      return "native no-Dock runtime evidence must report backgroundOnly=true";
     }
+  }
+
+  if (relativePath === "native/native-parity-events.jsonl") {
+    return validateNativeParityEvents(content);
   }
 
   if (relativePath === "native/manual-checklist.log") {
@@ -272,6 +310,26 @@ function validateEvidenceContent(relativePath, content) {
     return validateInteropValidatorLog(content);
   }
 
+  return undefined;
+}
+
+function validatePngEvidence(buffer) {
+  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(pngSignature)) {
+    return "PNG signature is invalid";
+  }
+  if (buffer.length < 33) {
+    return "PNG IHDR chunk is missing";
+  }
+  const ihdrLength = buffer.readUInt32BE(8);
+  const chunkType = buffer.subarray(12, 16).toString("ascii");
+  if (ihdrLength !== 13 || chunkType !== "IHDR") {
+    return "PNG IHDR chunk is missing";
+  }
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width < minimumScreenshotDimension || height < minimumScreenshotDimension) {
+    return `PNG evidence dimensions must be at least ${minimumScreenshotDimension}x${minimumScreenshotDimension}`;
+  }
   return undefined;
 }
 
@@ -296,6 +354,241 @@ function validateRecordedExitLog(relativePath, content) {
   const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
   if (firstLine !== "exit=0") {
     return "recorded evidence log must start with exact exit=0";
+  }
+  return undefined;
+}
+
+function validateNativeParityEvents(content) {
+  const seen = new Set();
+  const rows = parseNativeParityEventRows(content);
+  if (rows.error) {
+    return rows.error;
+  }
+  const sessionError = validateNativeParityRowsShareSession(rows.events);
+  if (sessionError) {
+    return sessionError;
+  }
+
+  for (const { row, index } of rows.events) {
+    if (!isPlainObject(row) || !isPlainObject(row.details)) {
+      return `native parity event row ${index + 1} must be a plain object with details`;
+    }
+    if (row.platform !== "macos" || row.role !== "macos-native-parity") {
+      return `native parity event row ${index + 1} has an invalid platform or role`;
+    }
+    if (!isValidIsoTimestamp(row.at)) {
+      return `native parity event row ${index + 1} has an invalid timestamp`;
+    }
+    const metadataError = validateNativeParitySessionMetadata(row, index);
+    if (metadataError) {
+      return metadataError;
+    }
+    if (requiredNativeParityEvents.includes(row.event)) {
+      const detailError = validateNativeParityEventDetails(row.event, row.details);
+      if (detailError) {
+        return `native parity event ${row.event} ${detailError}`;
+      }
+      seen.add(row.event);
+    }
+  }
+
+  const missing = requiredNativeParityEvents.filter((event) => !seen.has(event));
+  if (missing.length > 0) {
+    return `native parity events missing: ${missing.join(", ")}`;
+  }
+
+  return undefined;
+}
+
+function parseNativeParityEventRows(content) {
+  const events = [];
+  for (const [index, line] of content.split(/\r?\n/).entries()) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    try {
+      events.push({ row: JSON.parse(trimmed), index });
+    } catch {
+      return { events: [], error: `native parity event row ${index + 1} is not valid JSON` };
+    }
+  }
+  return { events };
+}
+
+function validateNativeParitySessionMetadata(row, index) {
+  for (const field of nativeParitySessionFields) {
+    if (typeof row[field] !== "string" || row[field].trim() === "") {
+      return `native parity event row ${index + 1} missing ${field}`;
+    }
+  }
+  return undefined;
+}
+
+function validateNativeParityRowsShareSession(events) {
+  let expected;
+  for (const { row } of events) {
+    if (!expected) {
+      expected = nativeParitySessionFromValue(row);
+      continue;
+    }
+    const current = nativeParitySessionFromValue(row);
+    if (!nativeParitySessionsEqual(expected, current)) {
+      return "native parity events must all belong to the same native parity session";
+    }
+  }
+  return undefined;
+}
+
+function validateMacosWdioLog(content) {
+  if (/\b(?:FAILED|[1-9]\d*\s+failed)\b/.test(content)) {
+    return "macOS WDIO E2E evidence must not contain failed spec markers";
+  }
+
+  const marker = parseNativeParitySessionMarker(content);
+  if (marker.error) {
+    return `macOS WDIO E2E evidence ${marker.error}`;
+  }
+
+  const specMatch = content.match(
+    /Spec Files:\s*(\d+)\s+passed,\s*(\d+)\s+total\s*\(100%\s+completed\)/i,
+  );
+  if (!specMatch) {
+    return "macOS WDIO E2E evidence must contain the completed Spec Files summary";
+  }
+
+  const passed = Number.parseInt(specMatch[1], 10);
+  const total = Number.parseInt(specMatch[2], 10);
+  if (!Number.isFinite(passed) || !Number.isFinite(total) || passed <= 0 || passed !== total) {
+    return "macOS WDIO E2E evidence must report passed count equal to total count";
+  }
+
+  const passingRegex = new RegExp(`\\b${passed}\\s+passing\\b`, "i");
+  if (!passingRegex.test(content)) {
+    return "macOS WDIO E2E evidence must include the matching passing count";
+  }
+
+  return undefined;
+}
+
+function parseNativeParitySessionMarker(content) {
+  const markerToken = `${nativeParitySessionMarkerPrefix} `;
+  const markerJsonTexts = [];
+  for (const line of content.split(/\r?\n/)) {
+    let searchFrom = 0;
+    let markerIndex = line.indexOf(markerToken, searchFrom);
+    while (markerIndex !== -1) {
+      markerJsonTexts.push(line.slice(markerIndex + markerToken.length).trimEnd());
+      searchFrom = markerIndex + markerToken.length;
+      markerIndex = line.indexOf(markerToken, searchFrom);
+    }
+  }
+  if (markerJsonTexts.length !== 1) {
+    return {
+      error: "must include exactly one native parity session marker",
+    };
+  }
+  const jsonText = markerJsonTexts[0].trimStart();
+  try {
+    const value = JSON.parse(jsonText);
+    const session = nativeParitySessionFromValue(value);
+    for (const field of nativeParitySessionFields) {
+      if (typeof session[field] !== "string" || session[field].trim() === "") {
+        return { error: `native parity session marker missing ${field}` };
+      }
+    }
+    return { session };
+  } catch {
+    return { error: "native parity session marker is not valid JSON" };
+  }
+}
+
+function nativeParitySessionFromValue(value) {
+  return Object.fromEntries(nativeParitySessionFields.map((field) => [field, value?.[field]]));
+}
+
+function nativeParitySessionsEqual(left, right) {
+  return nativeParitySessionFields.every((field) => left?.[field] === right?.[field]);
+}
+
+const nativeParityEventDetailRequirements = {
+  "window-shell-observed": {
+    visible: true,
+    decorated: false,
+    resizable: false,
+    alwaysOnTop: true,
+    trayExists: true,
+  },
+  "settings-persisted": {
+    autoMovePersisted: true,
+    bubblesPersisted: true,
+    alwaysOnTopPersisted: true,
+  },
+  "tray-show": {
+    visible: true,
+    trayExists: true,
+  },
+  "tray-settings": {
+    settingsVisible: true,
+    trayExists: true,
+  },
+  "position-persisted": {
+    persisted: true,
+  },
+  "position-restored-after-restart": {
+    restored: true,
+  },
+  "scale-auto-move": {
+    scale: 1.2,
+    moved: true,
+    trigger: "e2e-native-auto-move-command",
+    schedulerEvidence: "frontend-regression",
+  },
+  "click-through-recovered": {
+    clickThrough: false,
+  },
+  "close-to-hide": {
+    visible: false,
+  },
+  "package-import-select-delete": {
+    imported: true,
+    selected: true,
+    deleted: true,
+  },
+  "status-card-opened": {
+    visible: true,
+    source: "paired-state-ui-injection",
+    pairingEvidence: "interop-workflow",
+  },
+  "message-composer-opened": {
+    visible: true,
+    source: "paired-state-ui-injection",
+    pairingEvidence: "interop-workflow",
+  },
+  "edge-left": {
+    idle: true,
+  },
+  "edge-right": {
+    idle: true,
+  },
+  "edge-top": {
+    idle: true,
+  },
+  "edge-bottom": {
+    idle: true,
+  },
+};
+
+function validateNativeParityEventDetails(event, details) {
+  const requirements = nativeParityEventDetailRequirements[event];
+  if (!requirements) {
+    return undefined;
+  }
+  for (const [key, expected] of Object.entries(requirements)) {
+    if (!Object.is(details[key], expected)) {
+      return `details.${key} must be ${JSON.stringify(expected)}`;
+    }
   }
   return undefined;
 }
@@ -386,6 +679,8 @@ export function collectEvidenceStatus({ evidenceRoot }) {
 
   const interopValidation = validateInteropEvidence(normalizedRoot, missing, invalid);
   invalid.push(...interopValidation.invalid);
+  const nativeParityCorrelation = validateNativeParityCorrelation(normalizedRoot, missing, invalid);
+  invalid.push(...nativeParityCorrelation.invalid);
 
   return {
     evidenceRoot: normalizedRoot,
@@ -393,6 +688,70 @@ export function collectEvidenceStatus({ evidenceRoot }) {
     missing,
     invalid,
   };
+}
+
+function validateNativeParityCorrelation(evidenceRoot, missing, invalid) {
+  const eventsPath = "native/native-parity-events.jsonl";
+  const wdioPath = "macos/e2e-macos.log";
+  if (
+    [eventsPath, wdioPath].some((path) => missing.includes(path)) ||
+    invalid.some((entry) => entry.path === eventsPath || entry.path === wdioPath)
+  ) {
+    return { invalid: [] };
+  }
+
+  try {
+    const eventsContent = readFileSync(join(evidenceRoot, eventsPath), "utf8");
+    const wdioContent = readFileSync(join(evidenceRoot, wdioPath), "utf8");
+    const eventSession = extractNativeParitySessionFromEvents(eventsContent);
+    const marker = parseNativeParitySessionMarker(wdioContent);
+    if (marker.error) {
+      return {
+        invalid: [{ path: wdioPath, reason: `macOS WDIO E2E evidence ${marker.error}` }],
+      };
+    }
+    if (!nativeParitySessionsEqual(eventSession, marker.session)) {
+      return {
+        invalid: [
+          {
+            path: eventsPath,
+            reason: "native parity session does not match macos/e2e-macos.log marker",
+          },
+        ],
+      };
+    }
+  } catch (error) {
+    return {
+      invalid: [
+        {
+          path: eventsPath,
+          reason: error.message ?? String(error),
+        },
+      ],
+    };
+  }
+
+  return { invalid: [] };
+}
+
+function extractNativeParitySessionFromEvents(content) {
+  const parsed = parseNativeParityEventRows(content);
+  if (parsed.error) {
+    throw new Error(parsed.error);
+  }
+  const sessionError = validateNativeParityRowsShareSession(parsed.events);
+  if (sessionError) {
+    throw new Error(sessionError);
+  }
+  const first = parsed.events[0]?.row;
+  if (!first) {
+    throw new Error("native parity events missing");
+  }
+  const metadataError = validateNativeParitySessionMetadata(first, 0);
+  if (metadataError) {
+    throw new Error(metadataError);
+  }
+  return nativeParitySessionFromValue(first);
 }
 
 function validateInteropEvidence(evidenceRoot, missing, invalid) {

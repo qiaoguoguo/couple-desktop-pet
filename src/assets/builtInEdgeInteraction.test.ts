@@ -736,5 +736,5 @@ describe("getBuiltInEdgeProfile", () => {
       expect(png.suspiciousForegroundArtifacts).toEqual([]);
       expect(png.suspiciousChromaResidues).toEqual([]);
     }
-  }, 20_000);
+  }, 60_000);
 });

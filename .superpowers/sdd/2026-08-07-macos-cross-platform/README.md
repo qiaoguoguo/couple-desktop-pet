@@ -43,7 +43,20 @@ Store exact command output from automated checks and build verification. Current
 - `native/spctl-assess.log`
 - `native/launch-app.log`
 - `native/process-exists.log`
+- `native/no-dock-runtime.log`
 - `native/quit-app.log`
+- `native/native-parity-events.jsonl`
+- `native/window-shell.log`
+- `native/settings.log`
+- `native/package-import.log`
+- `native/status-card.log`
+- `native/message-composer.log`
+- `native/edge-left.log`
+- `native/edge-right.log`
+- `native/edge-top.log`
+- `native/edge-bottom.log`
+
+`macos/e2e-macos.log` must include one `NATIVE_PARITY_EVIDENCE_SESSION` marker. Every row in `native/native-parity-events.jsonl` must include the same non-sensitive `sessionId`, `githubRunId`, `githubRunAttempt`, and `githubSha` values so old JSONL rows cannot be combined with a newer WDIO run.
 
 `native/manual-checklist.log` must contain one `<id>=PASS` row for each manually verified native behavior:
 
@@ -82,7 +95,9 @@ Store screenshots only when they do not contain secrets, binding codes, device s
 Required screenshot evidence includes:
 
 - `native/app-window.png` from the native evidence collector.
-- Manual or semi-automated native screenshots under `native/` for transparent window compositing, no Dock icon, menu bar tray, always-on-top behavior, drag, position memory, scale, auto-move, click-through recovery, close-to-hide, settings, package import, status card, message composer, and current four-edge behavior.
+- macOS native parity WDIO screenshots under `native/`: `settings.png`, `package-import.png`, `status-card.png`, `message-composer.png`, `scale-auto-move.png`, `click-through-recovered.png`, `edge-left.png`, `edge-right.png`, `edge-top.png`, and `edge-bottom.png`.
+- Manual or semi-automated native screenshots under `native/` for transparent window compositing, no Dock icon, menu bar tray, always-on-top behavior, drag, position memory, scale, click-through recovery, close-to-hide, settings, package import, status card, message composer, and current four-edge behavior. `native/scale-auto-move.*` proves scale setting plus direct E2E native auto-move command integration; real scheduler behavior remains covered by frontend regression evidence. Automated transparency evidence is limited to config/plist, borderless window state, and captured app pixels; desktop compositor transparency still needs visual/manual confirmation.
+- Native parity status-card and message-composer screenshots use an injected paired-state UI setup only. They prove UI rendering and native shell compatibility, while real pairing, message delivery, message animation, and bubble acknowledgement are proven by the Windows-to-macOS interop evidence.
 - Safe interop screenshots under `interop/windows/screenshots/` and `interop/macos/screenshots/`. Required files are `windows-paired.png`, `windows-peer-status-slacking.png`, `windows-message-animation.png`, `windows-unpaired.png`, `macos-paired.png`, `macos-peer-status-slacking.png`, `macos-message-animation.png`, and `macos-unpaired.png`. These screenshots must not include binding codes, tokens, device secrets, or message text.
 
 ## Interop
