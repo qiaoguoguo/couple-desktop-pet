@@ -221,6 +221,22 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).toContain("HTMLInputElement.prototype");
     expect(spec).not.toContain("input.value = nextValue");
     expect(spec).not.toMatch(/e2e_remove_pet_package_fixture"[\s\S]{0,120}sourcePath/);
+    expect(spec).not.toMatch(
+      /const\s+after\s*=\s*await\s+invokeTauri<WindowState>\("e2e_trigger_auto_move"/,
+    );
+    expect(spec).toMatch(
+      /await\s+invokeTauri<WindowState>\("e2e_trigger_auto_move"[\s\S]*?const\s+after\s*=\s*await\s+waitForWindowState\(\s*\(\s*state\s*\)\s*=>[\s\S]*?before\.position/,
+    );
+    const scaleAutoMoveSpec = spec.slice(
+      spec.indexOf("async function verifyScaleAndAutoMove"),
+      spec.indexOf("async function verifyPackageImportSelectDelete"),
+    );
+    expect(scaleAutoMoveSpec).toMatch(
+      /await\s+setCheckbox\("自动移动",\s*true\);[\s\S]*?settings\.autoMoveEnabled\s*===\s*true/,
+    );
+    expect(scaleAutoMoveSpec).toMatch(
+      /await\s+setCheckbox\("自动移动",\s*false\);[\s\S]*?settings\.autoMoveEnabled\s*===\s*false[\s\S]*?await\s+closeSettings\(\);[\s\S]*?await\s+invokeTauri<WindowState>\("e2e_trigger_auto_move"/,
+    );
 
     for (const artifact of [
       "tray-show.log",

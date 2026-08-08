@@ -198,12 +198,17 @@ async function verifyScaleAndAutoMove(): Promise<void> {
   await setRangeValue("#pet-scale", "1.2");
   await setCheckbox("自动移动", true);
   await waitForSettings((settings) => settings.scale === 1.2 && settings.autoMoveEnabled === true);
+  await setCheckbox("自动移动", false);
+  await waitForSettings((settings) => settings.scale === 1.2 && settings.autoMoveEnabled === false);
   await closeSettings();
 
   const before = await invokeTauri<WindowState>("e2e_window_state");
-  const after = await invokeTauri<WindowState>("e2e_trigger_auto_move", {
+  await invokeTauri<WindowState>("e2e_trigger_auto_move", {
     movementRange: "free",
   });
+  const after = await waitForWindowState(
+    (state) => state.position.x !== before.position.x || state.position.y !== before.position.y,
+  );
   expect(after.position.x !== before.position.x || after.position.y !== before.position.y).toBe(true);
   await saveNativeParityScreenshot("scale-auto-move.png");
   writeNativeParityLog("scale-auto-move.log", {
@@ -213,12 +218,14 @@ async function verifyScaleAndAutoMove(): Promise<void> {
     beforeY: before.position.y,
     afterX: after.position.x,
     afterY: after.position.y,
+    autoMoveSchedulerEnabledDuringCommand: false,
   });
   recordNativeParityEvent("scale-auto-move", {
     scale: 1.2,
     moved: true,
     trigger: "e2e-native-auto-move-command",
     schedulerEvidence: "frontend-regression",
+    autoMoveSchedulerEnabledDuringCommand: false,
   });
 
   await openSettingsFromContextMenu();
