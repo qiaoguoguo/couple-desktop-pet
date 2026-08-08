@@ -246,14 +246,14 @@ async function verifyPackageImportSelectDelete(): Promise<void> {
     await openSettingsFromContextMenu();
     await expect($(appearanceSelector)).toBeDisplayed();
     const packageSelect = await waitForCurrentPackageSelectOption(fixture.name);
-    await packageSelect.selectByVisibleText(fixture.name);
+    await setSelectValue(packageSelect, fixture.package_id);
     await waitForSettings((settings) =>
       settings.appearance?.selectedPetPackageId === fixture.package_id
     );
     await saveNativeParityScreenshot("package-import.png", appearanceSelector);
 
     const builtInSelect = await waitForCurrentPackageSelectOption(builtInPackageName);
-    await builtInSelect.selectByVisibleText(builtInPackageName);
+    await setSelectValue(builtInSelect, "builtin:q-girl");
     await waitForSettings((settings) =>
       settings.appearance?.selectedPetPackageId === "builtin:q-girl"
     );
@@ -304,6 +304,28 @@ async function waitForCurrentPackageSelectOption(optionText: string) {
     },
   );
   return packageSelect;
+}
+
+async function setSelectValue(select: ReturnType<typeof $>, value: string): Promise<void> {
+  await browser.execute(
+    (target, nextValue) => {
+      if (!(target instanceof HTMLSelectElement)) {
+        throw new Error("Current package select was not an HTMLSelectElement");
+      }
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      )?.set;
+      if (!valueSetter) {
+        throw new Error("HTMLSelectElement value setter is unavailable");
+      }
+      valueSetter.call(target, nextValue);
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    select,
+    value,
+  );
 }
 
 async function verifyStatusCardAndComposer(): Promise<void> {

@@ -245,14 +245,21 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(packageImportSpec).not.toContain(
       '`${settingsSelector} section[aria-label="形象管理"] select`',
     );
+    expect(packageImportSpec).not.toContain(".selectByVisibleText(");
     expect(spec).toContain("当前形象");
     expect(packageImportSpec).toContain("appearanceSelector");
     expect(packageImportSpec).toMatch(
-      /const\s+packageSelect\s*=\s*await\s+waitForCurrentPackageSelectOption\(fixture\.name\);[\s\S]*?await\s+packageSelect\.selectByVisibleText\(fixture\.name\)/,
+      /const\s+packageSelect\s*=\s*await\s+waitForCurrentPackageSelectOption\(fixture\.name\);[\s\S]*?await\s+setSelectValue\(packageSelect,\s*fixture\.package_id\);[\s\S]*?await\s+waitForSettings\(\(settings\)\s*=>[\s\S]*?settings\.appearance\?\.selectedPetPackageId\s*===\s*fixture\.package_id/,
+    );
+    expect(packageImportSpec).toMatch(
+      /const\s+builtInSelect\s*=\s*await\s+waitForCurrentPackageSelectOption\(builtInPackageName\);[\s\S]*?await\s+setSelectValue\(builtInSelect,\s*"builtin:q-girl"\);[\s\S]*?await\s+waitForSettings\(\(settings\)\s*=>[\s\S]*?settings\.appearance\?\.selectedPetPackageId\s*===\s*"builtin:q-girl"/,
     );
     expect(packageImportSpec).toContain(
       'saveNativeParityScreenshot("package-import.png", appearanceSelector)',
     );
+    expect(spec).toContain("HTMLSelectElement.prototype");
+    expect(spec).toContain('new Event("input", { bubbles: true })');
+    expect(spec).toContain('new Event("change", { bubbles: true })');
 
     for (const artifact of [
       "tray-show.log",
