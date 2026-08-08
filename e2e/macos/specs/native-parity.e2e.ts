@@ -38,6 +38,9 @@ interface PetPackageFixture {
 
 const surfaceSelector = 'section[aria-label="情侣桌宠 MVP"]';
 const settingsSelector = 'section[aria-label="桌宠设置"]';
+const appearanceSelector = 'section[aria-label="形象管理"]';
+const currentPackageSelectSelector =
+  '//section[@aria-label="形象管理"]//label[.//span[normalize-space(.)="当前形象"]]//select';
 const builtInPackageName = "Q 版小人";
 const edgeScreenshotFiles: Record<EdgeSide, string> = {
   left: "edge-left.png",
@@ -241,14 +244,16 @@ async function verifyPackageImportSelectDelete(): Promise<void> {
     await expect($(surfaceSelector)).toBeDisplayed();
 
     await openSettingsFromContextMenu();
-    const packageSelect = await $(`${settingsSelector} section[aria-label="形象管理"] select`);
+    await expect($(appearanceSelector)).toBeDisplayed();
+    const packageSelect = await waitForCurrentPackageSelectOption(fixture.name);
     await packageSelect.selectByVisibleText(fixture.name);
     await waitForSettings((settings) =>
       settings.appearance?.selectedPetPackageId === fixture.package_id
     );
-    await saveNativeParityScreenshot("package-import.png", settingsSelector);
+    await saveNativeParityScreenshot("package-import.png", appearanceSelector);
 
-    await packageSelect.selectByVisibleText(builtInPackageName);
+    const builtInSelect = await waitForCurrentPackageSelectOption(builtInPackageName);
+    await builtInSelect.selectByVisibleText(builtInPackageName);
     await waitForSettings((settings) =>
       settings.appearance?.selectedPetPackageId === "builtin:q-girl"
     );
@@ -272,6 +277,33 @@ async function verifyPackageImportSelectDelete(): Promise<void> {
     );
     await closeSettings().catch(() => undefined);
   }
+}
+
+async function waitForCurrentPackageSelectOption(optionText: string) {
+  const packageSelect = await $(currentPackageSelectSelector);
+  await browser.waitUntil(
+    async () => {
+      try {
+        if (!(await packageSelect.isDisplayed())) {
+          return false;
+        }
+        const options = await packageSelect.$$("option");
+        for (const option of options) {
+          if ((await option.getText()) === optionText) {
+            return true;
+          }
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    {
+      timeout: 10000,
+      timeoutMsg: `current package option did not appear: ${optionText}`,
+    },
+  );
+  return packageSelect;
 }
 
 async function verifyStatusCardAndComposer(): Promise<void> {

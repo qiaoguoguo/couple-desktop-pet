@@ -220,6 +220,7 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).toContain("trayExists");
     expect(spec).toContain("HTMLInputElement.prototype");
     expect(spec).not.toContain("input.value = nextValue");
+    expect(spec).toContain('const appearanceSelector = \'section[aria-label="形象管理"]\';');
     expect(spec).not.toMatch(/e2e_remove_pet_package_fixture"[\s\S]{0,120}sourcePath/);
     expect(spec).not.toMatch(
       /const\s+after\s*=\s*await\s+invokeTauri<WindowState>\("e2e_trigger_auto_move"/,
@@ -236,6 +237,21 @@ describe("macOS Tauri embedded E2E config", () => {
     );
     expect(scaleAutoMoveSpec).toMatch(
       /await\s+setCheckbox\("自动移动",\s*false\);[\s\S]*?settings\.autoMoveEnabled\s*===\s*false[\s\S]*?await\s+closeSettings\(\);[\s\S]*?await\s+invokeTauri<WindowState>\("e2e_trigger_auto_move"/,
+    );
+    const packageImportSpec = spec.slice(
+      spec.indexOf("async function verifyPackageImportSelectDelete"),
+      spec.indexOf("async function verifyStatusCardAndComposer"),
+    );
+    expect(packageImportSpec).not.toContain(
+      '`${settingsSelector} section[aria-label="形象管理"] select`',
+    );
+    expect(spec).toContain("当前形象");
+    expect(packageImportSpec).toContain("appearanceSelector");
+    expect(packageImportSpec).toMatch(
+      /const\s+packageSelect\s*=\s*await\s+waitForCurrentPackageSelectOption\(fixture\.name\);[\s\S]*?await\s+packageSelect\.selectByVisibleText\(fixture\.name\)/,
+    );
+    expect(packageImportSpec).toContain(
+      'saveNativeParityScreenshot("package-import.png", appearanceSelector)',
     );
 
     for (const artifact of [
