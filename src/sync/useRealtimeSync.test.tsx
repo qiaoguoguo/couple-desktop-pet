@@ -1,6 +1,11 @@
-import { act, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "../settings/defaultSettings";
+import {
+  E2E_REALTIME_OVERRIDE_EVENT,
+  E2E_REALTIME_OVERRIDE_WINDOW_KEY,
+} from "./e2eRealtimeOverride";
 import { useRealtimeSync } from "./useRealtimeSync";
 
 const realtimeMock = vi.hoisted(() => {
@@ -43,6 +48,18 @@ vi.mock("./realtimeClient", () => ({
 }));
 
 describe("useRealtimeSync", () => {
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as Record<string, unknown>)[
+      E2E_REALTIME_OVERRIDE_WINDOW_KEY
+    ];
+    vi.unstubAllEnvs();
+    realtimeMock.latestOptions = null;
+    realtimeMock.connect.mockClear();
+    realtimeMock.disconnect.mockClear();
+    vi.restoreAllMocks();
+  });
+
   it("passes the local activity status to the realtime client without rebuilding for status-only changes", async () => {
     const { rerender } = render(<HookProbe activityStatus="overtime" />);
 
@@ -192,6 +209,112 @@ describe("useRealtimeSync", () => {
     expect(screen.getByTestId("sync-state").textContent).toBe(
       "connected:online:none",
     );
+  });
+
+  it("lets the E2E realtime override replace and release the live client state", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    (window as unknown as Record<string, unknown>)[
+      E2E_REALTIME_OVERRIDE_WINDOW_KEY
+    ] = {
+      status: "connected",
+      peerPresence: "online",
+      peerActivityStatus: "overtime",
+      peerPresenceChangedAt: null,
+      peerLastSeenAt: null,
+      lastError: null,
+    };
+
+    render(<HookProbe includeActivityStatus />);
+
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "status",
+        status: "disconnected",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sync-state").textContent).toBe(
+        "connected:online:overtime",
+      );
+    });
+
+    delete (window as unknown as Record<string, unknown>)[
+      E2E_REALTIME_OVERRIDE_WINDOW_KEY
+    ];
+    act(() => {
+      window.dispatchEvent(new Event(E2E_REALTIME_OVERRIDE_EVENT));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sync-state").textContent).toBe(
+        "disconnected:unknown:none",
+      );
+    });
+  });
+
+  it("cleans up the E2E override listener across StrictMode mount and unmount", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    const originalAddEventListener = window.addEventListener.bind(window);
+    const originalRemoveEventListener = window.removeEventListener.bind(window);
+    const addedListeners: EventListenerOrEventListenerObject[] = [];
+    const removedListeners: EventListenerOrEventListenerObject[] = [];
+    const addEventListener = vi
+      .spyOn(window, "addEventListener")
+      .mockImplementation((type, listener, options) => {
+        if (type === E2E_REALTIME_OVERRIDE_EVENT) {
+          addedListeners.push(listener);
+        }
+        originalAddEventListener(type, listener, options);
+      });
+    const removeEventListener = vi
+      .spyOn(window, "removeEventListener")
+      .mockImplementation((type, listener, options) => {
+        if (type === E2E_REALTIME_OVERRIDE_EVENT) {
+          removedListeners.push(listener);
+        }
+        originalRemoveEventListener(type, listener, options);
+      });
+
+    const { unmount } = render(
+      <StrictMode>
+        <HookProbe />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(addedListeners.length).toBeGreaterThan(0);
+    });
+
+    unmount();
+
+    await waitFor(() => {
+      expect(removedListeners).toHaveLength(addedListeners.length);
+    });
+
+    expect(removedListeners).toEqual(addedListeners);
+
+    act(() => {
+      (window as unknown as Record<string, unknown>)[
+        E2E_REALTIME_OVERRIDE_WINDOW_KEY
+      ] = {
+        status: "connected",
+        peerPresence: "online",
+        peerActivityStatus: null,
+        peerPresenceChangedAt: null,
+        peerLastSeenAt: null,
+        lastError: null,
+      };
+      window.dispatchEvent(new Event(E2E_REALTIME_OVERRIDE_EVENT));
+    });
+
+    expect(addEventListener).toHaveBeenCalled();
+    expect(removeEventListener).toHaveBeenCalled();
+  });
+
+  it("restores window event listener spies before the next test starts", () => {
+    expect(vi.isMockFunction(window.addEventListener)).toBe(false);
+    expect(vi.isMockFunction(window.removeEventListener)).toBe(false);
   });
 });
 

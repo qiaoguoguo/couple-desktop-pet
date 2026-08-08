@@ -202,7 +202,20 @@ describe("macOS and cross-platform GitHub Actions workflows", () => {
     expect(source).toContain(`${evidenceRoot}/macos`);
     expect(source).toContain(`${evidenceRoot}/native`);
     expect(source).toContain("x86_64-apple-darwin,aarch64-apple-darwin");
-    expect(allRunText(workflow)).toContain("production scan found WDIO symbols");
+
+    const productionScan = stepByName(job, "Production negative scan");
+    const canary = "wdio:default";
+    const e2eOverrideModule = readText("src/sync/e2eRealtimeOverride.ts");
+    const e2eOverrideHelper = readText("e2e/support/realtimeOverride.ts");
+    expect(productionScan.run).toContain("node <<'NODE'");
+    expect(productionScan.run).toContain("const forbidden");
+    expect(productionScan.run).toContain(canary);
+    expect(productionScan.run).toContain("readFileSync");
+    expect(productionScan.run).toContain("production scan found WDIO symbols");
+    expect(productionScan.run).toContain("cargo tree --manifest-path src-tauri/Cargo.toml");
+    expect(productionScan.run).not.toContain("pnpm macos:production-scan");
+    expect(e2eOverrideModule).toContain(`e2e-realtime-override:${canary}`);
+    expect(e2eOverrideHelper).toContain(`e2e-realtime-override:${canary}`);
 
     const uploads = uploadSteps(workflow);
     expect(uploads.every((step) => step.if === "always()")).toBe(true);

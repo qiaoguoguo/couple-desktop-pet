@@ -167,6 +167,7 @@ const forbiddenProductionNeedles = [
   "tauri_plugin_wdio",
   "tauri-plugin-wdio-webdriver",
   "tauri_plugin_wdio_webdriver",
+  "__COUPLE_PET_E2E_REALTIME_OVERRIDE__",
 ];
 
 const textFileExtensions = new Set([

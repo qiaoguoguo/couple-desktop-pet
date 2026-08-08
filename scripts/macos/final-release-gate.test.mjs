@@ -413,11 +413,12 @@ describe("macOS final release gate", () => {
     );
   });
 
-  it("accepts native parity session markers with WDIO worker or timestamp prefixes", () => {
-    for (const markerLine of [
+  it.each(
+    [
       `[0-0] ${nativeParitySessionMarker()}`,
       `2026-08-08T05:42:00.123Z INFO webdriver: ${nativeParitySessionMarker()}`,
-    ]) {
+    ].map((markerLine) => [markerLine]),
+  )("accepts native parity session marker with prefix: %s", (markerLine) => {
       const root = makeTempRoot();
       writeCompleteEvidence(root, { includeFormal: false });
       writeEvidence(
@@ -437,15 +438,13 @@ describe("macOS final release gate", () => {
       expect(result.invalid).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ path: "macos/e2e-macos.log" })]),
       );
-    }
   });
 
-  it("rejects duplicate native parity markers, marker suffix garbage, and invalid marker JSON", () => {
-    for (const [markerLines, reason] of [
+  it.each([
       [[nativeParitySessionMarker(), `[0-0] ${nativeParitySessionMarker()}`], "exactly one"],
       [[`[0-0] ${nativeParitySessionMarker()} trailing-garbage`], "not valid JSON"],
       [["[0-0] NATIVE_PARITY_EVIDENCE_SESSION {not-json}"], "not valid JSON"],
-    ]) {
+  ])("rejects malformed native parity marker evidence: %s", (markerLines, reason) => {
       const root = makeTempRoot();
       writeCompleteEvidence(root, { includeFormal: false });
       writeEvidence(
@@ -470,7 +469,6 @@ describe("macOS final release gate", () => {
           }),
         ]),
       );
-    }
   });
 
   it("blocks malformed WDIO completion output even when it contains passing text", () => {
@@ -799,12 +797,11 @@ describe("macOS final release gate", () => {
     ]);
   });
 
-  it("requires recorded command logs to start with an exact exit=0 header", () => {
-    for (const [relativePath, text] of [
+  it.each([
       ["build/hdiutil-attach-dmg.log", "exit=-1\n--- stdout ---\nok\n"],
       ["native/process-exists.log", "exit=foo\n--- stdout ---\nok\n"],
       ["build/codesign-verify-app.log", "--- stdout ---\nok\n"],
-    ]) {
+  ])("requires recorded command log to start with exact exit=0: %s", (relativePath, text) => {
       const root = makeTempRoot();
       writeCompleteEvidence(root);
       writeEvidence(root, relativePath, text);
@@ -820,15 +817,13 @@ describe("macOS final release gate", () => {
           }),
         ]),
       );
-    }
   });
 
-  it("rejects malformed QA-only Gatekeeper evidence", () => {
-    for (const [text, reason] of [
+  it.each([
       [`exit=foo\n--- stderr ---\n${qaOnlySpctlMarker}\n`, "positive nonzero"],
       ["exit=1\n--- stderr ---\nrejected\n", "QA-only marker"],
       [`--- stderr ---\n${qaOnlySpctlMarker}\n`, "exit="],
-    ]) {
+  ])("rejects malformed QA-only Gatekeeper evidence: %s", (text, reason) => {
       const root = makeTempRoot();
       writeCompleteEvidence(root, { includeFormal: false });
       writeEvidence(root, "native/spctl-assess.log", text);
@@ -844,7 +839,6 @@ describe("macOS final release gate", () => {
           }),
         ]),
       );
-    }
   });
 
   it("scans only production artifacts for forbidden E2E symbols", () => {
@@ -859,6 +853,7 @@ describe("macOS final release gate", () => {
     expect(
       scanProductionArtifacts({
         "dist/assets/index.js": "import '@wdio/tauri-plugin';",
+        "dist/assets/realtime.js": "__COUPLE_PET_E2E_REALTIME_OVERRIDE__",
         "src-tauri/capabilities/default.json": '"wdio:default"',
         "src-tauri/tauri.conf.json": '"tauri-plugin-wdio"',
       }),
@@ -866,6 +861,10 @@ describe("macOS final release gate", () => {
       ok: false,
       findings: [
         { path: "dist/assets/index.js", needle: "@wdio/tauri-plugin" },
+        {
+          path: "dist/assets/realtime.js",
+          needle: "__COUPLE_PET_E2E_REALTIME_OVERRIDE__",
+        },
         { path: "src-tauri/capabilities/default.json", needle: "wdio:default" },
         { path: "src-tauri/tauri.conf.json", needle: "tauri-plugin-wdio" },
       ],
@@ -949,4 +948,4 @@ describe("macOS final release gate", () => {
     );
     expect(statSync(join(root, "release-decision.md"), { throwIfNoEntry: false })).toBeUndefined();
   });
-});
+}, 15000);

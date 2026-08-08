@@ -7,6 +7,10 @@ import {
   saveNativeParityScreenshot,
   writeNativeParityLog,
 } from "../../support/nativeEvidence";
+import {
+  clearE2eRealtimeOverride,
+  setE2eRealtimeOverride,
+} from "../../support/realtimeOverride";
 import { invokeTauri } from "../../support/tauri";
 import { chooseSafeDistinctWindowPosition } from "../../support/windowPosition";
 
@@ -49,50 +53,79 @@ const edgeScreenshotFiles: Record<EdgeSide, string> = {
   bottom: "edge-bottom.png",
 };
 
+let originalSettings: Record<string, any> | null = null;
+let originalWindowPosition: SavedWindowPosition | null = null;
+
 describe("macOS native parity", () => {
-  it("records shell, settings, tray, position, package, composer, status, and edge parity evidence", async () => {
+  before(async () => {
     initializeNativeParityEvidenceSession();
-    let originalSettings: Record<string, any> | null = null;
-    let originalWindowPosition: SavedWindowPosition | null = null;
-    try {
-      await expect($(surfaceSelector)).toBeDisplayed();
-      originalSettings = await readSettings();
+    await expect($(surfaceSelector)).toBeDisplayed();
+    originalSettings = await readSettings();
+    const initialState = await invokeTauri<WindowState>("e2e_window_state");
+    originalWindowPosition = { ...initialState.position };
+  });
 
-      const initialState = await invokeTauri<WindowState>("e2e_window_state");
-      originalWindowPosition = { ...initialState.position };
-      expect(initialState.visible).toBe(true);
-      expect(initialState.decorated).toBe(false);
-      expect(initialState.resizable).toBe(false);
-      expect(initialState.always_on_top).toBe(true);
-      expect(initialState.tray_exists).toBe(true);
-      writeNativeParityLog("window-shell.log", {
-        visible: initialState.visible,
-        decorated: initialState.decorated,
-        resizable: initialState.resizable,
-        alwaysOnTop: initialState.always_on_top,
-        trayExists: initialState.tray_exists,
-        scaleFactor: initialState.scale_factor,
-      });
-      recordNativeParityEvent("window-shell-observed", {
-        visible: initialState.visible,
-        decorated: initialState.decorated,
-        resizable: initialState.resizable,
-        alwaysOnTop: initialState.always_on_top,
-        trayExists: initialState.tray_exists,
-      });
+  afterEach(async () => {
+    await resetNativeParityScenarioState();
+  });
 
-      await verifySettingsPersistence();
-      await verifyTrayAndClickThroughRecovery();
-      await verifyWindowPositionPersistence();
-      await verifyScaleAndAutoMove();
-      await verifyPackageImportSelectDelete();
-      await verifyStatusCardAndComposer();
-      await verifyCurrentEdgeBehavior();
-    } finally {
-      await cleanupNativeParityState(originalSettings, originalWindowPosition);
-    }
+  after(async () => {
+    await cleanupNativeParityState();
+  });
+
+  it("records shell and settings persistence evidence", async () => {
+    await verifyWindowShell();
+    await verifySettingsPersistence();
+  });
+
+  it("records tray and click-through recovery evidence", async () => {
+    await verifyTrayAndClickThroughRecovery();
+  });
+
+  it("records position restart evidence", async () => {
+    await verifyWindowPositionPersistence();
+  });
+
+  it("records scale and native auto-move evidence", async () => {
+    await verifyScaleAndAutoMove();
+  });
+
+  it("records package lifecycle evidence", async () => {
+    await verifyPackageImportSelectDelete();
+  });
+
+  it("records status card and composer evidence", async () => {
+    await verifyStatusCardAndComposer();
+  });
+
+  it("records current edge parity evidence", async () => {
+    await verifyCurrentEdgeBehavior();
   });
 });
+
+async function verifyWindowShell(): Promise<void> {
+  const initialState = await invokeTauri<WindowState>("e2e_window_state");
+  expect(initialState.visible).toBe(true);
+  expect(initialState.decorated).toBe(false);
+  expect(initialState.resizable).toBe(false);
+  expect(initialState.always_on_top).toBe(true);
+  expect(initialState.tray_exists).toBe(true);
+  writeNativeParityLog("window-shell.log", {
+    visible: initialState.visible,
+    decorated: initialState.decorated,
+    resizable: initialState.resizable,
+    alwaysOnTop: initialState.always_on_top,
+    trayExists: initialState.tray_exists,
+    scaleFactor: initialState.scale_factor,
+  });
+  recordNativeParityEvent("window-shell-observed", {
+    visible: initialState.visible,
+    decorated: initialState.decorated,
+    resizable: initialState.resizable,
+    alwaysOnTop: initialState.always_on_top,
+    trayExists: initialState.tray_exists,
+  });
+}
 
 async function verifySettingsPersistence(): Promise<void> {
   await openSettingsFromContextMenu();
@@ -347,6 +380,14 @@ async function verifyStatusCardAndComposer(): Promise<void> {
   });
   await browser.refresh();
   await expect($(surfaceSelector)).toBeDisplayed();
+  await setE2eRealtimeOverride({
+    status: "connected",
+    peerPresence: "online",
+    peerActivityStatus: "slacking",
+    peerPresenceChangedAt: new Date().toISOString(),
+    peerLastSeenAt: null,
+    lastError: null,
+  });
   const statusCard = await $('[aria-label="对方状态"]');
   await expect(statusCard).toBeDisplayed();
   await saveNativeParityScreenshot("status-card.png", '[aria-label="对方状态"]');
@@ -367,10 +408,12 @@ async function verifyStatusCardAndComposer(): Promise<void> {
     visible: true,
     source: "paired-state-ui-injection",
     pairingEvidence: "interop-workflow",
+    realtimeStateSource: "e2e-runtime-override",
   });
   await browser.keys("Escape");
   await expect(composer).not.toBeDisplayed();
 
+  await clearE2eRealtimeOverride();
   await invokeTauri("write_settings", {
     settings: {
       ...settings,
@@ -456,13 +499,14 @@ async function setRangeValue(selector: string, value: string): Promise<void> {
   );
 }
 
-async function cleanupNativeParityState(
-  originalSettings: Record<string, any> | null,
-  originalWindowPosition: SavedWindowPosition | null,
-): Promise<void> {
+async function resetNativeParityScenarioState(): Promise<void> {
   await invokeTauri<void>("e2e_trigger_tray_show").catch(() => undefined);
+  await clearE2eRealtimeOverride();
   await browser.keys("Escape").catch(() => undefined);
   await closeSettings().catch(() => undefined);
+  for (const side of ["left", "right", "top", "bottom"] as const) {
+    await invokeTauri<WindowState>("e2e_restore_edge", { side }).catch(() => undefined);
+  }
   await invokeTauri<void>("delete_pet_package", { packageId: "imported:e2e-native-parity" }).catch(
     () => undefined,
   );
@@ -473,7 +517,12 @@ async function cleanupNativeParityState(
   if (originalSettings) {
     await invokeTauri("write_settings", { settings: originalSettings }).catch(() => undefined);
     await browser.refresh().catch(() => undefined);
+    await expect($(surfaceSelector)).toBeDisplayed().catch(() => undefined);
   }
+}
+
+async function cleanupNativeParityState(): Promise<void> {
+  await resetNativeParityScenarioState();
 }
 
 async function restoreOriginalWindowPosition(

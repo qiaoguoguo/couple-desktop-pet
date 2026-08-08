@@ -194,6 +194,17 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(existsSync(join(repoRoot, specPath))).toBe(true);
 
     const spec = readText(specPath);
+    const nativeParityItBlocks = spec.match(/\bit\("/g) ?? [];
+
+    expect(nativeParityItBlocks.length).toBeGreaterThanOrEqual(7);
+    expect(spec.match(/initializeNativeParityEvidenceSession\(/g)).toHaveLength(1);
+    expect(spec).toContain("before(async () =>");
+    expect(spec).toContain("afterEach(async () =>");
+    expect(spec).toContain("after(async () =>");
+    expect(spec).toContain("resetNativeParityScenarioState");
+    expect(spec).not.toContain(
+      'it("records shell, settings, tray, position, package, composer, status, and edge parity evidence"',
+    );
 
     for (const command of [
       "e2e_window_state",
@@ -260,6 +271,22 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(spec).toContain("HTMLSelectElement.prototype");
     expect(spec).toContain('new Event("input", { bubbles: true })');
     expect(spec).toContain('new Event("change", { bubbles: true })');
+    const statusComposerSpec = spec.slice(
+      spec.indexOf("async function verifyStatusCardAndComposer"),
+      spec.indexOf("async function verifyCurrentEdgeBehavior"),
+    );
+    expect(statusComposerSpec).toContain("setE2eRealtimeOverride");
+    expect(statusComposerSpec).toContain('status: "connected"');
+    expect(statusComposerSpec).toContain('peerPresence: "online"');
+    expect(statusComposerSpec.indexOf("setE2eRealtimeOverride")).toBeLessThan(
+      statusComposerSpec.indexOf("openInteractionMenu"),
+    );
+    expect(spec).toContain("clearE2eRealtimeOverride");
+
+    const useRealtimeSync = readText("src/sync/useRealtimeSync.ts");
+    expect(useRealtimeSync).toContain('import.meta.env.VITE_TAURI_E2E === "1"');
+    expect(useRealtimeSync).toContain('import("./e2eRealtimeOverride")');
+    expect(useRealtimeSync).toContain("e2eOverrideState ?? state");
 
     for (const artifact of [
       "tray-show.log",

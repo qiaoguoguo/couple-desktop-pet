@@ -17,6 +17,8 @@ export function useRealtimeSync(
   callbacks: UseRealtimeSyncCallbacks,
 ): { state: SyncRuntimeState; client: RealtimeClient | null } {
   const callbacksRef = useRef(callbacks);
+  const [e2eOverrideState, setE2eOverrideState] =
+    useState<SyncRuntimeState | null>(null);
   const [state, setState] = useState<SyncRuntimeState>({
     status: sync.enabled ? "disconnected" : "disabled",
     peerPresence: "unknown",
@@ -29,6 +31,27 @@ export function useRealtimeSync(
   useEffect(() => {
     callbacksRef.current = callbacks;
   }, [callbacks]);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_TAURI_E2E === "1") {
+      let cancelled = false;
+      let unsubscribe = () => {};
+
+      void import("./e2eRealtimeOverride").then((module) => {
+        if (cancelled) {
+          return;
+        }
+        unsubscribe = module.subscribeToE2eRealtimeOverride(setE2eOverrideState);
+      });
+
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
+    }
+
+    return undefined;
+  }, []);
 
   const client = useMemo(() => {
     if (!sync.enabled || !sync.deviceId || !sync.deviceSecret || !sync.pairId) {
@@ -111,5 +134,5 @@ export function useRealtimeSync(
     return () => client.disconnect();
   }, [client, sync.enabled]);
 
-  return { state, client };
+  return { state: e2eOverrideState ?? state, client };
 }
