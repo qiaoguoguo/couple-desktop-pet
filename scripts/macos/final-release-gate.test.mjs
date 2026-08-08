@@ -413,6 +413,31 @@ describe("macOS final release gate", () => {
     );
   });
 
+  it("accepts real macOS WDIO output with multiple spec files and per-spec passing summaries", () => {
+    const root = makeTempRoot();
+    writeCompleteEvidence(root, { includeFormal: false });
+    writeEvidence(
+      root,
+      "macos/e2e-macos.log",
+      [
+        nativeParitySessionMarker(),
+        "[0-0] RUNNING in chrome - file:///app-shell.e2e.ts",
+        "[0-0] 1 passing",
+        "[0-1] RUNNING in chrome - file:///native-parity.e2e.ts",
+        "[0-1] 7 passing",
+        "Spec Files:      2 passed, 2 total (100% completed)",
+        "",
+      ].join("\n"),
+    );
+
+    const result = evaluateMacosReleaseGate(collectEvidenceStatus({ evidenceRoot: root }));
+
+    expect(result.status).toBe("qa-only");
+    expect(result.invalid).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "macos/e2e-macos.log" })]),
+    );
+  });
+
   it.each(
     [
       `[0-0] ${nativeParitySessionMarker()}`,
@@ -477,6 +502,7 @@ describe("macOS final release gate", () => {
       "Spec Files:      1 passed, 1 total (50% completed)\n1 passing\n",
       "Spec Files:      1 passed, 1 total (100% completed)\nFAILED in native-parity.e2e.ts\n",
       "Spec Files:      1 passed, 1 total (100% completed)\n1 failed\n",
+      `${nativeParitySessionMarker()}\nSpec Files:      2 passed, 2 total (100% completed)\n8 passing\n`,
     ]) {
       const root = makeTempRoot();
       writeCompleteEvidence(root);
@@ -495,6 +521,39 @@ describe("macOS final release gate", () => {
       );
     }
   }, 20_000);
+
+  it("allows empty cargo fmt evidence while still rejecting other empty required logs", () => {
+    const cargoFmtRoot = makeTempRoot();
+    writeCompleteEvidence(cargoFmtRoot, { includeFormal: false });
+    writeEvidence(cargoFmtRoot, "macos/cargo-fmt-check.log", "");
+
+    const cargoFmtResult = evaluateMacosReleaseGate(
+      collectEvidenceStatus({ evidenceRoot: cargoFmtRoot }),
+    );
+
+    expect(cargoFmtResult.status).toBe("qa-only");
+    expect(cargoFmtResult.invalid).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "macos/cargo-fmt-check.log" })]),
+    );
+
+    const ordinaryLogRoot = makeTempRoot();
+    writeCompleteEvidence(ordinaryLogRoot, { includeFormal: false });
+    writeEvidence(ordinaryLogRoot, "macos/pnpm-test.log", "");
+
+    const ordinaryLogResult = evaluateMacosReleaseGate(
+      collectEvidenceStatus({ evidenceRoot: ordinaryLogRoot }),
+    );
+
+    expect(ordinaryLogResult.status).toBe("blocked");
+    expect(ordinaryLogResult.invalid).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "macos/pnpm-test.log",
+          reason: expect.stringContaining("empty"),
+        }),
+      ]),
+    );
+  });
 
   it("blocks when native parity events are missing from the structured macOS WDIO evidence", () => {
     const root = makeTempRoot();

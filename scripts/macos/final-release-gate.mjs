@@ -231,6 +231,7 @@ const nativeParitySessionMarkerPrefix = "NATIVE_PARITY_EVIDENCE_SESSION";
 const nativeParitySessionFields = ["sessionId", "githubRunId", "githubRunAttempt", "githubSha"];
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const minimumScreenshotDimension = 16;
+const allowedEmptyEvidenceFiles = new Set(["macos/cargo-fmt-check.log"]);
 
 function uniquePaths(paths) {
   return [...new Set(paths)];
@@ -247,7 +248,7 @@ export function inspectEvidenceFile({ evidenceRoot, relativePath }) {
     return { path: relativePath, status: "invalid", reason: "evidence path is not a regular file" };
   }
 
-  if (stat.size === 0) {
+  if (stat.size === 0 && !allowedEmptyEvidenceFiles.has(relativePath)) {
     return { path: relativePath, status: "invalid", reason: "evidence file is empty" };
   }
 
@@ -465,9 +466,9 @@ function validateMacosWdioLog(content) {
     return "macOS WDIO E2E evidence must report passed count equal to total count";
   }
 
-  const passingRegex = new RegExp(`\\b${passed}\\s+passing\\b`, "i");
-  if (!passingRegex.test(content)) {
-    return "macOS WDIO E2E evidence must include the matching passing count";
+  const passingSummaries = [...content.matchAll(/\b([1-9]\d*)\s+passing\b/gi)];
+  if (passingSummaries.length < passed) {
+    return "macOS WDIO E2E evidence must include one positive per-spec passing summary for each passed spec file";
   }
 
   return undefined;
