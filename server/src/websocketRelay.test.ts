@@ -34,6 +34,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await relay.close();
   rmSync(tempDir, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 describe("websocket relay", () => {
@@ -178,6 +179,46 @@ describe("websocket relay", () => {
     await expectNoJson(bob);
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("74 82");
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("是我不好。");
+
+    alice.close();
+    bob.close();
+  });
+
+  it("restores console.error after the log-safety assertion", () => {
+    expect(vi.isMockFunction(console.error)).toBe(false);
+  });
+
+  it("rejects surprise content with extra keys and does not forward it", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "message.send",
+        requestId: "msg_extra_surprise",
+        pairId: pair.pairId,
+        clientMessageId: "local_extra_surprise",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "7482",
+          displayText: "future copy",
+        },
+      }),
+    );
+
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "error",
+      requestId: "msg_extra_surprise",
+      code: "malformed_message",
+    });
+    await expectNoJson(bob);
 
     alice.close();
     bob.close();

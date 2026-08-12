@@ -11,6 +11,13 @@ export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
 const SURPRISE_SECRET_MAX_LENGTH = 24;
 const SURPRISE_NOTE_MAX_LENGTH = 120;
 const SURPRISE_SECRET_PATTERN = /^[A-Za-z0-9-]+$/;
+const SURPRISE_CONTENT_KEYS = new Set<string>([
+  "kind",
+  "version",
+  "theme",
+  "secret",
+  "note",
+]);
 
 export type SyncErrorCode =
   | "invalid_request"
@@ -262,6 +269,10 @@ export function validateStructuredMessageContent(
 ): StructuredMessageValidation {
   if (!isRecord(input) || input.kind !== "surprise") {
     return malformedStructuredMessage("Structured message content is malformed");
+  }
+
+  if (Object.keys(input).some((key) => !SURPRISE_CONTENT_KEYS.has(key))) {
+    return malformedStructuredMessage("Structured message content has unknown fields");
   }
 
   if (input.version !== 1 || !Number.isInteger(input.version)) {

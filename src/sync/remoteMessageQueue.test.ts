@@ -63,6 +63,23 @@ describe("remoteMessageQueue", () => {
     ).toBe("dismissing");
   });
 
+  it("keeps ordinary text dismissal available from visible and hovered stages", () => {
+    const visible = enqueueRemoteMessage(createEmptyRemoteMessageQueue(), {
+      id: "msg_1",
+      fromDeviceId: "dev_b",
+      text: "普通消息",
+      at: "2026-08-12T10:00:00.000Z",
+    });
+    const hovered = markRemoteMessageHovered(visible, "msg_1");
+
+    expect(markRemoteMessageDismissing(visible, "msg_1").active?.stage).toBe(
+      "dismissing",
+    );
+    expect(markRemoteMessageDismissing(hovered, "msg_1").active?.stage).toBe(
+      "dismissing",
+    );
+  });
+
   it("promotes queued messages after completing dismissal", () => {
     const withFirst = enqueueRemoteMessage(createEmptyRemoteMessageQueue(), {
       id: "msg_1",
@@ -133,6 +150,45 @@ describe("remoteMessageQueue", () => {
       stage: "revealed",
     });
     expect(revealRemoteSurprise(revealed, "msg_surprise")).toBe(revealed);
+  });
+
+  it("does not dismiss a collapsed surprise", () => {
+    const state = enqueueRemoteMessage(createEmptyRemoteMessageQueue(), {
+      id: "msg_surprise",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      at: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+
+    expect(markRemoteMessageDismissing(state, "msg_surprise")).toBe(state);
+  });
+
+  it("dismisses a revealed surprise", () => {
+    const state = enqueueRemoteMessage(createEmptyRemoteMessageQueue(), {
+      id: "msg_surprise",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      at: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+
+    expect(
+      markRemoteMessageDismissing(
+        revealRemoteSurprise(state, "msg_surprise"),
+        "msg_surprise",
+      ).active?.stage,
+    ).toBe("dismissing");
   });
 
   it("keeps text behind a surprise in FIFO order until dismissal completes", () => {

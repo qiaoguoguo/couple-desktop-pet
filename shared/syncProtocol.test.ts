@@ -119,6 +119,32 @@ describe("parseServerToClientMessage", () => {
     );
   });
 
+  it("falls back to text when received content has extra keys", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "message.received",
+        pairId: "pair_1",
+        serverMessageId: "server_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        sentAt: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "7482",
+          displayText: "future copy",
+        },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: "message.received",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        content: undefined,
+      }),
+    );
+  });
+
   it("keeps legacy received messages compatible with extra fields", () => {
     expect(
       parseServerToClientMessage({
@@ -294,6 +320,22 @@ describe("validateStructuredMessageContent", () => {
         theme: "general",
         secret: "A-1024",
       },
+    });
+  });
+
+  it("rejects surprise content with keys outside the allowlist", () => {
+    expect(
+      validateStructuredMessageContent({
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+        displayText: "future copy",
+      }),
+    ).toEqual({
+      ok: false,
+      code: "malformed_message",
+      message: expect.any(String),
     });
   });
 

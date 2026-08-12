@@ -84,6 +84,14 @@ export function markRemoteMessageDismissing(
     return state;
   }
 
+  if (isSurpriseMessage(state.active)) {
+    if (state.active.stage !== "revealed") {
+      return state;
+    }
+  } else if (state.active.stage !== "visible" && state.active.stage !== "hovered") {
+    return state;
+  }
+
   return { ...state, active: { ...state.active, stage: "dismissing" } };
 }
 
