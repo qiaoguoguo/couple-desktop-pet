@@ -8,6 +8,9 @@ import {
 export const MESSAGE_TEXT_MAX_LENGTH = 300;
 export const PAIR_CODE_LENGTH = 6;
 export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
+const SURPRISE_SECRET_MAX_LENGTH = 24;
+const SURPRISE_NOTE_MAX_LENGTH = 120;
+const SURPRISE_SECRET_PATTERN = /^[A-Za-z0-9-]+$/;
 
 export type SyncErrorCode =
   | "invalid_request"
@@ -99,12 +102,40 @@ export interface AuthClientMessage {
   capabilities?: ActivityStatusCapability[];
 }
 
+export type SurpriseTheme =
+  | "cheer"
+  | "apology"
+  | "birthday"
+  | "festival"
+  | "miss"
+  | "general";
+
+const SURPRISE_THEMES = new Set<string>([
+  "cheer",
+  "apology",
+  "birthday",
+  "festival",
+  "miss",
+  "general",
+]);
+
+export interface SurpriseMessageContent {
+  kind: "surprise";
+  version: 1;
+  theme: SurpriseTheme;
+  secret: string;
+  note?: string;
+}
+
+export type StructuredMessageContent = SurpriseMessageContent;
+
 export interface SendClientMessage {
   type: "message.send";
   requestId: string;
   pairId: string;
   clientMessageId: string;
   text: string;
+  content?: StructuredMessageContent;
 }
 
 export interface StatusUpdateClientMessage {
@@ -162,6 +193,7 @@ export interface MessageReceivedServerMessage {
   fromDeviceId: string;
   text: string;
   sentAt: string;
+  content?: StructuredMessageContent;
 }
 
 export interface MessageDeliveredServerMessage {
@@ -196,6 +228,10 @@ export type MessageTextValidation =
   | { ok: true; text: string }
   | { ok: false; code: SyncErrorCode; message: string };
 
+export type StructuredMessageValidation =
+  | { ok: true; content: StructuredMessageContent }
+  | { ok: false; code: "malformed_message"; message: string };
+
 export function validateMessageText(text: unknown): MessageTextValidation {
   if (typeof text !== "string") {
     return {
@@ -219,6 +255,55 @@ export function validateMessageText(text: unknown): MessageTextValidation {
   }
 
   return { ok: true, text: trimmed };
+}
+
+export function validateStructuredMessageContent(
+  input: unknown,
+): StructuredMessageValidation {
+  if (!isRecord(input) || input.kind !== "surprise") {
+    return malformedStructuredMessage("Structured message content is malformed");
+  }
+
+  if (input.version !== 1 || !Number.isInteger(input.version)) {
+    return malformedStructuredMessage("Surprise message version is unsupported");
+  }
+
+  if (typeof input.theme !== "string" || !isSurpriseTheme(input.theme)) {
+    return malformedStructuredMessage("Surprise message theme is unsupported");
+  }
+
+  if (typeof input.secret !== "string") {
+    return malformedStructuredMessage("Surprise secret must be a string");
+  }
+
+  const secret = input.secret.trim();
+  if (
+    Array.from(secret).length < 1 ||
+    Array.from(secret).length > SURPRISE_SECRET_MAX_LENGTH ||
+    !SURPRISE_SECRET_PATTERN.test(secret)
+  ) {
+    return malformedStructuredMessage("Surprise secret is invalid");
+  }
+
+  if (input.note !== undefined && typeof input.note !== "string") {
+    return malformedStructuredMessage("Surprise note must be a string");
+  }
+
+  const note = input.note?.trim();
+  if (note !== undefined && Array.from(note).length > SURPRISE_NOTE_MAX_LENGTH) {
+    return malformedStructuredMessage("Surprise note exceeds 120 characters");
+  }
+
+  return {
+    ok: true,
+    content: {
+      kind: "surprise",
+      version: 1,
+      theme: input.theme,
+      secret,
+      ...(note ? { note } : {}),
+    },
+  };
 }
 
 export function parseServerToClientMessage(input: unknown): ServerToClientMessage | null {
@@ -313,13 +398,23 @@ function readMessageReceived(input: Record<string, unknown>): MessageReceivedSer
     return null;
   }
 
-  return {
+  const message: MessageReceivedServerMessage = {
     type: "message.received",
     pairId: input.pairId,
     serverMessageId: input.serverMessageId,
     fromDeviceId: input.fromDeviceId,
     text: input.text,
     sentAt: input.sentAt,
+  };
+
+  if (input.content === undefined) {
+    return message;
+  }
+
+  const content = validateStructuredMessageContent(input.content);
+  return {
+    ...message,
+    content: content.ok ? content.content : undefined,
   };
 }
 
@@ -361,6 +456,10 @@ export function isSyncErrorCode(code: string): code is SyncErrorCode {
   return SYNC_ERROR_CODES.has(code);
 }
 
+export function isSurpriseTheme(value: string): value is SurpriseTheme {
+  return SURPRISE_THEMES.has(value);
+}
+
 export function readSupportedCapabilities(
   value: unknown,
 ): ActivityStatusCapability[] | undefined | null {
@@ -379,4 +478,8 @@ export function readSupportedCapabilities(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function malformedStructuredMessage(message: string): StructuredMessageValidation {
+  return { ok: false, code: "malformed_message", message };
 }

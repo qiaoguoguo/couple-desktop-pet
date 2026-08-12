@@ -5,6 +5,7 @@ import {
   PAIR_CODE_LENGTH,
   PAIR_CODE_TTL_MS,
   parseServerToClientMessage,
+  validateStructuredMessageContent,
   validateMessageText,
 } from "./syncProtocol";
 
@@ -58,6 +59,84 @@ describe("parseServerToClientMessage", () => {
       fromDeviceId: "dev_a",
       text: "你好",
       sentAt: "2026-08-03T12:00:00.000Z",
+    });
+  });
+
+  it("parses valid received surprise content", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "message.received",
+        pairId: "pair_1",
+        serverMessageId: "server_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        sentAt: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "7482",
+        },
+      }),
+    ).toEqual({
+      type: "message.received",
+      pairId: "pair_1",
+      serverMessageId: "server_1",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      sentAt: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+  });
+
+  it("falls back to text when received content has an unknown version", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "message.received",
+        pairId: "pair_1",
+        serverMessageId: "server_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        sentAt: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 2,
+          theme: "general",
+          secret: "7482",
+        },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: "message.received",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        content: undefined,
+      }),
+    );
+  });
+
+  it("keeps legacy received messages compatible with extra fields", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "message.received",
+        pairId: "pair_1",
+        serverMessageId: "server_1",
+        fromDeviceId: "dev_b",
+        text: "普通消息",
+        sentAt: "2026-08-12T10:00:00.000Z",
+        futureField: { ignored: true },
+      }),
+    ).toEqual({
+      type: "message.received",
+      pairId: "pair_1",
+      serverMessageId: "server_1",
+      fromDeviceId: "dev_b",
+      text: "普通消息",
+      sentAt: "2026-08-12T10:00:00.000Z",
     });
   });
 
@@ -164,5 +243,139 @@ describe("parseServerToClientMessage", () => {
         changedAt: "2026-08-06T12:00:00.000Z",
       }),
     ).toBeNull();
+  });
+});
+
+describe("validateStructuredMessageContent", () => {
+  const themes = [
+    "cheer",
+    "apology",
+    "birthday",
+    "festival",
+    "miss",
+    "general",
+  ] as const;
+
+  it.each(themes)("accepts surprise theme %s", (theme) => {
+    expect(
+      validateStructuredMessageContent({
+        kind: "surprise",
+        version: 1,
+        theme,
+        secret: "A-7482",
+        note: "看到它的时候，就当我抱了你一下。",
+      }),
+    ).toEqual({
+      ok: true,
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme,
+        secret: "A-7482",
+        note: "看到它的时候，就当我抱了你一下。",
+      },
+    });
+  });
+
+  it("normalizes surrounding whitespace and omits an empty note", () => {
+    expect(
+      validateStructuredMessageContent({
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "  A-1024  ",
+        note: "   ",
+      }),
+    ).toEqual({
+      ok: true,
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "A-1024",
+      },
+    });
+  });
+
+  it.each([
+    {
+      name: "empty secret",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "   ",
+      },
+    },
+    {
+      name: "25 Unicode character secret",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "A".repeat(25),
+      },
+    },
+    {
+      name: "secret with spaces",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "74 82",
+      },
+    },
+    {
+      name: "secret with underscore",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "A_1024",
+      },
+    },
+    {
+      name: "121 character note",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+        note: "想".repeat(121),
+      },
+    },
+    {
+      name: "unknown kind",
+      content: {
+        kind: "gift",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    },
+    {
+      name: "unknown theme",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "comfort",
+        secret: "7482",
+      },
+    },
+    {
+      name: "non-integer version",
+      content: {
+        kind: "surprise",
+        version: 1.5,
+        theme: "general",
+        secret: "7482",
+      },
+    },
+  ])("rejects $name", ({ content }) => {
+    expect(validateStructuredMessageContent(content)).toEqual({
+      ok: false,
+      code: "malformed_message",
+      message: expect.any(String),
+    });
   });
 });
