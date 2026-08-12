@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   listenForClickThroughRecovered,
+  openMessageComposerSurface,
   restoreWindowFromEdgePeek,
   snapWindowToEdgeIfNeeded,
 } from "./windowCommands";
@@ -56,6 +57,28 @@ describe("windowCommands edge peek bridge", () => {
     expect(desktopApiMock.listenToDesktopEvent).toHaveBeenCalledWith(
       "click-through-recovered",
       handler,
+    );
+  });
+
+  it("opens the message composer through a controlled surface argument", async () => {
+    desktopApiMock.invokeCommand.mockResolvedValueOnce(undefined);
+
+    await openMessageComposerSurface("message");
+
+    expect(desktopApiMock.invokeCommand).toHaveBeenCalledWith(
+      "open_message_composer_surface",
+      { surface: "message" },
+    );
+  });
+
+  it("opens the surprise composer through a controlled surface argument", async () => {
+    desktopApiMock.invokeCommand.mockResolvedValueOnce(undefined);
+
+    await openMessageComposerSurface("surprise");
+
+    expect(desktopApiMock.invokeCommand).toHaveBeenCalledWith(
+      "open_message_composer_surface",
+      { surface: "surprise" },
     );
   });
 });

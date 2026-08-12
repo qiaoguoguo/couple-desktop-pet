@@ -8,6 +8,7 @@ import {
 } from "./desktopApi";
 
 export type ClickThroughRecoveryReason = "show" | "settings";
+export type ComposerSurface = "message" | "surprise";
 
 export function readSettings(): Promise<unknown> {
   return invokeCommand<unknown>("read_settings");
@@ -45,8 +46,10 @@ export function restoreWindowFromEdgePeek(
   return invokeCommand<void>("restore_window_from_edge_peek", { side });
 }
 
-export function openMessageComposerSurface(): Promise<void> {
-  return invokeCommand<void>("open_message_composer_surface");
+export function openMessageComposerSurface(
+  surface: ComposerSurface = "message",
+): Promise<void> {
+  return invokeCommand<void>("open_message_composer_surface", { surface });
 }
 
 export function closeMessageComposerSurface(): Promise<void> {

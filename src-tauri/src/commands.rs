@@ -17,6 +17,8 @@ const DEFAULT_WINDOW_WIDTH_PX: u32 = 320;
 const DEFAULT_WINDOW_HEIGHT_PX: u32 = 360;
 const MESSAGE_COMPOSER_SURFACE_WIDTH_PX: u32 = 440;
 const MESSAGE_COMPOSER_SURFACE_HEIGHT_PX: u32 = 260;
+const SURPRISE_COMPOSER_SURFACE_WIDTH_PX: u32 = 440;
+const SURPRISE_COMPOSER_SURFACE_HEIGHT_PX: u32 = 460;
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
 const AUTO_MOVE_STEP_X_PX: i32 = 96;
 const AUTO_MOVE_STEP_Y_PX: i32 = 48;
@@ -148,14 +150,17 @@ pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Resu
 }
 
 #[tauri::command]
-pub fn open_message_composer_surface(app: AppHandle) -> Result<(), String> {
+pub fn open_message_composer_surface(
+    app: AppHandle,
+    surface: ComposerSurface,
+) -> Result<(), String> {
     let window = main_window(&app)?;
     if is_message_composer_surface_open() {
         return show_main_window(&app);
     }
 
     let (work_area, geometry) = read_current_window_geometry(&window, "message composer")?;
-    let surface = calculate_message_composer_surface_geometry(work_area, geometry);
+    let surface = calculate_message_composer_surface_geometry(surface, work_area, geometry);
 
     if !save_message_composer_surface_if_absent(surface.saved_pet_window)? {
         return show_main_window(&app);
@@ -358,6 +363,28 @@ pub(crate) fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindo
 pub enum ClickThroughRecoveryReason {
     Show,
     Settings,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComposerSurface {
+    Message,
+    Surprise,
+}
+
+impl ComposerSurface {
+    fn size(self) -> (u32, u32) {
+        match self {
+            Self::Message => (
+                MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
+                MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
+            ),
+            Self::Surprise => (
+                SURPRISE_COMPOSER_SURFACE_WIDTH_PX,
+                SURPRISE_COMPOSER_SURFACE_HEIGHT_PX,
+            ),
+        }
+    }
 }
 
 impl ClickThroughRecoveryReason {
@@ -761,24 +788,19 @@ fn clamp_saved_window_position(
 }
 
 fn calculate_message_composer_surface_geometry(
+    surface: ComposerSurface,
     work_area: WorkArea,
     pet_window: WindowGeometry,
 ) -> MessageComposerSurfaceGeometry {
+    let (width, height) = surface.size();
+
     MessageComposerSurfaceGeometry {
         saved_pet_window: pet_window,
         window: WindowGeometry {
-            x: centered_axis(
-                work_area.x,
-                work_area.width,
-                MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
-            ),
-            y: centered_axis(
-                work_area.y,
-                work_area.height,
-                MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
-            ),
-            width: MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
-            height: MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
+            x: centered_axis(work_area.x, work_area.width, width),
+            y: centered_axis(work_area.y, work_area.height, height),
+            width,
+            height,
         },
     }
 }
@@ -1566,13 +1588,73 @@ mod tests {
             height: 360,
         };
 
-        let surface = calculate_message_composer_surface_geometry(work_area, pet_window);
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Message,
+            work_area,
+            pet_window,
+        );
 
         assert_eq!(surface.saved_pet_window, pet_window);
         assert_eq!(surface.window.x, 380);
         assert_eq!(surface.window.y, 270);
         assert_eq!(surface.window.width, 440);
         assert_eq!(surface.window.height, 260);
+    }
+
+    #[test]
+    fn message_composer_surface_uses_controlled_message_size() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Message,
+            work_area,
+            pet_window,
+        );
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.window.x, 380);
+        assert_eq!(surface.window.y, 270);
+        assert_eq!(surface.window.width, 440);
+        assert_eq!(surface.window.height, 260);
+    }
+
+    #[test]
+    fn message_composer_surface_uses_controlled_surprise_size() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 800,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Surprise,
+            work_area,
+            pet_window,
+        );
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.window.x, 380);
+        assert_eq!(surface.window.y, 170);
+        assert_eq!(surface.window.width, 440);
+        assert_eq!(surface.window.height, 460);
     }
 
     #[test]
@@ -1590,13 +1672,45 @@ mod tests {
             height: 360,
         };
 
-        let surface = calculate_message_composer_surface_geometry(work_area, pet_window);
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Message,
+            work_area,
+            pet_window,
+        );
 
         assert_eq!(surface.saved_pet_window, pet_window);
         assert_eq!(surface.window.x, -976);
         assert_eq!(surface.window.y, 354);
         assert_eq!(surface.window.width, 440);
         assert_eq!(surface.window.height, 260);
+    }
+
+    #[test]
+    fn message_composer_surface_centers_surprise_within_negative_work_area() {
+        let work_area = TestWorkArea {
+            x: -1512,
+            y: 25,
+            width: 1512,
+            height: 919,
+        };
+        let pet_window = TestWindowGeometry {
+            x: -430,
+            y: 520,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Surprise,
+            work_area,
+            pet_window,
+        );
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.window.x, -976);
+        assert_eq!(surface.window.y, 254);
+        assert_eq!(surface.window.width, 440);
+        assert_eq!(surface.window.height, 460);
     }
 
     #[test]
