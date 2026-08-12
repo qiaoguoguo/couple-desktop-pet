@@ -11,15 +11,20 @@ import { useRealtimeSync } from "./useRealtimeSync";
 const realtimeMock = vi.hoisted(() => {
   const mock = {
     latestOptions: null as
-      | {
-          onEvent(event: {
-            type: string;
+        | {
+            onEvent(event: {
+              type: string;
           status?: string;
           peerPresence?: string;
           peerDeviceId?: string;
           peerActivityStatus?: string | null;
           changedAt?: string | null;
           lastSeenAt?: string | null;
+          id?: string;
+          fromDeviceId?: string;
+          text?: string;
+          at?: string;
+          content?: unknown;
         }): void;
         activityStatus?: string | null;
         }
@@ -211,6 +216,40 @@ describe("useRealtimeSync", () => {
     );
   });
 
+  it("passes received message content through to callbacks", () => {
+    const onMessage = vi.fn();
+    render(<HookProbe onMessage={onMessage} />);
+
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "message",
+        id: "server_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        at: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "7482",
+        },
+      });
+    });
+
+    expect(onMessage).toHaveBeenCalledWith({
+      id: "server_1",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      at: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+  });
+
   it("lets the E2E realtime override replace and release the live client state", async () => {
     vi.stubEnv("VITE_TAURI_E2E", "1");
     (window as unknown as Record<string, unknown>)[
@@ -322,10 +361,18 @@ function HookProbe({
   activityStatus = null,
   includeActivityStatus = false,
   includeTimestamps = false,
+  onMessage = () => undefined,
 }: {
   activityStatus?: "slacking" | "dazing" | "overtime" | null;
   includeActivityStatus?: boolean;
   includeTimestamps?: boolean;
+  onMessage?: (message: {
+    id: string;
+    fromDeviceId: string;
+    text: string;
+    at: string;
+    content?: unknown;
+  }) => void;
 }) {
   const { state } = useRealtimeSync(
     {
@@ -337,7 +384,7 @@ function HookProbe({
       peerDeviceId: "dev_b",
       activityStatus,
     },
-    { onMessage: () => undefined },
+    { onMessage },
   );
 
   if (includeActivityStatus) {

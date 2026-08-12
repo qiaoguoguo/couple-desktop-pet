@@ -6,6 +6,7 @@ import {
   parseServerToClientMessage,
   validateMessageText,
   type ClientToServerMessage,
+  type StructuredMessageContent,
 } from "../../shared/syncProtocol";
 import { toWebSocketRelayUrl } from "./relayUrl";
 import type { PeerPresence, SyncConnectionStatus } from "./syncTypes";
@@ -27,7 +28,14 @@ export type RealtimeClientEvent =
       peerActivityStatus: ActivityStatus | null;
       changedAt: string;
     }
-  | { type: "message"; id: string; fromDeviceId: string; text: string; at: string }
+  | {
+      type: "message";
+      id: string;
+      fromDeviceId: string;
+      text: string;
+      at: string;
+      content?: StructuredMessageContent;
+    }
   | { type: "delivered"; clientMessageId: string; at: string }
   | { type: "error"; message: string };
 
@@ -86,6 +94,7 @@ export class RealtimeClient {
 
   sendMessage(
     text: string,
+    content?: StructuredMessageContent,
   ): { ok: true; clientMessageId: string } | { ok: false; message: string } {
     const validated = validateMessageText(text);
     if (!validated.ok) {
@@ -103,6 +112,7 @@ export class RealtimeClient {
       pairId: this.options.pairId,
       clientMessageId,
       text: validated.text,
+      ...(content === undefined ? {} : { content }),
     });
 
     return { ok: true, clientMessageId };
@@ -184,6 +194,7 @@ export class RealtimeClient {
           fromDeviceId: parsed.fromDeviceId,
           text: parsed.text,
           at: parsed.sentAt,
+          content: parsed.content,
         });
         return;
       case "message.delivered":

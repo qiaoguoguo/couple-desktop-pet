@@ -98,6 +98,44 @@ describe("RealtimeClient", () => {
     });
   });
 
+  it("sends structured surprise content with the fallback text", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "auth.ok",
+      requestId: "auth_1",
+      pairId: "pair_1",
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    });
+
+    const result = client.sendMessage(
+      "一份小心意在等你。惊喜暗号：7482。",
+      {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(fakeSocket.sentJson.at(-1)).toMatchObject({
+      type: "message.send",
+      pairId: "pair_1",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+  });
+
   it("sends the configured activity status after authentication", () => {
     const events: RealtimeClientEvent[] = [];
     const client = newRealtimeClient(events, { activityStatus: "overtime" });
@@ -211,6 +249,75 @@ describe("RealtimeClient", () => {
       peerDeviceId: "dev_b",
       peerActivityStatus: "slacking",
       changedAt: "2026-08-06T12:00:00.000Z",
+    });
+  });
+
+  it("emits valid structured content from received messages", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "message.received",
+      pairId: "pair_1",
+      serverMessageId: "server_1",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      sentAt: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: "message",
+      id: "server_1",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      at: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    });
+  });
+
+  it("downgrades unknown received content versions to text-only events", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    fakeSocket.emitMessage({
+      type: "message.received",
+      pairId: "pair_1",
+      serverMessageId: "server_2",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：A-1024。",
+      sentAt: "2026-08-12T10:00:01.000Z",
+      content: {
+        kind: "surprise",
+        version: 2,
+        theme: "general",
+        secret: "A-1024",
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: "message",
+      id: "server_2",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：A-1024。",
+      at: "2026-08-12T10:00:01.000Z",
+      content: undefined,
     });
   });
 

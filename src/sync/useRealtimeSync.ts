@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SyncSettings } from "../settings/settingsTypes";
+import type { StructuredMessageContent } from "../../shared/syncProtocol";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
 import type { SyncRuntimeState } from "./syncTypes";
 
@@ -9,6 +10,7 @@ export interface UseRealtimeSyncCallbacks {
     fromDeviceId: string;
     text: string;
     at: string;
+    content?: StructuredMessageContent;
   }): void;
 }
 
@@ -71,6 +73,7 @@ export function useRealtimeSync(
             fromDeviceId: event.fromDeviceId,
             text: event.text,
             at: event.at,
+            ...(event.content === undefined ? {} : { content: event.content }),
           });
           return;
         }
