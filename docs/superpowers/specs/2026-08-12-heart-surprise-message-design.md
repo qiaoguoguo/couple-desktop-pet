@@ -170,6 +170,32 @@
 - 手写 SVG 临时代替正式资源
 - 奶茶品牌 Logo 或可识别包装
 
+### 环绕菜单统一视觉
+
+六个入口保持当前环绕坐标、点击区域和出现顺序，不因换肤改变用户已经形成的操作位置。按钮统一使用新茶饮包装常见的克制黑白视觉，但只借鉴通用视觉语言，不使用任何喜茶品牌 Logo、吉祥物、口号、杯型或可识别包装。
+
+最终原创透明 PNG 参考资源位于：
+
+- `docs/assets/references/radial-menu-new-tea/cute.png`
+- `docs/assets/references/radial-menu-new-tea/message.png`
+- `docs/assets/references/radial-menu-new-tea/wave.png`
+- `docs/assets/references/radial-menu-new-tea/hug.png`
+- `docs/assets/references/heart-surprise-new-tea-icon.png`
+- `docs/assets/references/radial-menu-new-tea/status.png`
+
+按钮规格：
+
+- 固定点击区域 `68 x 62px`，沿用现有六点偏移：`(-76,-88)`、`(0,-112)`、`(76,-88)`、`(-92,-12)`、`(92,-12)`、`(0,62)`。
+- 使用近白色实体底 `#fafaf6`、`1.5px` 黑色边框和 `7px` 圆角，不使用奶油渐变、果冻高光或大面积品牌色。
+- 常规图标视觉尺寸 `34 x 34px`；`外卖到啦` 插画可按横向构图放宽至 `38px`，但不得挤压文案。
+- 文案使用 `11px`、`500` 字重、黑色、零字距；六个中文标签必须在按钮内完整显示。
+- 悬停和键盘聚焦时使用黑底白字反转，并显示 `2px` 珊瑚红 `#f6534d` 外焦点环；按钮整体向上移动不超过 `3px`。
+- 按下时取消上移并轻微压缩，点击区域和周围按钮不发生布局位移。
+- 环绕菜单入场时长不超过 `180ms`，使用短促淡入和轻微位移，不使用夸张弹簧或连续跳动。
+- `prefers-reduced-motion: reduce` 时禁用入场位移、悬停位移和按压缩放，颜色与焦点状态仍立即可见。
+- 所有入口必须使用正式 PNG 资源，不允许 emoji、Unicode 字符、CSS 绘图、手写 SVG 或文字图标代替。
+- 在 `320 x 360` 窗口以及 `0.6x`、`1.0x`、`1.45x` 桌宠比例下，按钮不得裁切、重叠或遮住彼此，标签不得溢出。
+
 ### 折叠卡
 
 - 位于 `320 x 360` 主桌宠窗口内，保持完全可见。
@@ -351,6 +377,7 @@ export interface MessageReceivedServerMessage {
 ### React 组件
 
 - 环绕菜单显示 `发消息` 和 `外卖到啦`，不显示 `敲电脑` 和 `生气鼓脸`。
+- 六个入口使用确认的黑白线稿透明 PNG、固定六点坐标和统一包装式按钮状态；悬停、键盘聚焦、按下和减少动态效果均有覆盖。
 - 六个主题切换正确更新默认留言和 payload。
 - 暗号和留言校验、发送中、失败重试、取消和 Escape 行为正确。
 - 折叠卡不显示暗号。
@@ -375,6 +402,7 @@ export interface MessageReceivedServerMessage {
 - 浅色和深色桌面背景上插画、卡片边界和文字可读。
 - 320 x 360 主窗口内卡片不超出边界。
 - 实际资源不是文字、emoji、黄色方块或通用占位图标。
+- 六个环绕按钮在普通、悬停、键盘聚焦和按下状态下与确认效果图一致，并保持原有点击位置。
 - `prefers-reduced-motion` 下无非必要动画。
 
 ## 验收标准
