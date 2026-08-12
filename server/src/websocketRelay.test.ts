@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
@@ -90,6 +90,132 @@ describe("websocket relay", () => {
       peerDeviceId: "dev_a",
       changedAt: "2026-08-03T12:00:00.000Z",
     });
+    bob.close();
+  });
+
+  it("forwards valid surprise message content and confirms delivery", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "message.send",
+        requestId: "msg_surprise",
+        pairId: pair.pairId,
+        clientMessageId: "local_surprise",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "apology",
+          secret: "7482",
+          note: "是我不好。",
+        },
+      }),
+    );
+
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "message.received",
+      pairId: pair.pairId,
+      fromDeviceId: "dev_a",
+      text: "一份小心意在等你。惊喜暗号：7482。",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "apology",
+        secret: "7482",
+        note: "是我不好。",
+      },
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "message.delivered",
+      requestId: "msg_surprise",
+      clientMessageId: "local_surprise",
+    });
+
+    alice.close();
+    bob.close();
+  });
+
+  it("rejects malformed surprise content without forwarding sensitive fields", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "message.send",
+        requestId: "msg_bad_surprise",
+        pairId: pair.pairId,
+        clientMessageId: "local_bad_surprise",
+        text: "一份小心意在等你。惊喜暗号：7482。",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "apology",
+          secret: "74 82",
+          note: "是我不好。",
+        },
+      }),
+    );
+
+    const errorMessage = await readJson(alice);
+    expect(errorMessage).toMatchObject({
+      type: "error",
+      requestId: "msg_bad_surprise",
+      code: "malformed_message",
+    });
+    expect(JSON.stringify(errorMessage)).not.toContain("74 82");
+    expect(JSON.stringify(errorMessage)).not.toContain("是我不好。");
+    await expectNoJson(bob);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("74 82");
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("是我不好。");
+
+    alice.close();
+    bob.close();
+  });
+
+  it("keeps forwarding legacy pure-text messages without structured content", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    alice.send(
+      JSON.stringify({
+        type: "message.send",
+        requestId: "msg_text_only",
+        pairId: pair.pairId,
+        clientMessageId: "local_text_only",
+        text: "今天也要好好吃饭",
+      }),
+    );
+
+    const received = await readJson(bob);
+    expect(received).toMatchObject({
+      type: "message.received",
+      pairId: pair.pairId,
+      fromDeviceId: "dev_a",
+      text: "今天也要好好吃饭",
+    });
+    expect(received).not.toHaveProperty("content");
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "message.delivered",
+      requestId: "msg_text_only",
+      clientMessageId: "local_text_only",
+    });
+
+    alice.close();
     bob.close();
   });
 

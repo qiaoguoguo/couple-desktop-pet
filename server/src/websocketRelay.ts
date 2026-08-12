@@ -8,10 +8,12 @@ import type {
   ClientToServerMessage,
   ErrorServerMessage,
   ServerToClientMessage,
+  StructuredMessageContent,
 } from "../../shared/syncProtocol.js";
 import {
   readSupportedCapabilities,
   validateMessageText,
+  validateStructuredMessageContent,
 } from "../../shared/syncProtocol.js";
 import {
   ConnectionRegistry,
@@ -232,6 +234,7 @@ function handleAuthenticatedMessage(
     fromDeviceId: connection.deviceId,
     text: text.text,
     sentAt,
+    ...(message.content ? { content: message.content } : {}),
   });
   sendJson(connection.socket, {
     type: "message.delivered",
@@ -316,12 +319,15 @@ function parseClientMessage(data: RawData): ClientToServerMessage {
     typeof parsed.clientMessageId === "string" &&
     typeof parsed.text === "string"
   ) {
+    const content = readStructuredMessageContent(parsed.content);
+
     return {
       type: "message.send",
       requestId: parsed.requestId,
       pairId: parsed.pairId,
       clientMessageId: parsed.clientMessageId,
       text: parsed.text,
+      ...(content === undefined ? {} : { content }),
     };
   }
 
@@ -340,6 +346,21 @@ function parseClientMessage(data: RawData): ClientToServerMessage {
   }
 
   throw new RelayError("malformed_message", 400, "Malformed websocket message");
+}
+
+function readStructuredMessageContent(
+  input: unknown,
+): StructuredMessageContent | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  const validation = validateStructuredMessageContent(input);
+  if (!validation.ok) {
+    throw new RelayError("malformed_message", 400, validation.message);
+  }
+
+  return validation.content;
 }
 
 function toErrorMessage(error: unknown, requestId: string | undefined): ErrorServerMessage {
