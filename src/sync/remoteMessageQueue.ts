@@ -1,10 +1,18 @@
-export type RemoteMessageStage = "visible" | "hovered" | "dismissing";
+import type { StructuredMessageContent } from "../../shared/syncProtocol";
+
+export type RemoteMessageStage =
+  | "visible"
+  | "hovered"
+  | "collapsed"
+  | "revealed"
+  | "dismissing";
 
 export interface RemoteMessageInput {
   id: string;
   fromDeviceId: string;
   text: string;
   at: string;
+  content?: StructuredMessageContent;
 }
 
 export interface RemoteMessageCard extends RemoteMessageInput {
@@ -24,7 +32,10 @@ export function enqueueRemoteMessage(
   state: RemoteMessageQueueState,
   input: RemoteMessageInput,
 ): RemoteMessageQueueState {
-  const message: RemoteMessageCard = { ...input, stage: "visible" };
+  const message: RemoteMessageCard = {
+    ...input,
+    stage: isSurpriseMessage(input) ? "collapsed" : "visible",
+  };
 
   if (!state.active) {
     return { active: message, queue: state.queue };
@@ -37,11 +48,32 @@ export function markRemoteMessageHovered(
   state: RemoteMessageQueueState,
   id: string,
 ): RemoteMessageQueueState {
-  if (!state.active || state.active.id !== id || state.active.stage !== "visible") {
+  if (
+    !state.active ||
+    state.active.id !== id ||
+    state.active.stage !== "visible" ||
+    isSurpriseMessage(state.active)
+  ) {
     return state;
   }
 
   return { ...state, active: { ...state.active, stage: "hovered" } };
+}
+
+export function revealRemoteSurprise(
+  state: RemoteMessageQueueState,
+  id: string,
+): RemoteMessageQueueState {
+  if (
+    !state.active ||
+    state.active.id !== id ||
+    state.active.stage !== "collapsed" ||
+    !isSurpriseMessage(state.active)
+  ) {
+    return state;
+  }
+
+  return { ...state, active: { ...state.active, stage: "revealed" } };
 }
 
 export function markRemoteMessageDismissing(
@@ -69,4 +101,10 @@ export function completeRemoteMessageDismissal(
     active: nextMessage ?? null,
     queue: remainingQueue,
   };
+}
+
+function isSurpriseMessage(
+  message: RemoteMessageInput,
+): message is RemoteMessageInput & { content: StructuredMessageContent } {
+  return message.content?.kind === "surprise";
 }
