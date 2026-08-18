@@ -106,6 +106,21 @@ describe("WeatherApiProvider", () => {
     expect(url.searchParams.get("q")).toBe("杭 州");
   });
 
+  it("returns an empty location list when WeatherAPI reports no search match", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        response(400, { error: { code: 1006, message: "No matching location" } }),
+      );
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+
+    await expect(provider.searchLocations("not-a-city")).resolves.toEqual([]);
+  });
+
   it("clamps rain chance and rounds temperatures at the boundary", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       response(200, {
@@ -150,6 +165,44 @@ describe("WeatherApiProvider", () => {
 
     await expect(provider.getCurrentDay(cityA)).rejects.toMatchObject({
       kind: "quota-exhausted",
+    });
+  });
+
+  it.each([
+    [401, 1002],
+    [401, 2006],
+    [403, 2008],
+    [403, 2009],
+  ])("classifies credential HTTP %i code %i as not configured", async (status, code) => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response(status, { error: { code, message: "credential failure" } }));
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+
+    await expect(provider.getCurrentDay(cityA)).rejects.toMatchObject({
+      kind: "not-configured",
+    });
+  });
+
+  it.each([
+    [500, 9999],
+    [400, 1006],
+  ])("keeps forecast HTTP %i code %i unavailable", async (status, code) => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response(status, { error: { code, message: "provider failure" } }));
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+
+    await expect(provider.getCurrentDay(cityA)).rejects.toMatchObject({
+      kind: "unavailable",
     });
   });
 
@@ -220,7 +273,7 @@ describe("WeatherApiProvider", () => {
     });
   });
 
-  it("classifies network and HTTP failures without exposing the supplier URL", async () => {
+  it("classifies network failures without exposing the supplier URL", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("network down"));
     const provider = new WeatherApiProvider({
       apiKey: "secret-key",
@@ -233,6 +286,25 @@ describe("WeatherApiProvider", () => {
     expect(String(error)).not.toContain("secret-key");
     expect(String(error)).not.toContain("api.weatherapi.com");
   });
+
+  it.each([
+    [200, "invalid-response"],
+    [502, "unavailable"],
+  ] as const)(
+    "classifies non-JSON HTTP %i responses as %s",
+    async (status, kind) => {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("not-json", { status }));
+      const provider = new WeatherApiProvider({
+        apiKey: "secret-key",
+        timeoutMs: 3000,
+        fetchImpl,
+      });
+
+      await expect(provider.getCurrentDay(cityA)).rejects.toMatchObject({ kind });
+    },
+  );
 
   it("aborts requests that exceed the configured timeout", async () => {
     vi.useFakeTimers();

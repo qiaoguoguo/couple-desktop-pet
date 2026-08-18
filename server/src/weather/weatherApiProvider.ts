@@ -15,6 +15,11 @@ export interface WeatherApiProviderOptions {
   fetchImpl?: typeof fetch;
 }
 
+interface WeatherApiResponse {
+  ok: boolean;
+  payload: unknown;
+}
+
 export class WeatherApiProvider implements WeatherProvider {
   readonly #apiKey: string | null;
   readonly #timeoutMs: number;
@@ -27,7 +32,16 @@ export class WeatherApiProvider implements WeatherProvider {
   }
 
   async searchLocations(query: string): Promise<CityLocationV1[]> {
-    const payload = await this.#request("search.json", { q: query.trim() });
+    const result = await this.#request("search.json", { q: query.trim() });
+    if (!result.ok) {
+      if (readProviderErrorCode(result.payload) === 1006) {
+        return [];
+      }
+
+      throw classifyHttpError(result.payload);
+    }
+
+    const payload = result.payload;
     if (!Array.isArray(payload)) {
       throw new WeatherProviderError("invalid-response");
     }
@@ -36,18 +50,24 @@ export class WeatherApiProvider implements WeatherProvider {
   }
 
   async getCurrentDay(city: CityLocationV1): Promise<ProviderWeather> {
-    const payload = await this.#request("forecast.json", {
+    const result = await this.#request("forecast.json", {
       q: `${city.latitude},${city.longitude}`,
       days: "1",
       aqi: "no",
       alerts: "no",
       lang: "zh",
     });
+    if (!result.ok) {
+      throw classifyHttpError(result.payload);
+    }
 
-    return readCurrentDay(payload);
+    return readCurrentDay(result.payload);
   }
 
-  async #request(path: string, parameters: Record<string, string>): Promise<unknown> {
+  async #request(
+    path: string,
+    parameters: Record<string, string>,
+  ): Promise<WeatherApiResponse> {
     if (this.#apiKey === null) {
       throw new WeatherProviderError("not-configured");
     }
@@ -65,11 +85,7 @@ export class WeatherApiProvider implements WeatherProvider {
       const response = await this.#fetchImpl(url.toString(), { signal: controller.signal });
       const payload = await readJson(response);
 
-      if (!response.ok) {
-        throw classifyHttpError(payload);
-      }
-
-      return payload;
+      return { ok: response.ok, payload };
     } catch (error) {
       if (error instanceof WeatherProviderError) {
         throw error;
