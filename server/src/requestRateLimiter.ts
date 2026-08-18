@@ -3,7 +3,7 @@ export type RateLimitResult =
   | { allowed: false; retryAfterMs: number };
 
 interface FixedWindow {
-  windowStartedAt: number;
+  resetAt: number;
   consumed: number;
 }
 
@@ -15,22 +15,35 @@ export class FixedWindowRateLimiter {
     this.#now = now;
   }
 
+  getRetainedEntryCount(): number {
+    return this.#windows.size;
+  }
+
   consume(key: string, limit: number, windowMs: number): RateLimitResult {
     const now = this.#now();
+    this.#sweepExpired(now);
     let window = this.#windows.get(key);
-    if (!window || now >= window.windowStartedAt + windowMs) {
-      window = { windowStartedAt: now, consumed: 0 };
+    if (!window) {
+      window = { resetAt: now + windowMs, consumed: 0 };
       this.#windows.set(key, window);
     }
 
     if (window.consumed >= limit) {
       return {
         allowed: false,
-        retryAfterMs: window.windowStartedAt + windowMs - now,
+        retryAfterMs: window.resetAt - now,
       };
     }
 
     window.consumed += 1;
     return { allowed: true, remaining: limit - window.consumed };
+  }
+
+  #sweepExpired(now: number): void {
+    for (const [key, window] of this.#windows) {
+      if (now >= window.resetAt) {
+        this.#windows.delete(key);
+      }
+    }
   }
 }

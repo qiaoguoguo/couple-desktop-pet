@@ -33,11 +33,20 @@ export class WeatherService {
     this.#now = now;
   }
 
+  getCacheEntryCounts(): { search: number; weather: number } {
+    return {
+      search: this.#searchCache.size,
+      weather: this.#weatherCache.size,
+    };
+  }
+
   async searchLocations(query: string): Promise<CityLocationV1[]> {
     const supplierQuery = query.trim();
     const key = supplierQuery.toLowerCase();
+    const now = this.#now();
+    this.#sweepSearchCache(now);
     const cached = this.#searchCache.get(key);
-    if (cached && this.#now() - cached.fetchedAtMs < LOCATION_SEARCH_MS) {
+    if (cached && now - cached.fetchedAtMs < LOCATION_SEARCH_MS) {
       return cloneLocations(cached.locations);
     }
 
@@ -54,8 +63,10 @@ export class WeatherService {
 
   async getWeather(city: CityLocationV1): Promise<WeatherSnapshotV1> {
     const key = weatherKey(city);
+    const now = this.#now();
+    this.#sweepWeatherCache(now);
     const cached = this.#weatherCache.get(key);
-    if (cached && this.#now() - cached.fetchedAtMs < WEATHER_FRESH_MS) {
+    if (cached && now - cached.fetchedAtMs < WEATHER_FRESH_MS) {
       return withSource(cached.snapshot, "cache");
     }
 
@@ -77,6 +88,22 @@ export class WeatherService {
       fetchedAtMs: this.#now(),
     });
     return locations;
+  }
+
+  #sweepSearchCache(now: number): void {
+    for (const [key, cached] of this.#searchCache) {
+      if (now - cached.fetchedAtMs >= LOCATION_SEARCH_MS) {
+        this.#searchCache.delete(key);
+      }
+    }
+  }
+
+  #sweepWeatherCache(now: number): void {
+    for (const [key, cached] of this.#weatherCache) {
+      if (now - cached.fetchedAtMs > WEATHER_STALE_MAX_MS) {
+        this.#weatherCache.delete(key);
+      }
+    }
   }
 
   async #refreshWeather(

@@ -148,6 +148,46 @@ describe("WeatherService weather cache", () => {
     expect(getCurrentDay).toHaveBeenCalledTimes(1);
   });
 
+  it("evicts unrelated weather entries only after the six-hour stale boundary", async () => {
+    const cityB = cityAt(2, 31.2304, 121.4737);
+    const cityC = cityAt(3, 22.5431, 114.0579);
+    const cityD = cityAt(4, 39.9042, 116.4074);
+    await service.getWeather(cityA);
+    await service.getWeather(cityB);
+
+    expect(service.getCacheEntryCounts().weather).toBe(2);
+
+    now += 6 * HOUR_MS;
+    await service.getWeather(cityC);
+    expect(service.getCacheEntryCounts().weather).toBe(3);
+
+    now += 1;
+    await service.getWeather(cityD);
+    expect(service.getCacheEntryCounts().weather).toBe(2);
+  });
+
+  it("does not sweep an active weather request", async () => {
+    const cityB = cityAt(2, 31.2304, 121.4737);
+    const pending = deferred<ProviderWeather>();
+    getCurrentDay.mockImplementation((city) =>
+      city.providerLocationId === cityA.providerLocationId
+        ? pending.promise
+        : Promise.resolve(weather),
+    );
+
+    const first = service.getWeather(cityA);
+    now += 7 * HOUR_MS;
+    await service.getWeather(cityB);
+    const duplicate = service.getWeather(sameCoordinateKeyCity);
+
+    expect(getCurrentDay).toHaveBeenCalledTimes(2);
+    pending.resolve(weather);
+    await expect(Promise.all([first, duplicate])).resolves.toMatchObject([
+      { source: "live" },
+      { source: "live" },
+    ]);
+  });
+
   it("does not cache failures and clears failed in-flight requests", async () => {
     getCurrentDay
       .mockRejectedValueOnce(providerError("unavailable"))
@@ -196,6 +236,37 @@ describe("WeatherService location search cache", () => {
     expect(searchLocations).toHaveBeenCalledTimes(2);
   });
 
+  it("evicts unrelated searches exactly at the 24-hour boundary", async () => {
+    await service.searchLocations("alpha");
+    await service.searchLocations("beta");
+
+    expect(service.getCacheEntryCounts().search).toBe(2);
+
+    now += 24 * HOUR_MS - 1;
+    await service.searchLocations("gamma");
+    expect(service.getCacheEntryCounts().search).toBe(3);
+
+    now += 1;
+    await service.searchLocations("delta");
+    expect(service.getCacheEntryCounts().search).toBe(2);
+  });
+
+  it("does not sweep an active normalized search", async () => {
+    const pending = deferred<CityLocationV1[]>();
+    searchLocations.mockImplementation((query) =>
+      query.toLowerCase() === "alpha" ? pending.promise : Promise.resolve(locations),
+    );
+
+    const first = service.searchLocations("Alpha");
+    now += 25 * HOUR_MS;
+    await service.searchLocations("beta");
+    const duplicate = service.searchLocations("ALPHA");
+
+    expect(searchLocations).toHaveBeenCalledTimes(2);
+    pending.resolve(locations);
+    await expect(Promise.all([first, duplicate])).resolves.toEqual([locations, locations]);
+  });
+
   it("deduplicates concurrent searches by normalized query", async () => {
     const pending = deferred<CityLocationV1[]>();
     searchLocations.mockReturnValue(pending.promise);
@@ -238,6 +309,20 @@ function providerError(
   kind: ConstructorParameters<typeof WeatherProviderError>[0],
 ): WeatherProviderError {
   return new WeatherProviderError(kind);
+}
+
+function cityAt(
+  providerLocationId: number,
+  latitude: number,
+  longitude: number,
+): CityLocationV1 {
+  return {
+    ...cityA,
+    providerLocationId,
+    name: `City ${providerLocationId}`,
+    latitude,
+    longitude,
+  };
 }
 
 function deferred<T>(): {

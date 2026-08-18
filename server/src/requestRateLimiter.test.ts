@@ -64,6 +64,20 @@ describe("FixedWindowRateLimiter", () => {
       retryAfterMs: MINUTE_MS,
     });
   });
+
+  it("evicts unrelated windows exactly when their reset time is reached", () => {
+    limiter.consume("search:device:dev_a", 10, MINUTE_MS);
+    limiter.consume("search:ip:203.0.113.10", 10, MINUTE_MS);
+    expect(limiter.getRetainedEntryCount()).toBe(2);
+
+    now += MINUTE_MS - 1;
+    limiter.consume("search:device:dev_b", 10, MINUTE_MS);
+    expect(limiter.getRetainedEntryCount()).toBe(3);
+
+    now += 1;
+    limiter.consume("search:device:dev_c", 10, MINUTE_MS);
+    expect(limiter.getRetainedEntryCount()).toBe(2);
+  });
 });
 
 function consumeAllowed(key: string, limit: number, windowMs: number): void {
