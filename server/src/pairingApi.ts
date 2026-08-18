@@ -5,6 +5,10 @@ import type {
   PairCodeStatusRequest,
   UnpairRequest,
 } from "../../shared/syncProtocol.js";
+import {
+  validateProfileUpdate,
+  type ProfileUpdateV1,
+} from "../../shared/profileProtocol.js";
 import { RelayError } from "./errors.js";
 import { readJsonBody, writeEmpty, writeError, writeJson } from "./httpJson.js";
 import type { RelayRepository } from "./repository.js";
@@ -80,10 +84,12 @@ function readCreatePairCodeRequest(input: unknown): CreatePairCodeRequest {
     throw new RelayError("invalid_request", 400, "Request body must be an object");
   }
 
+  const profile = readOptionalProfile(input.profile);
   return {
     deviceId: readRequiredString(input.deviceId, "deviceId"),
     deviceSecret: readRequiredString(input.deviceSecret, "deviceSecret"),
     displayName: readRequiredString(input.displayName, "displayName"),
+    ...(profile === undefined ? {} : { profile }),
   };
 }
 
@@ -128,6 +134,19 @@ function readRequiredString(value: unknown, fieldName: string): string {
   }
 
   return value.trim();
+}
+
+function readOptionalProfile(value: unknown): ProfileUpdateV1 | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const profile = validateProfileUpdate(value);
+  if (!profile.ok) {
+    throw new RelayError("invalid_request", 400, profile.message);
+  }
+
+  return profile.profile;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

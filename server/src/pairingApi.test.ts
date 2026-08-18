@@ -8,6 +8,35 @@ let tempDir = "";
 let relay: RelayServer;
 let baseUrl = "";
 
+const cityA = {
+  provider: "weatherapi",
+  providerLocationId: 1785728,
+  name: "杭州",
+  region: "浙江",
+  country: "中国",
+  latitude: 30.27,
+  longitude: 120.15,
+} as const;
+
+const profileA = {
+  version: 1,
+  nickname: "  小满  ",
+  city: cityA,
+} as const;
+
+const profileB = {
+  version: 1,
+  nickname: "阿岚",
+  city: {
+    ...cityA,
+    providerLocationId: 1795565,
+    name: "上海",
+    region: "上海",
+    latitude: 31.23,
+    longitude: 121.47,
+  },
+} as const;
+
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-http-"));
   relay = await createRelayServer({
@@ -54,6 +83,12 @@ describe("pairing HTTP API", () => {
     const acceptBody = await acceptResponse.json();
     expect(acceptBody).toMatchObject({
       peerDeviceId: "dev_a",
+      peerProfile: {
+        version: 1,
+        nickname: "星星桌宠",
+        city: null,
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
     });
 
     const statusResponse = await postJson(`${baseUrl}/pair-codes/status`, {
@@ -67,6 +102,68 @@ describe("pairing HTTP API", () => {
       status: "paired",
       pairId: acceptBody.pairId,
       peerDeviceId: "dev_b",
+      peerProfile: {
+        version: 1,
+        nickname: "星星桌宠",
+        city: null,
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
+    });
+  });
+
+  it("synchronizes normalized peer profiles while pairing", async () => {
+    const codeResponse = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "legacy-a",
+      profile: profileA,
+    });
+    const codeBody = await codeResponse.json();
+
+    const acceptResponse = await postJson(`${baseUrl}/pairs/accept`, {
+      deviceId: "dev_b",
+      deviceSecret: "secret_b",
+      displayName: "legacy-b",
+      profile: profileB,
+      code: codeBody.code,
+    });
+
+    expect(acceptResponse.status).toBe(200);
+    const acceptBody = await acceptResponse.json();
+    expect(acceptBody).toMatchObject({
+      peerDeviceId: "dev_a",
+      peerProfile: {
+        nickname: "小满",
+        city: cityA,
+      },
+    });
+
+    const statusResponse = await postJson(`${baseUrl}/pair-codes/status`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      code: codeBody.code,
+    });
+    await expect(statusResponse.json()).resolves.toMatchObject({
+      status: "paired",
+      peerDeviceId: "dev_b",
+      peerProfile: {
+        nickname: "阿岚",
+        city: profileB.city,
+      },
+    });
+  });
+
+  it("rejects malformed optional profiles", async () => {
+    const response = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "小满",
+      profile: { ...profileA, version: 2 },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "invalid_request" },
     });
   });
 

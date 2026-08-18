@@ -17,6 +17,19 @@ export function initializeRelayDatabase(db: Database.Database): void {
       last_seen_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS device_locations (
+      device_id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_location_id INTEGER NOT NULL,
+      city_name TEXT NOT NULL,
+      region_name TEXT NOT NULL,
+      country_name TEXT NOT NULL,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (device_id) REFERENCES devices(device_id)
+    );
+
     CREATE TABLE IF NOT EXISTS pair_codes (
       code TEXT PRIMARY KEY,
       creator_device_id TEXT NOT NULL,

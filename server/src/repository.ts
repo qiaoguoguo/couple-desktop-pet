@@ -4,16 +4,27 @@ import {
   type PairCodeStatusResponse,
   type UnpairResponse,
 } from "../../shared/syncProtocol.js";
+import {
+  readDeviceProfile,
+  validateProfileUpdate,
+  type DeviceProfileV1,
+  type ProfileUpdateV1,
+} from "../../shared/profileProtocol.js";
 import { RelayError } from "./errors.js";
 import { createPairCode, createPairId, hashDeviceSecret } from "./ids.js";
 
-export interface EnsureDeviceInput {
+export interface EnsureDeviceIdentityInput {
   deviceId: string;
   deviceSecret: string;
+}
+
+export interface EnsureDeviceInput extends EnsureDeviceIdentityInput {
   displayName: string;
 }
 
-export interface CreatePairCodeInput extends EnsureDeviceInput {}
+export interface CreatePairCodeInput extends EnsureDeviceInput {
+  profile?: ProfileUpdateV1;
+}
 
 export interface CreatePairCodeResult {
   code: string;
@@ -22,11 +33,17 @@ export interface CreatePairCodeResult {
 
 export interface AcceptPairCodeInput extends EnsureDeviceInput {
   code: string;
+  profile?: ProfileUpdateV1;
 }
 
 export interface AcceptPairCodeResult {
   pairId: string;
   peerDeviceId: string;
+  peerProfile?: DeviceProfileV1;
+}
+
+export interface SaveProfileInput extends EnsureDeviceIdentityInput {
+  profile: ProfileUpdateV1;
 }
 
 export interface PairCodeStatusInput {
@@ -58,6 +75,20 @@ interface DeviceRow {
   device_secret_hash: string;
 }
 
+interface DeviceProfileRow {
+  display_name: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  provider: string | null;
+  provider_location_id: number | null;
+  city_name: string | null;
+  region_name: string | null;
+  country_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_updated_at: string | null;
+}
+
 interface PairCodeRow {
   code: string;
   creator_device_id: string;
@@ -78,34 +109,84 @@ export class RelayRepository {
     private readonly getNow: () => Date = () => new Date(),
   ) {}
 
+  ensureDeviceIdentity(input: EnsureDeviceIdentityInput): void {
+    this.ensureDeviceIdentityAt(input, this.nowIso());
+  }
+
   ensureDevice(input: EnsureDeviceInput): void {
-    const now = this.nowIso();
-    const secretHash = hashDeviceSecret(input.deviceSecret);
-    const existing = this.db
-      .prepare("SELECT device_id, device_secret_hash FROM devices WHERE device_id = ?")
-      .get(input.deviceId) as DeviceRow | undefined;
+    this.ensureDeviceAt(input, this.nowIso());
+  }
 
-    if (existing) {
-      if (existing.device_secret_hash !== secretHash) {
-        throw new RelayError("auth_failed", 401, "Device authentication failed");
-      }
+  saveProfile(input: SaveProfileInput): DeviceProfileV1 {
+    const profile = readProfileUpdateOrThrow(input.profile);
 
-      this.db
-        .prepare("UPDATE devices SET display_name = ?, last_seen_at = ? WHERE device_id = ?")
-        .run(input.displayName, now, input.deviceId);
-      return;
+    return this.db.transaction(() => {
+      const now = this.nowIso();
+      this.ensureDeviceIdentityAt(input, now);
+      return this.writeProfile(input.deviceId, profile, now);
+    })();
+  }
+
+  getDeviceProfile(deviceId: string): DeviceProfileV1 | null {
+    const row = this.db
+      .prepare(
+        `SELECT
+          d.display_name,
+          d.created_at,
+          d.last_seen_at,
+          l.provider,
+          l.provider_location_id,
+          l.city_name,
+          l.region_name,
+          l.country_name,
+          l.latitude,
+          l.longitude,
+          l.updated_at AS location_updated_at
+        FROM devices d
+        LEFT JOIN device_locations l ON l.device_id = d.device_id
+        WHERE d.device_id = ?`,
+      )
+      .get(deviceId) as DeviceProfileRow | undefined;
+
+    if (!row || row.display_name === null) {
+      return null;
     }
 
-    this.db
-      .prepare(
-        "INSERT INTO devices (device_id, device_secret_hash, display_name, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
-      )
-      .run(input.deviceId, secretHash, input.displayName, now, now);
+    const city =
+      row.provider === null
+        ? null
+        : {
+            provider: row.provider,
+            providerLocationId: row.provider_location_id,
+            name: row.city_name,
+            region: row.region_name,
+            country: row.country_name,
+            latitude: row.latitude,
+            longitude: row.longitude,
+          };
+
+    return readDeviceProfile({
+      version: 1,
+      nickname: row.display_name,
+      city,
+      updatedAt: row.location_updated_at ?? row.last_seen_at ?? row.created_at,
+    });
+  }
+
+  getPairProfiles(input: AuthenticateInput): {
+    selfProfile: DeviceProfileV1 | null;
+    peerProfile: DeviceProfileV1 | null;
+  } {
+    const pair = this.authenticateDeviceForPair(input);
+    return {
+      selfProfile: this.getDeviceProfile(pair.deviceId),
+      peerProfile: this.getDeviceProfile(pair.peerDeviceId),
+    };
   }
 
   createPairCode(input: CreatePairCodeInput): CreatePairCodeResult {
     return this.db.transaction(() => {
-      this.ensureDevice(input);
+      this.preparePairingDevice(input);
 
       if (this.isDevicePaired(input.deviceId)) {
         throw new RelayError("device_already_paired", 409, "Device is already paired");
@@ -127,7 +208,7 @@ export class RelayRepository {
 
   acceptPairCode(input: AcceptPairCodeInput): AcceptPairCodeResult {
     return this.db.transaction(() => {
-      this.ensureDevice(input);
+      this.preparePairingDevice(input);
 
       const row = this.db
         .prepare(
@@ -174,7 +255,12 @@ export class RelayRepository {
         .prepare("UPDATE pair_codes SET consumed_at = ? WHERE code = ?")
         .run(now, input.code);
 
-      return { pairId, peerDeviceId: row.creator_device_id };
+      const peerProfile = this.getDeviceProfile(row.creator_device_id);
+      return {
+        pairId,
+        peerDeviceId: row.creator_device_id,
+        ...(peerProfile === null ? {} : { peerProfile }),
+      };
     })();
   }
 
@@ -203,10 +289,13 @@ export class RelayRepository {
         throw new RelayError("auth_failed", 401, "Device is not part of this pair");
       }
 
+      const peerProfile = this.getDeviceProfile(peerDeviceId);
+
       return {
         status: "paired",
         pairId: pair.pair_id,
         peerDeviceId,
+        ...(peerProfile === null ? {} : { peerProfile }),
       };
     }
 
@@ -270,6 +359,104 @@ export class RelayRepository {
   getPeerDeviceId(pairId: string, deviceId: string): string | null {
     const row = this.findPair(pairId);
     return row ? getPeerFromPair(row, deviceId) : null;
+  }
+
+  private preparePairingDevice(input: CreatePairCodeInput | AcceptPairCodeInput): void {
+    const now = this.nowIso();
+
+    if (input.profile === undefined) {
+      this.ensureDeviceAt(input, now);
+      return;
+    }
+
+    const profile = readProfileUpdateOrThrow(input.profile);
+    this.ensureDeviceIdentityAt(input, now);
+    this.writeProfile(input.deviceId, profile, now);
+  }
+
+  private ensureDeviceAt(input: EnsureDeviceInput, now: string): void {
+    this.ensureDeviceIdentityAt(input, now);
+    this.db
+      .prepare("UPDATE devices SET display_name = ?, last_seen_at = ? WHERE device_id = ?")
+      .run(input.displayName, now, input.deviceId);
+  }
+
+  private ensureDeviceIdentityAt(
+    input: EnsureDeviceIdentityInput,
+    now: string,
+  ): void {
+    const secretHash = hashDeviceSecret(input.deviceSecret);
+    const existing = this.db
+      .prepare("SELECT device_id, device_secret_hash FROM devices WHERE device_id = ?")
+      .get(input.deviceId) as DeviceRow | undefined;
+
+    if (existing) {
+      if (existing.device_secret_hash !== secretHash) {
+        throw new RelayError("auth_failed", 401, "Device authentication failed");
+      }
+
+      this.db
+        .prepare("UPDATE devices SET last_seen_at = ? WHERE device_id = ?")
+        .run(now, input.deviceId);
+      return;
+    }
+
+    this.db
+      .prepare(
+        "INSERT INTO devices (device_id, device_secret_hash, display_name, created_at, last_seen_at) VALUES (?, ?, NULL, ?, ?)",
+      )
+      .run(input.deviceId, secretHash, now, now);
+  }
+
+  private writeProfile(
+    deviceId: string,
+    profile: ProfileUpdateV1,
+    updatedAt: string,
+  ): DeviceProfileV1 {
+    this.db
+      .prepare("UPDATE devices SET display_name = ?, last_seen_at = ? WHERE device_id = ?")
+      .run(profile.nickname, updatedAt, deviceId);
+    this.db
+      .prepare(
+        `INSERT INTO device_locations (
+          device_id,
+          provider,
+          provider_location_id,
+          city_name,
+          region_name,
+          country_name,
+          latitude,
+          longitude,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+          provider = excluded.provider,
+          provider_location_id = excluded.provider_location_id,
+          city_name = excluded.city_name,
+          region_name = excluded.region_name,
+          country_name = excluded.country_name,
+          latitude = excluded.latitude,
+          longitude = excluded.longitude,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        deviceId,
+        profile.city.provider,
+        profile.city.providerLocationId,
+        profile.city.name,
+        profile.city.region,
+        profile.city.country,
+        profile.city.latitude,
+        profile.city.longitude,
+        updatedAt,
+      );
+
+    const saved = this.getDeviceProfile(deviceId);
+    if (saved === null) {
+      throw new RelayError("relay_unavailable", 503, "Could not read saved profile");
+    }
+
+    return saved;
   }
 
   private insertUniquePairCode(deviceId: string, createdAt: string, expiresAt: string): string {
@@ -341,4 +528,13 @@ function getPeerFromPair(row: PairRow, deviceId: string): string | null {
   }
 
   return null;
+}
+
+function readProfileUpdateOrThrow(input: unknown): ProfileUpdateV1 {
+  const profile = validateProfileUpdate(input);
+  if (!profile.ok) {
+    throw new RelayError("invalid_request", 400, profile.message);
+  }
+
+  return profile.profile;
 }
