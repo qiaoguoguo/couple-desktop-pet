@@ -4,6 +4,11 @@ import { join, resolve } from "node:path";
 import { openPetContextMenu } from "../../support/contextMenu";
 import { openInteractionMenu } from "../../support/interactionMenu";
 import {
+  assertDedicatedE2eAppDataPaths,
+  resolveNativeEvidenceStem,
+  type E2eAppDataPaths,
+} from "../support/env";
+import {
   clearE2ePairWeatherOverride,
   clearE2eRealtimeOverride,
   createE2ePairWeatherFixture,
@@ -59,9 +64,7 @@ let originalSettings: Record<string, unknown> | null = null;
 describe("paired weather native experience", () => {
   before(async () => {
     originalSettings = await invokeTauri<Record<string, unknown>>("read_settings");
-    await invokeTauri("write_settings", {
-      settings: createPairedWeatherSettings(originalSettings),
-    });
+    await writeE2eSettingsSafely(createPairedWeatherSettings(originalSettings));
     await browser.refresh();
     await setConnectedE2eState();
     await setE2ePairWeatherOverride(createE2ePairWeatherFixture());
@@ -71,7 +74,7 @@ describe("paired weather native experience", () => {
     await clearE2ePairWeatherOverride();
     await clearE2eRealtimeOverride();
     if (originalSettings !== null) {
-      await invokeTauri("write_settings", { settings: originalSettings });
+      await writeE2eSettingsSafely(originalSettings);
       await browser.refresh();
     }
   });
@@ -92,21 +95,27 @@ describe("paired weather native experience", () => {
       "两座城 · 一份牵挂",
       "今天也在同一片天空下",
       "杭州 · 深圳",
-      "小满",
-      "阿岚",
-      "晴间多云",
-      "小雨",
-      "26°",
-      "23°",
-      "最高 31° · 最低 22°",
-      "最高 27° · 最低 20°",
-      "降雨 20%",
-      "降雨 80%",
       "TA 那边可能会下雨，今天记得提醒 TA 带伞。",
       "WeatherAPI.com",
     ]) {
       expect(panelText).toContain(expectedCopy);
     }
+    await assertReadyWeatherRow('[data-testid="weather-row-self"]', [
+      "小满",
+      "杭州",
+      "晴间多云",
+      "26°",
+      "最高 31° · 最低 22°",
+      "降雨 20%",
+    ]);
+    await assertReadyWeatherRow('[data-testid="weather-row-peer"]', [
+      "阿岚",
+      "深圳",
+      "小雨",
+      "23°",
+      "最高 27° · 最低 20°",
+      "降雨 80%",
+    ]);
     await expect($$(".weather-condition-icon")).toBeElementsArrayOfSize(2);
 
     const weatherGeometry = await invokeTauri<WindowState>("e2e_window_state");
@@ -147,9 +156,16 @@ describe("paired weather native experience", () => {
     expect(visualMetrics.regionPointerEvents).toBe("auto");
 
     mkdirSync(screenshotDirectory, { recursive: true });
-    await panel.saveScreenshot(join(screenshotDirectory, "weather-panel-100.png"));
+    const weatherEvidenceStem = resolveNativeEvidenceStem(
+      "weather-panel",
+      process.platform,
+      weatherGeometry.scale_factor,
+    );
+    await panel.saveScreenshot(
+      join(screenshotDirectory, `${weatherEvidenceStem}.png`),
+    );
     writeFileSync(
-      join(screenshotDirectory, "weather-panel-100-metrics.json"),
+      join(screenshotDirectory, `${weatherEvidenceStem}-metrics.json`),
       `${JSON.stringify({ visualMetrics, weatherGeometry }, null, 2)}\n`,
       "utf8",
     );
@@ -163,9 +179,19 @@ describe("paired weather native experience", () => {
     const contextMenu = await openPetContextMenu();
     await contextMenu.$('button=设置').click();
     await expect($(settingsSelector)).toBeDisplayed();
-    await expect($(profileSelector)).toBeDisplayed();
+    const profilePanel = await $(profileSelector);
+    await expect(profilePanel).toBeDisplayed();
     await expect($('input[aria-label="昵称"]')).toHaveValue("小满");
     await expect($('input[aria-label="所在城市"]')).toHaveValue("杭州");
+    const settingsGeometry = await invokeTauri<WindowState>("e2e_window_state");
+    const settingsEvidenceStem = resolveNativeEvidenceStem(
+      "basic-information-settings",
+      process.platform,
+      settingsGeometry.scale_factor,
+    );
+    await profilePanel.saveScreenshot(
+      join(screenshotDirectory, `${settingsEvidenceStem}.png`),
+    );
 
     const projectedPeerProfile = {
       nickname: "阿岚·已更新",
@@ -193,6 +219,26 @@ describe("paired weather native experience", () => {
     await waitForWindowGeometry(petGeometry);
   });
 });
+
+async function writeE2eSettingsSafely(
+  settings: Record<string, unknown>,
+): Promise<void> {
+  const paths = await invokeTauri<E2eAppDataPaths>("e2e_app_data_paths");
+  assertDedicatedE2eAppDataPaths(paths, process.platform);
+  await invokeTauri("write_settings", { settings });
+}
+
+async function assertReadyWeatherRow(
+  selector: string,
+  expectedFields: string[],
+): Promise<void> {
+  const row = await $(selector);
+  await expect(row).toBeDisplayed();
+  const rowText = await row.getText();
+  for (const field of expectedFields) {
+    expect(rowText).toContain(field);
+  }
+}
 
 function createPairedWeatherSettings(
   existing: Record<string, unknown>,

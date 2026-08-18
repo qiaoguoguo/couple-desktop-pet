@@ -20,6 +20,7 @@ const response = weatherResponse("杭州", "苏州");
 describe("usePairWeather", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     Reflect.deleteProperty(window, E2E_PAIR_WEATHER_OVERRIDE_WINDOW_KEY);
   });
 
@@ -173,7 +174,90 @@ describe("usePairWeather", () => {
     expect(getPairWeather).toHaveBeenCalledTimes(1);
     expect(result.current.state).toEqual({ status: "loaded", response });
   });
+
+  it("falls through to Relay in a guarded E2E build when no fixture exists", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    const getPairWeather = vi.fn().mockResolvedValue({ ok: true, ...response });
+    const { result } = renderWeatherHook(getPairWeather);
+
+    await act(async () => {
+      await result.current.open(auth);
+    });
+
+    expect(getPairWeather).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toEqual({ status: "loaded", response });
+  });
+
+  it("replaces fixture listeners on reopen and removes the latest on unmount", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    const addEventListener = vi.spyOn(window, "addEventListener");
+    const removeEventListener = vi.spyOn(window, "removeEventListener");
+    const firstResponse = weatherResponse("杭州", "深圳");
+    const secondResponse = weatherResponse("北京", "上海");
+    const latestResponse = weatherResponse("南京", "苏州");
+    setPairWeatherOverride(firstResponse);
+    const getPairWeather = vi.fn();
+    const view = renderWeatherHook(getPairWeather);
+
+    await act(async () => {
+      await view.result.current.open(auth);
+    });
+    const firstListener = weatherOverrideListeners(addEventListener)[0];
+    expect(firstListener).toBeTypeOf("function");
+
+    setPairWeatherOverride(secondResponse);
+    await act(async () => {
+      await view.result.current.open(auth);
+    });
+    const listeners = weatherOverrideListeners(addEventListener);
+    const secondListener = listeners[1];
+    expect(listeners).toHaveLength(2);
+    expect(removeEventListener).toHaveBeenCalledWith(
+      E2E_PAIR_WEATHER_OVERRIDE_EVENT,
+      firstListener,
+    );
+    expect(view.result.current.state).toEqual({
+      status: "loaded",
+      response: secondResponse,
+    });
+
+    setPairWeatherOverride(weatherResponse("旧城", "旧城"));
+    await act(async () => {
+      firstListener(new Event(E2E_PAIR_WEATHER_OVERRIDE_EVENT));
+    });
+    expect(view.result.current.state).toEqual({
+      status: "loaded",
+      response: secondResponse,
+    });
+
+    setPairWeatherOverride(latestResponse);
+    await act(async () => {
+      secondListener(new Event(E2E_PAIR_WEATHER_OVERRIDE_EVENT));
+    });
+    expect(view.result.current.state).toEqual({
+      status: "loaded",
+      response: latestResponse,
+    });
+
+    view.unmount();
+    expect(removeEventListener).toHaveBeenCalledWith(
+      E2E_PAIR_WEATHER_OVERRIDE_EVENT,
+      secondListener,
+    );
+    setPairWeatherOverride(weatherResponse("卸载后", "卸载后"));
+    expect(() =>
+      secondListener(new Event(E2E_PAIR_WEATHER_OVERRIDE_EVENT)),
+    ).not.toThrow();
+  });
 });
+
+function weatherOverrideListeners(
+  addEventListener: { mock: { calls: unknown[][] } },
+): EventListener[] {
+  return addEventListener.mock.calls
+    .filter((args) => args[0] === E2E_PAIR_WEATHER_OVERRIDE_EVENT)
+    .map((args) => args[1] as EventListener);
+}
 
 function setPairWeatherOverride(value: PairWeatherResponse) {
   Object.defineProperty(window, E2E_PAIR_WEATHER_OVERRIDE_WINDOW_KEY, {

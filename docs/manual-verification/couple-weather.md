@@ -112,16 +112,21 @@ mock. Check every item:
 - long nickname/city containment with no overlap or row-height shift;
 - basic-information settings flow matches the same black/white/red system.
 
-## Mandatory Scale Evidence
+## Mandatory Native Release Evidence
 
-All three Windows display scales are required before release sign-off. Capture
-only the app-owned panel and place the files in the Task 12 QA evidence folder.
+All Windows rows below are required before release sign-off. Capture only the
+app-owned surface or a dedicated harmless click target and place the files in
+the Task 12 QA evidence folder.
 
-| Display scale | Required file | Method |
+| Display scale | Required evidence | Method |
 | --- | --- | --- |
-| 100% | `weather-panel-100.png` | Automated WDIO panel-element capture |
-| 125% | `weather-panel-125.png` | Manual real Tauri capture |
-| 150% | `weather-panel-150.png` | Manual real Tauri capture |
+| 100% | `weather-panel-windows-100.png` | Automated real Tauri WDIO panel capture at verified scale factor `1` |
+| 100% | `basic-information-settings-windows-100.png` | Real Tauri basic-information panel capture |
+| 100% | 100% OS-level gutter click-through | Click a transparent gutter over a dedicated harmless target and record delivery |
+| 125% | `weather-panel-windows-125.png` | Manual real Tauri capture at verified scale factor `1.25` |
+| 125% | 125% OS-level gutter click-through | Repeat the dedicated-target click and record delivery |
+| 150% | `weather-panel-windows-150.png` | Manual real Tauri capture at verified scale factor `1.5` |
+| 150% | 150% OS-level gutter click-through | Repeat the dedicated-target click and record delivery |
 
 At each scale, record native outer size (`460x504`, `575x630`, `690x756`
 physical pixels respectively), panel content dimensions, display/OS version,
@@ -129,6 +134,10 @@ click result, restored geometry, and whether any text/icon overlap is visible.
 Do not sign off with only unit tests or browser screenshots. If a physical scale
 or platform is unavailable, mark the release gate blocked rather than relabeling
 simulated evidence as native.
+
+**Release sign-off is blocked if any item above is missing.** A settings-panel
+capture does not replace a weather capture, and DOM/style pointer assertions do
+not replace an OS-level click delivered to the dedicated window below.
 
 ## Release Record
 

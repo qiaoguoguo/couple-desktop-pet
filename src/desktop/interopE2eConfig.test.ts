@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import * as interopEnv from "../../e2e/interop/support/env";
 
 const repoRoot = process.cwd();
 
@@ -197,7 +198,7 @@ describe("cross-platform interop E2E harness config", () => {
       "降雨 80%",
       "TA 那边可能会下雨，今天记得提醒 TA 带伞。",
       "WeatherAPI.com",
-      "weather-panel-100.png",
+      "resolveNativeEvidenceStem",
       "e2e_window_state",
       "setE2ePairWeatherOverride",
       "projectedPeerProfile",
@@ -217,5 +218,148 @@ describe("cross-platform interop E2E harness config", () => {
     const weatherHook = readText("src/weather/usePairWeather.ts");
     expect(weatherHook).toContain('import.meta.env.VITE_TAURI_E2E === "1"');
     expect(weatherHook).toContain('import("../sync/e2eRealtimeOverride")');
+  });
+
+  it("fails closed before every weather E2E settings write unless app data is dedicated", () => {
+    const qaSafety = interopEnv as typeof interopEnv & {
+      assertDedicatedE2eAppDataPaths?: (
+        paths: { app_data_dir: string; settings_path: string },
+        platform: NodeJS.Platform,
+      ) => void;
+    };
+
+    expect(typeof qaSafety.assertDedicatedE2eAppDataPaths).toBe("function");
+    if (!qaSafety.assertDedicatedE2eAppDataPaths) {
+      return;
+    }
+
+    expect(() =>
+      qaSafety.assertDedicatedE2eAppDataPaths!(
+        {
+          app_data_dir:
+            "C:\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e",
+          settings_path:
+            "C:\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e\\settings.json",
+        },
+        "win32",
+      ),
+    ).not.toThrow();
+    expect(() =>
+      qaSafety.assertDedicatedE2eAppDataPaths!(
+        {
+          app_data_dir:
+            "/tmp/qa/Library/Application Support/com.couple.desktoppet.e2e",
+          settings_path:
+            "/tmp/qa/Library/Application Support/com.couple.desktoppet.e2e/settings.json",
+        },
+        "darwin",
+      ),
+    ).not.toThrow();
+
+    for (const paths of [
+      {
+        app_data_dir: "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet",
+        settings_path:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet\\settings.json",
+      },
+      {
+        app_data_dir:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e-unsafe",
+        settings_path:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e-unsafe\\settings.json",
+      },
+      {
+        app_data_dir:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e\\nested",
+        settings_path:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e\\nested\\settings.json",
+      },
+      {
+        app_data_dir:
+          "C:\\Users\\qa\\AppData\\Roaming\\com.couple.desktoppet.e2e",
+        settings_path: "C:\\Users\\qa\\AppData\\Roaming\\settings.json",
+      },
+    ]) {
+      expect(() =>
+        qaSafety.assertDedicatedE2eAppDataPaths!(paths, "win32"),
+      ).toThrow(/refusing E2E settings write/);
+    }
+
+    const spec = readText("e2e/interop/specs/couple-weather.e2e.ts");
+    expect(spec).toContain("writeE2eSettingsSafely");
+    expect(spec).toContain('invokeTauri<E2eAppDataPaths>("e2e_app_data_paths")');
+    expect(spec).toContain("assertDedicatedE2eAppDataPaths");
+    expect(spec.match(/invokeTauri\("write_settings"/g)).toHaveLength(1);
+    expect(spec).toMatch(
+      /e2e_app_data_paths[\s\S]*assertDedicatedE2eAppDataPaths[\s\S]*invokeTauri\("write_settings"/,
+    );
+    expect(readText("e2e/interop/wdio.windows.conf.ts")).toContain(
+      "INTEROP_APP_BINARY",
+    );
+  });
+
+  it("uses platform and verified scale in native weather evidence names", () => {
+    const qaSafety = interopEnv as typeof interopEnv & {
+      resolveNativeEvidenceStem?: (
+        subject: "weather-panel" | "basic-information-settings",
+        platform: NodeJS.Platform,
+        scaleFactor: number,
+      ) => string;
+    };
+
+    expect(typeof qaSafety.resolveNativeEvidenceStem).toBe("function");
+    if (!qaSafety.resolveNativeEvidenceStem) {
+      return;
+    }
+
+    expect(
+      qaSafety.resolveNativeEvidenceStem("weather-panel", "win32", 1),
+    ).toBe("weather-panel-windows-100");
+    expect(
+      qaSafety.resolveNativeEvidenceStem("weather-panel", "win32", 1.25),
+    ).toBe("weather-panel-windows-125");
+    expect(
+      qaSafety.resolveNativeEvidenceStem("weather-panel", "darwin", 2),
+    ).toBe("weather-panel-macos-200");
+    expect(() =>
+      qaSafety.resolveNativeEvidenceStem("weather-panel", "win32", 0),
+    ).toThrow(/invalid native evidence scale/);
+
+    const spec = readText("e2e/interop/specs/couple-weather.e2e.ts");
+    expect(spec).toContain("resolveNativeEvidenceStem");
+    expect(spec).toContain("basic-information-settings");
+    expect(spec).not.toContain('"weather-panel-100.png"');
+    expect(spec).not.toContain('"weather-panel-100-metrics.json"');
+  });
+
+  it("asserts every required weather field within its own native row", () => {
+    const spec = readText("e2e/interop/specs/couple-weather.e2e.ts");
+
+    expect(spec).toContain('[data-testid="weather-row-self"]');
+    expect(spec).toContain('[data-testid="weather-row-peer"]');
+    expect(spec).toContain("assertReadyWeatherRow");
+    expect(spec).toMatch(
+      /weather-row-self[\s\S]*小满[\s\S]*杭州[\s\S]*晴间多云[\s\S]*26°[\s\S]*最高 31° · 最低 22°[\s\S]*降雨 20%/,
+    );
+    expect(spec).toMatch(
+      /weather-row-peer[\s\S]*阿岚[\s\S]*深圳[\s\S]*小雨[\s\S]*23°[\s\S]*最高 27° · 最低 20°[\s\S]*降雨 80%/,
+    );
+  });
+
+  it("keeps every missing native artifact as an explicit release blocker", () => {
+    const manual = readText("docs/manual-verification/couple-weather.md");
+
+    for (const requiredGate of [
+      "weather-panel-windows-100.png",
+      "basic-information-settings-windows-100.png",
+      "100% OS-level gutter click-through",
+      "weather-panel-windows-125.png",
+      "125% OS-level gutter click-through",
+      "weather-panel-windows-150.png",
+      "150% OS-level gutter click-through",
+      "Release sign-off is blocked if any item above is missing",
+    ]) {
+      expect(manual).toContain(requiredGate);
+    }
   });
 });
