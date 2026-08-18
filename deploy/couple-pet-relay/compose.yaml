@@ -8,6 +8,8 @@ services:
       RELAY_HOST: 0.0.0.0
       RELAY_PORT: 8787
       RELAY_DATABASE_PATH: /app/server/.data/relay.sqlite
+      WEATHER_API_KEY: ${WEATHER_API_KEY:-}
+      WEATHER_REQUEST_TIMEOUT_MS: ${WEATHER_REQUEST_TIMEOUT_MS:-5000}
     ports:
       - "8787:8787"
     volumes:

@@ -1,4 +1,5 @@
 process.env.RELAY_HOST = process.env.RELAY_HOST ?? "0.0.0.0";
 process.env.RELAY_PORT = process.env.RELAY_PORT ?? "8787";
+process.env.WEATHER_REQUEST_TIMEOUT_MS = process.env.WEATHER_REQUEST_TIMEOUT_MS ?? "5000";
 
 await import("./index.js");

@@ -1,12 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WeatherProviderError, type ProviderWeather, type WeatherProvider } from "./weather/weatherProvider.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
 let tempDir = "";
 let relay: RelayServer;
 let baseUrl = "";
+let now: Date;
+let getCurrentDay: ReturnType<typeof vi.fn<WeatherProvider["getCurrentDay"]>>;
+let searchLocations: ReturnType<typeof vi.fn<WeatherProvider["searchLocations"]>>;
 
 const cityA = {
   provider: "weatherapi",
@@ -37,13 +41,38 @@ const profileB = {
   },
 } as const;
 
+const providerWeather: ProviderWeather = {
+  condition: "partly-cloudy",
+  conditionText: "局部多云",
+  currentTemperatureC: 26,
+  maxTemperatureC: 31.3,
+  minTemperatureC: 20,
+  rainChancePercent: 20,
+};
+
+const locationResults = Array.from({ length: 6 }, (_, index) => ({
+  ...cityA,
+  providerLocationId: cityA.providerLocationId + index,
+  name: `杭州 ${index + 1}`,
+  latitude: cityA.latitude + index * 0.01,
+}));
+
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-http-"));
+  now = new Date("2026-08-03T12:00:00.000Z");
+  getCurrentDay = vi
+    .fn<WeatherProvider["getCurrentDay"]>()
+    .mockResolvedValue(providerWeather);
+  searchLocations = vi
+    .fn<WeatherProvider["searchLocations"]>()
+    .mockResolvedValue(locationResults);
   relay = await createRelayServer({
     host: "127.0.0.1",
     port: 0,
     databasePath: join(tempDir, "relay.sqlite"),
-    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    now: () => now,
+    weatherProvider: { getCurrentDay, searchLocations },
+    weatherConfigured: true,
   });
   baseUrl = `http://127.0.0.1:${relay.port}`;
 });
@@ -58,7 +87,10 @@ describe("pairing HTTP API", () => {
     const response = await fetch(`${baseUrl}/health`);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      weatherConfigured: true,
+    });
   });
 
   it("creates and accepts a pair code", async () => {
@@ -255,10 +287,339 @@ describe("pairing HTTP API", () => {
   });
 });
 
+describe("profile and weather HTTP API", () => {
+  it("saves a normalized profile and publishes one update after commit", async () => {
+    const profileEvents: unknown[] = [];
+    relay.profileEvents.subscribe(() => {
+      throw new Error("listener failed");
+    });
+    relay.profileEvents.subscribe((event) => profileEvents.push(event));
+
+    const response = await putJson(
+      `${baseUrl}/devices/profile`,
+      authWith(profileA),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      profile: {
+        version: 1,
+        nickname: "小满",
+        city: cityA,
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
+    });
+    expect(profileEvents).toEqual([
+      {
+        deviceId: "dev_a",
+        profile: expect.objectContaining({ nickname: "小满", city: cityA }),
+        changedAt: "2026-08-03T12:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("authenticates profile saves before publishing or changing data", async () => {
+    await putJson(`${baseUrl}/devices/profile`, authWith(profileA));
+    const profileEvents: unknown[] = [];
+    relay.profileEvents.subscribe((event) => profileEvents.push(event));
+
+    const response = await putJson(`${baseUrl}/devices/profile`, {
+      ...authWith(profileB),
+      deviceSecret: "wrong_secret",
+    });
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "auth_failed" },
+    });
+    expect(profileEvents).toEqual([]);
+  });
+
+  it("limits profile saves to ten per device per hour", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      expect((await putJson(`${baseUrl}/devices/profile`, authWith(profileA))).status).toBe(
+        200,
+      );
+    }
+
+    const limited = await putJson(`${baseUrl}/devices/profile`, authWith(profileA));
+    expect(limited.status).toBe(429);
+    await expect(limited.json()).resolves.toEqual({
+      error: { code: "rate_limited", message: "Too many requests" },
+    });
+  });
+
+  it("searches normalized cities, registers identity, and returns at most five", async () => {
+    const response = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      query: "  Hangzhou  ",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      locations: locationResults.slice(0, 5),
+    });
+    expect(searchLocations).toHaveBeenCalledWith("Hangzhou");
+
+    const saveResponse = await putJson(`${baseUrl}/devices/profile`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      profile: profileA,
+    });
+    expect(saveResponse.status).toBe(200);
+  });
+
+  it("validates search length before contacting the provider", async () => {
+    const tooShort = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      query: "杭",
+    });
+    const tooLong = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      query: "杭".repeat(81),
+    });
+
+    expect(tooShort.status).toBe(400);
+    expect(tooLong.status).toBe(400);
+    expect(searchLocations).not.toHaveBeenCalled();
+  });
+
+  it("authenticates search before provider access", async () => {
+    await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      query: "Hangzhou",
+    });
+    searchLocations.mockClear();
+
+    const response = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "wrong_secret",
+      query: "Shanghai",
+    });
+
+    expect(response.status).toBe(401);
+    expect(searchLocations).not.toHaveBeenCalled();
+  });
+
+  it("applies search limits to both device and source IP", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      const response = await postJson(`${baseUrl}/locations/search`, {
+        deviceId: "dev_search",
+        deviceSecret: "secret_search",
+        query: "Hangzhou",
+      });
+      expect(response.status).toBe(200);
+    }
+
+    expect(
+      (
+        await postJson(`${baseUrl}/locations/search`, {
+          deviceId: "dev_search",
+          deviceSecret: "secret_search",
+          query: "Hangzhou",
+        })
+      ).status,
+    ).toBe(429);
+    expect(
+      (
+        await postJson(`${baseUrl}/locations/search`, {
+          deviceId: "dev_other",
+          deviceSecret: "secret_other",
+          query: "Shanghai",
+        })
+      ).status,
+    ).toBe(429);
+  });
+
+  it("returns both offline pair members using only repository coordinates", async () => {
+    const pairId = await createProfilePair();
+    const response = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId,
+      latitude: 0,
+      longitude: 0,
+      city: { ...cityA, latitude: 0, longitude: 0 },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      self: { status: "ready", profile: { nickname: "小满" } },
+      peer: { status: "ready", profile: { nickname: "阿岚" } },
+    });
+    expect(getCurrentDay).toHaveBeenCalledWith(cityA);
+    expect(getCurrentDay).toHaveBeenCalledWith(profileB.city);
+    expect(getCurrentDay).not.toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 0, longitude: 0 }),
+    );
+  });
+
+  it("returns independent weather entries when one provider call fails", async () => {
+    const pairId = await createProfilePair();
+    getCurrentDay.mockImplementation((city) =>
+      city.providerLocationId === profileB.city.providerLocationId
+        ? Promise.reject(new WeatherProviderError("quota-exhausted"))
+        : Promise.resolve(providerWeather),
+    );
+
+    const response = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      self: { status: "ready", profile: { nickname: "小满" } },
+      peer: {
+        status: "unavailable",
+        profile: { nickname: "阿岚" },
+        reason: "quota_exhausted",
+      },
+    });
+  });
+
+  it("reports an incomplete peer profile without blocking self weather", async () => {
+    const pairId = await createProfilePair(false);
+
+    const response = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      self: { status: "ready", profile: { nickname: "小满" } },
+      peer: {
+        status: "unavailable",
+        profile: { nickname: "legacy-b", city: null },
+        reason: "profile_incomplete",
+      },
+    });
+    expect(getCurrentDay).toHaveBeenCalledTimes(1);
+    expect(getCurrentDay).toHaveBeenCalledWith(cityA);
+  });
+
+  it("authenticates pair weather before profile or provider access", async () => {
+    const pairId = await createProfilePair();
+    getCurrentDay.mockClear();
+
+    const response = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "wrong_secret",
+      pairId,
+    });
+
+    expect(response.status).toBe(401);
+    expect(getCurrentDay).not.toHaveBeenCalled();
+  });
+
+  it("limits pair-weather HTTP requests to thirty per device per minute", async () => {
+    const pairId = await createProfilePair();
+    for (let index = 0; index < 30; index += 1) {
+      const response = await postJson(`${baseUrl}/pairs/weather`, {
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId,
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const limited = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId,
+    });
+    expect(limited.status).toBe(429);
+  });
+
+  it("starts without a key and reports weather_not_configured", async () => {
+    await relay.close();
+    relay = await createRelayServer({
+      host: "127.0.0.1",
+      port: 0,
+      databasePath: join(tempDir, "relay.sqlite"),
+      now: () => now,
+      weatherConfigured: false,
+    });
+    baseUrl = `http://127.0.0.1:${relay.port}`;
+
+    await expect((await fetch(`${baseUrl}/health`)).json()).resolves.toEqual({
+      ok: true,
+      weatherConfigured: false,
+    });
+
+    const searchResponse = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_search",
+      deviceSecret: "secret_search",
+      query: "Hangzhou",
+    });
+    expect(searchResponse.status).toBe(503);
+    await expect(searchResponse.json()).resolves.toEqual({
+      error: {
+        code: "weather_not_configured",
+        message: "Weather service is not configured",
+      },
+    });
+
+    const pairId = await createProfilePair();
+    const weatherResponse = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId,
+    });
+    expect(weatherResponse.status).toBe(200);
+    await expect(weatherResponse.json()).resolves.toMatchObject({
+      self: { status: "unavailable", reason: "weather_not_configured" },
+      peer: { status: "unavailable", reason: "weather_not_configured" },
+    });
+  });
+});
+
 function postJson(url: string, body: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function putJson(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function authWith(profile: typeof profileA | typeof profileB): Record<string, unknown> {
+  return {
+    deviceId: "dev_a",
+    deviceSecret: "secret_a",
+    profile,
+  };
+}
+
+async function createProfilePair(peerHasProfile = true): Promise<string> {
+  const codeResponse = await postJson(`${baseUrl}/pair-codes`, {
+    deviceId: "dev_a",
+    deviceSecret: "secret_a",
+    displayName: "legacy-a",
+    profile: profileA,
+  });
+  const codeBody = (await codeResponse.json()) as { code: string };
+  const acceptResponse = await postJson(`${baseUrl}/pairs/accept`, {
+    deviceId: "dev_b",
+    deviceSecret: "secret_b",
+    displayName: "legacy-b",
+    ...(peerHasProfile ? { profile: profileB } : {}),
+    code: codeBody.code,
+  });
+  const acceptBody = (await acceptResponse.json()) as { pairId: string };
+  return acceptBody.pairId;
 }
