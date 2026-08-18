@@ -4,6 +4,7 @@ import {
   ACTIVITY_STATUS_CAPABILITY,
   isNullableActivityStatus,
 } from "../../shared/activityStatus.js";
+import { PROFILE_SYNC_CAPABILITY } from "../../shared/profileProtocol.js";
 import type {
   ClientToServerMessage,
   ErrorServerMessage,
@@ -21,15 +22,24 @@ import {
 } from "./connectionRegistry.js";
 import { RelayError } from "./errors.js";
 import { createServerMessageId } from "./ids.js";
+import type {
+  ProfileEventHub,
+  ProfileUpdatedEvent,
+} from "./profileEvents.js";
 import type { RelayRepository } from "./repository.js";
 
 export function attachWebSocketRelay(
   server: Server,
   repository: RelayRepository,
+  profileEvents: ProfileEventHub,
   now: () => Date = () => new Date(),
 ): WebSocketServer {
   const registry = new ConnectionRegistry();
   const webSocketServer = new WebSocketServer({ server, path: "/ws" });
+  const unsubscribeProfileUpdates = profileEvents.subscribe((event) => {
+    sendProfileUpdateToPeer(repository, registry, event);
+  });
+  webSocketServer.once("close", unsubscribeProfileUpdates);
 
   webSocketServer.on("connection", (socket) => {
     let connection: AuthenticatedConnection | null = null;
@@ -95,6 +105,8 @@ function authenticateSocket(
     activityStatus: null,
     supportsActivityStatus:
       message.capabilities?.includes(ACTIVITY_STATUS_CAPABILITY) ?? false,
+    supportsProfileSync:
+      message.capabilities?.includes(PROFILE_SYNC_CAPABILITY) ?? false,
   };
   const previous = registry.replace(connection);
   const isPresenceTransition = !previous;
@@ -106,8 +118,21 @@ function authenticateSocket(
     type: "auth.ok",
     requestId: message.requestId,
     pairId: authenticated.pairId,
-    capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
   });
+
+  if (connection.supportsProfileSync) {
+    const peerProfile = repository.getDeviceProfile(authenticated.peerDeviceId);
+    if (peerProfile !== null) {
+      sendJson(socket, {
+        type: "peer.profile",
+        pairId: authenticated.pairId,
+        peerDeviceId: authenticated.peerDeviceId,
+        profile: peerProfile,
+        changedAt: peerProfile.updatedAt,
+      });
+    }
+  }
 
   const changedAt = createPresenceChangedAt(now);
   const peer = registry.get(authenticated.peerDeviceId);
@@ -143,6 +168,31 @@ function authenticateSocket(
   }
 
   return connection;
+}
+
+function sendProfileUpdateToPeer(
+  repository: RelayRepository,
+  registry: ConnectionRegistry,
+  event: ProfileUpdatedEvent,
+): void {
+  for (const connection of registry.getConnectionsForPeer(event.deviceId)) {
+    if (
+      !connection.supportsProfileSync ||
+      connection.deviceId === event.deviceId ||
+      repository.getPeerDeviceId(connection.pairId, connection.deviceId) !==
+        event.deviceId
+    ) {
+      continue;
+    }
+
+    sendJson(connection.socket, {
+      type: "peer.profile",
+      pairId: connection.pairId,
+      peerDeviceId: event.deviceId,
+      profile: event.profile,
+      changedAt: event.changedAt,
+    });
+  }
 }
 
 function sendPeerStatusIfPresent(

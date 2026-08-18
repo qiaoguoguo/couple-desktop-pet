@@ -4,6 +4,10 @@ import { join } from "node:path";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus.js";
+import {
+  PROFILE_SYNC_CAPABILITY,
+  type ProfileUpdateV1,
+} from "../../shared/profileProtocol.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
 interface SocketInbox {
@@ -18,6 +22,35 @@ let wsUrl = "";
 const inboxes = new WeakMap<WebSocket, SocketInbox>();
 const readTimeoutMs = 1500;
 const noMessageTimeoutMs = 150;
+
+const cityA = {
+  provider: "weatherapi",
+  providerLocationId: 1785728,
+  name: "杭州",
+  region: "浙江",
+  country: "中国",
+  latitude: 30.27,
+  longitude: 120.15,
+} as const;
+
+const profileA = {
+  version: 1,
+  nickname: "小满",
+  city: cityA,
+} as const;
+
+const profileB = {
+  version: 1,
+  nickname: "阿岚",
+  city: {
+    ...cityA,
+    providerLocationId: 1795565,
+    name: "上海",
+    region: "上海",
+    latitude: 31.23,
+    longitude: 121.47,
+  },
+} as const;
 
 beforeEach(async () => {
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-ws-"));
@@ -355,6 +388,102 @@ describe("websocket relay", () => {
     bob.close();
   });
 
+  it("sends the persisted peer profile after profile-capable authentication", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_a", "secret_a", profileA);
+    await saveProfile("dev_b", "secret_b", profileB);
+
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+
+    await expect(readJson(alice)).resolves.toEqual({
+      type: "peer.profile",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      profile: {
+        ...profileB,
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.offline",
+      peerDeviceId: "dev_b",
+    });
+
+    alice.close();
+  });
+
+  it("pushes one peer profile after a committed HTTP profile save", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_b", "secret_b", profileB);
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.profile" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    await saveProfile("dev_b", "secret_b", {
+      ...profileB,
+      nickname: "阿岚的新昵称",
+    });
+
+    await expect(readJson(alice)).resolves.toEqual({
+      type: "peer.profile",
+      pairId: pair.pairId,
+      peerDeviceId: "dev_b",
+      profile: {
+        ...profileB,
+        nickname: "阿岚的新昵称",
+        updatedAt: "2026-08-03T12:00:00.000Z",
+      },
+      changedAt: "2026-08-03T12:00:00.000Z",
+    });
+    await expectNoJson(alice);
+
+    alice.close();
+  });
+
+  it("does not send peer profiles to legacy clients without capability", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    await saveProfile("dev_b", "secret_b", profileB);
+    await expectNoJson(alice);
+
+    alice.close();
+  });
+
+  it("does not project self or unrelated profile updates as the peer", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_b", "secret_b", profileB);
+    const otherPair = await createPairFor(
+      "dev_c",
+      "secret_c",
+      "dev_d",
+      "secret_d",
+    );
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.profile",
+      peerDeviceId: "dev_b",
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    await saveProfile("dev_a", "secret_a", profileA);
+    await saveProfile("dev_c", "secret_c", profileA);
+    await expectNoJson(alice);
+
+    expect(otherPair.pairId).not.toBe(pair.pairId);
+    alice.close();
+  });
+
   it("forwards activity status updates only to the paired peer", async () => {
     const pair = await createPair();
     const otherPair = await createPairFor("dev_c", "secret_c", "dev_d", "secret_d");
@@ -584,11 +713,17 @@ async function connectAndAuth(
         : { capabilities: options.capabilities }),
     }),
   );
-  await expect(readJson(socket)).resolves.toMatchObject({
+  const authMessage = await readJson(socket);
+  expect(authMessage).toMatchObject({
     type: "auth.ok",
     pairId,
-    capabilities: [ACTIVITY_STATUS_CAPABILITY],
+    capabilities: expect.arrayContaining([ACTIVITY_STATUS_CAPABILITY]),
   });
+  if (options.capabilities?.includes(PROFILE_SYNC_CAPABILITY)) {
+    expect(authMessage).toMatchObject({
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+  }
   return socket;
 }
 
@@ -657,4 +792,17 @@ function postJson(url: string, body: unknown): Promise<Response> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+async function saveProfile(
+  deviceId: string,
+  deviceSecret: string,
+  profile: ProfileUpdateV1,
+): Promise<void> {
+  const response = await fetch(`${baseUrl}/devices/profile`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId, deviceSecret, profile }),
+  });
+  expect(response.status).toBe(200);
 }

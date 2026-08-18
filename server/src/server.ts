@@ -47,7 +47,12 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
         options.weatherConfigured ?? options.weatherProvider !== undefined,
     }),
   );
-  const webSocketServer = attachWebSocketRelay(server, repository, options.now);
+  const webSocketServer = attachWebSocketRelay(
+    server,
+    repository,
+    profileEvents,
+    options.now,
+  );
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, resolve);

@@ -8,6 +8,7 @@ export interface AuthenticatedConnection {
   peerDeviceId: string;
   activityStatus: ActivityStatus | null;
   supportsActivityStatus: boolean;
+  supportsProfileSync: boolean;
 }
 
 export class ConnectionRegistry {
@@ -31,5 +32,11 @@ export class ConnectionRegistry {
 
   get(deviceId: string): AuthenticatedConnection | null {
     return this.byDeviceId.get(deviceId) ?? null;
+  }
+
+  getConnectionsForPeer(peerDeviceId: string): AuthenticatedConnection[] {
+    return [...this.byDeviceId.values()].filter(
+      (connection) => connection.peerDeviceId === peerDeviceId,
+    );
   }
 }
