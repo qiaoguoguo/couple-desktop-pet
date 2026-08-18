@@ -29,21 +29,49 @@ export function usePairWeather({
   const [state, setState] = useState<PairWeatherUiState>({ status: "idle" });
   const requestSequence = useRef(0);
   const mounted = useRef(true);
+  const unsubscribeE2eOverride = useRef<() => void>(() => {});
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       requestSequence.current += 1;
+      unsubscribeE2eOverride.current();
+      unsubscribeE2eOverride.current = () => {};
     };
   }, []);
 
   const open = useCallback(
     async (auth: PairWeatherAuth) => {
       const sequence = ++requestSequence.current;
+      unsubscribeE2eOverride.current();
+      unsubscribeE2eOverride.current = () => {};
       setState({ status: "loading" });
 
       try {
+        if (import.meta.env.VITE_TAURI_E2E === "1") {
+          const override = await import("../sync/e2eRealtimeOverride");
+          if (!mounted.current || sequence !== requestSequence.current) {
+            return;
+          }
+
+          const fixture = override.readE2ePairWeatherOverride();
+          if (fixture !== null) {
+            setState({ status: "loaded", response: fixture });
+            unsubscribeE2eOverride.current =
+              override.subscribeToE2ePairWeatherOverride((response) => {
+                if (
+                  response !== null &&
+                  mounted.current &&
+                  sequence === requestSequence.current
+                ) {
+                  setState({ status: "loaded", response });
+                }
+              });
+            return;
+          }
+        }
+
         const result = await createClient(auth.relayUrl).getPairWeather({
           deviceId: auth.deviceId,
           deviceSecret: auth.deviceSecret,
@@ -80,6 +108,8 @@ export function usePairWeather({
 
   const close = useCallback(() => {
     requestSequence.current += 1;
+    unsubscribeE2eOverride.current();
+    unsubscribeE2eOverride.current = () => {};
     setState({ status: "idle" });
   }, []);
 

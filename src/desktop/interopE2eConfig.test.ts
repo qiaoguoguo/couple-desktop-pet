@@ -56,6 +56,8 @@ describe("cross-platform interop E2E harness config", () => {
       expect(config).toContain("application: appBinaryPath");
       expect(config).toContain("filterChildAppEnv");
       expect(config).toContain("createIsolatedAppEnv");
+      expect(config).toContain("mkdirSync");
+      expect(config).toContain("Object.values(isolatedAppEnv)");
       expect(config).toContain('logLevel: "error"');
       expect(config).not.toContain('logLevel: "info"');
       expect(config).not.toContain("tauri-driver");
@@ -65,6 +67,10 @@ describe("cross-platform interop E2E harness config", () => {
     expect(readText("e2e/interop/wdio.windows.conf.ts")).toContain(
       "src-tauri/target/release/couple-desktop-pet.exe",
     );
+    const windowsConfig = readText("e2e/interop/wdio.windows.conf.ts");
+    expect(windowsConfig).toContain("INTEROP_USE_HOST_PROFILE");
+    expect(windowsConfig).toContain("useHostProfile");
+    expect(windowsConfig).toContain("filterChildAppEnv(process.env)");
     const envHelper = readText("e2e/interop/support/env.ts");
     expect(envHelper).toContain('filtered[key] = ""');
     expect(envHelper).toContain('key.startsWith("APPLE_")');
@@ -163,5 +169,53 @@ describe("cross-platform interop E2E harness config", () => {
     expect(helper).toContain("clientY");
     expect(uiHelper).toContain("dispatchPointerHover");
     expect(uiHelper).not.toContain(".moveTo()");
+  });
+
+  it("registers the guarded paired-weather native QA suite on Windows and macOS", () => {
+    const weatherSpecPath = "e2e/interop/specs/couple-weather.e2e.ts";
+    expect(existsSync(join(repoRoot, weatherSpecPath))).toBe(true);
+
+    for (const configPath of [
+      "e2e/interop/wdio.windows.conf.ts",
+      "e2e/interop/wdio.macos.conf.ts",
+    ]) {
+      expect(readText(configPath)).toContain(
+        'weather: ["./specs/couple-weather.e2e.ts"]',
+      );
+    }
+
+    const spec = readText(weatherSpecPath);
+    for (const requiredAssertion of [
+      "双方天气",
+      "杭州",
+      "深圳",
+      "晴间多云",
+      "小雨",
+      "最高 31° · 最低 22°",
+      "最高 27° · 最低 20°",
+      "降雨 20%",
+      "降雨 80%",
+      "TA 那边可能会下雨，今天记得提醒 TA 带伞。",
+      "WeatherAPI.com",
+      "weather-panel-100.png",
+      "e2e_window_state",
+      "setE2ePairWeatherOverride",
+      "projectedPeerProfile",
+    ]) {
+      expect(spec).toContain(requiredAssertion);
+    }
+    expect(spec).toContain("getSize");
+    expect(spec).toContain("getLocation");
+
+    const overrideSupport = readText("e2e/support/realtimeOverride.ts");
+    expect(overrideSupport).toContain("createE2ePairWeatherFixture");
+    expect(overrideSupport).toContain("setE2ePairWeatherOverride");
+    expect(overrideSupport).toContain("clearE2ePairWeatherOverride");
+    expect(overrideSupport).not.toContain("localStorage");
+    expect(overrideSupport).not.toContain("URLSearchParams");
+
+    const weatherHook = readText("src/weather/usePairWeather.ts");
+    expect(weatherHook).toContain('import.meta.env.VITE_TAURI_E2E === "1"');
+    expect(weatherHook).toContain('import("../sync/e2eRealtimeOverride")');
   });
 });

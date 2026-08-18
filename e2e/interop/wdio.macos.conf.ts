@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
 import { createIsolatedAppEnv, filterChildAppEnv } from "./support/env";
 import { resolveInteropMochaTimeoutMs } from "./support/rendezvous";
 
@@ -10,9 +11,16 @@ const appBinaryPath =
   );
 const isolatedRoot =
   process.env.INTEROP_APP_DATA_ROOT ?? resolve(process.cwd(), ".tmp/interop/macos");
+const isolatedAppEnv = createIsolatedAppEnv({
+  platform: "macos",
+  root: isolatedRoot,
+});
+for (const directory of Object.values(isolatedAppEnv)) {
+  mkdirSync(directory, { recursive: true });
+}
 const childAppEnv = {
   ...filterChildAppEnv(process.env),
-  ...createIsolatedAppEnv({ platform: "macos", root: isolatedRoot }),
+  ...isolatedAppEnv,
 };
 
 declare global {
@@ -30,6 +38,7 @@ export const config: WebdriverIO.Config = {
   suites: {
     interop: ["./specs/cross-platform.e2e.ts"],
     restart: ["./specs/restart-unpaired.e2e.ts"],
+    weather: ["./specs/couple-weather.e2e.ts"],
   },
   maxInstances: 1,
   logLevel: "error",

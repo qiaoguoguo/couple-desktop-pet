@@ -1,6 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PairWeatherResponse } from "../../shared/weatherProtocol";
+import {
+  E2E_PAIR_WEATHER_OVERRIDE_EVENT,
+  E2E_PAIR_WEATHER_OVERRIDE_WINDOW_KEY,
+} from "../sync/e2eRealtimeOverride";
 import type { RelayHttpClient } from "../sync/relayHttpClient";
 import { usePairWeather } from "./usePairWeather";
 
@@ -14,6 +18,11 @@ const auth = {
 const response = weatherResponse("杭州", "苏州");
 
 describe("usePairWeather", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    Reflect.deleteProperty(window, E2E_PAIR_WEATHER_OVERRIDE_WINDOW_KEY);
+  });
+
   it("requests once for every open call even when Relay returns cache", async () => {
     const getPairWeather = vi.fn().mockResolvedValue({ ok: true, ...response });
     const { result } = renderWeatherHook(getPairWeather);
@@ -119,7 +128,60 @@ describe("usePairWeather", () => {
 
     expect(result.current.state).toEqual({ status: "loaded", response });
   });
+
+  it("uses and subscribes to pair-weather fixtures only in guarded E2E builds", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    setPairWeatherOverride(response);
+    const getPairWeather = vi.fn();
+    const { result } = renderWeatherHook(getPairWeather);
+
+    await act(async () => {
+      await result.current.open(auth);
+    });
+
+    expect(getPairWeather).not.toHaveBeenCalled();
+    expect(result.current.state).toEqual({ status: "loaded", response });
+
+    const projected = weatherResponse("杭州", "深圳");
+    await act(async () => {
+      setPairWeatherOverride(projected);
+      window.dispatchEvent(new Event(E2E_PAIR_WEATHER_OVERRIDE_EVENT));
+    });
+    expect(result.current.state).toEqual({
+      status: "loaded",
+      response: projected,
+    });
+
+    act(() => result.current.close());
+    await act(async () => {
+      setPairWeatherOverride(weatherResponse("北京", "上海"));
+      window.dispatchEvent(new Event(E2E_PAIR_WEATHER_OVERRIDE_EVENT));
+    });
+    expect(result.current.state).toEqual({ status: "idle" });
+  });
+
+  it("ignores the window fixture and calls Relay outside guarded E2E builds", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "0");
+    setPairWeatherOverride(weatherResponse("北京", "上海"));
+    const getPairWeather = vi.fn().mockResolvedValue({ ok: true, ...response });
+    const { result } = renderWeatherHook(getPairWeather);
+
+    await act(async () => {
+      await result.current.open(auth);
+    });
+
+    expect(getPairWeather).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toEqual({ status: "loaded", response });
+  });
 });
+
+function setPairWeatherOverride(value: PairWeatherResponse) {
+  Object.defineProperty(window, E2E_PAIR_WEATHER_OVERRIDE_WINDOW_KEY, {
+    configurable: true,
+    value,
+    writable: true,
+  });
+}
 
 function renderWeatherHook(getPairWeather: ReturnType<typeof vi.fn>) {
   const client = { getPairWeather } as Pick<RelayHttpClient, "getPairWeather">;
