@@ -128,12 +128,27 @@ describe("WeatherPanel", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "关闭双方天气" }));
-    fireEvent.keyDown(container.querySelector(".weather-panel") as HTMLElement, {
+    fireEvent.keyDown(screen.getByRole("button", { name: "关闭双方天气" }), {
       key: "Escape",
     });
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("handles Escape from the initial body focus and removes the listener", () => {
+    const onClose = vi.fn();
+    const view = renderPanel({ onClose });
+
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("contains long city and nickname text inside fixed identity tracks", () => {

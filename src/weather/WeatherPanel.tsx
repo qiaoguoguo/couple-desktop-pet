@@ -8,7 +8,7 @@ import {
 import {
   createContext,
   useContext,
-  type KeyboardEvent,
+  useEffect,
   type ReactNode,
 } from "react";
 import type { SyncErrorCode } from "../../shared/syncProtocol";
@@ -58,12 +58,17 @@ export function WeatherPanel({
 }: WeatherPanelProps) {
   const view = resolvePanelView(state, paired, profileComplete);
 
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
+  useEffect(() => {
+    function handleDocumentKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
     }
-  }
+
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => document.removeEventListener("keydown", handleDocumentKeyDown);
+  }, [onClose]);
 
   return (
     <WeatherPanelCommandsContext.Provider
@@ -73,7 +78,6 @@ export function WeatherPanel({
         className="weather-panel"
         aria-label="双方天气"
         tabIndex={-1}
-        onKeyDown={handleKeyDown}
       >
         <header className="weather-panel-header">
           <div className="weather-heading-copy">
