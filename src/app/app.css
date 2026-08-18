@@ -1590,3 +1590,7 @@ body {
 .message-composer-status {
   margin: 0;
 }
+
+.weather-composer-region {
+  pointer-events: auto;
+}
