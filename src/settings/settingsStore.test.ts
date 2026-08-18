@@ -118,6 +118,24 @@ describe("mergeSettings", () => {
     expect(settings.profile.peerByDeviceId).toEqual({ dev_b: peerProfile });
   });
 
+  it("preserves a JSON-parsed __proto__ peer device id as an own property", () => {
+    const persistedProfiles = JSON.parse(
+      `{"__proto__":${JSON.stringify(peerProfile)}}`,
+    ) as Record<string, unknown>;
+
+    const profiles = mergeSettings({
+      profile: {
+        local: localProfile,
+        peerByDeviceId: persistedProfiles,
+        syncState: "synced",
+      },
+    } as never).profile.peerByDeviceId;
+
+    expect(Object.prototype.hasOwnProperty.call(profiles, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(profiles)).toBe(Object.prototype);
+    expect(profiles.__proto__).toEqual(peerProfile);
+  });
+
   it.each(["saving", "error"])(
     "normalizes transient %s state to pending",
     (syncState) => {
@@ -452,6 +470,33 @@ describe("mergeSettings", () => {
 });
 
 describe("settings persistence", () => {
+  it("round trips non-default local and peer profiles", async () => {
+    let persistedSettings: unknown = null;
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => persistedSettings,
+      writeSettings: async (settings) => {
+        persistedSettings = JSON.parse(JSON.stringify(settings)) as unknown;
+      },
+    };
+
+    await saveSettings(api, {
+      ...defaultSettings,
+      profile: {
+        local: localProfile,
+        peerByDeviceId: { dev_b: peerProfile },
+        syncState: "synced",
+      },
+    });
+
+    await expect(loadSettings(api)).resolves.toMatchObject({
+      profile: {
+        local: localProfile,
+        peerByDeviceId: { dev_b: peerProfile },
+        syncState: "synced",
+      },
+    });
+  });
+
   it("loads validated settings from persistence", async () => {
     const api: SettingsPersistenceApi = {
       readSettings: async () => ({

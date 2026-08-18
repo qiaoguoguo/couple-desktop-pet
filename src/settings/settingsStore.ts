@@ -3,6 +3,7 @@ import { isNullableActivityStatus } from "../../shared/activityStatus";
 import {
   readDeviceProfile,
   validateProfileUpdate,
+  type DeviceProfileV1,
 } from "../../shared/profileProtocol";
 import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
@@ -224,7 +225,7 @@ function readPeerProfiles(value: unknown): PetSettings["profile"]["peerByDeviceI
     return {};
   }
 
-  const profiles: PetSettings["profile"]["peerByDeviceId"] = {};
+  const profiles: Array<[string, DeviceProfileV1]> = [];
 
   for (const [deviceId, valueProfile] of Object.entries(value)) {
     if (!deviceId.trim()) {
@@ -233,11 +234,11 @@ function readPeerProfiles(value: unknown): PetSettings["profile"]["peerByDeviceI
 
     const profile = readDeviceProfile(valueProfile);
     if (profile !== null) {
-      profiles[deviceId] = profile;
+      profiles.push([deviceId, profile]);
     }
   }
 
-  return profiles;
+  return Object.fromEntries(profiles);
 }
 
 function readProfileSyncState(value: unknown): PetSettings["profile"]["syncState"] {
