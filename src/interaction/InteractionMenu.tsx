@@ -5,8 +5,9 @@ import actHugIconUrl from "../assets/ui/interaction-buttons/act-hug.png";
 import actPoutIconUrl from "../assets/ui/interaction-buttons/act-pout.png";
 import actTypingIconUrl from "../assets/ui/interaction-buttons/act-typing.png";
 import actWaveIconUrl from "../assets/ui/interaction-buttons/act-wave.png";
-import type { InteractionActionName } from "../assets/petActionNames";
+import newTeaWeatherIconUrl from "../assets/ui/interaction-buttons/new-tea-weather.png";
 import type {
+  InteractionMenuIconName,
   InteractionMenuSelection,
   PetInteractionOption,
 } from "../assets/builtInPetManifest";
@@ -21,7 +22,8 @@ interface InteractionMenuProps {
   onSelect: (selection: InteractionMenuSelection) => void;
 }
 
-const optionIcons: Record<InteractionActionName, string> = {
+const optionIcons: Record<InteractionMenuIconName, string> = {
+  weather: newTeaWeatherIconUrl,
   "act-cute": actCuteIconUrl,
   "act-typing": actTypingIconUrl,
   "act-wave": actWaveIconUrl,
@@ -75,8 +77,16 @@ export function InteractionMenu({
             }
             onClick={() => onSelect(option.id)}
           >
-            <span className="pet-interaction-icon" aria-hidden="true">
-              <img src={optionIcons[option.iconAction]} alt="" />
+            <span
+              className={`pet-interaction-icon pet-interaction-icon--${
+                option.iconName ?? option.iconAction
+              }`}
+              aria-hidden="true"
+            >
+              <img
+                src={optionIcons[option.iconName ?? option.iconAction]}
+                alt=""
+              />
             </span>
             <span className="pet-interaction-label">{option.label}</span>
           </button>

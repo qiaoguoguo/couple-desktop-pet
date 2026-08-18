@@ -42,15 +42,21 @@ export interface PetMotionDefinition {
   tags: readonly string[];
 }
 
-export type InteractionFunctionId = "send-message" | "open-status";
+export type InteractionFunctionId =
+  | "open-weather"
+  | "send-message"
+  | "open-status";
 
 export type InteractionMenuSelection =
   | InteractionActionName
   | InteractionFunctionId;
 
+export type InteractionMenuIconName = InteractionActionName | "weather";
+
 export interface PetInteractionOption {
   id: InteractionMenuSelection;
   iconAction: InteractionActionName;
+  iconName?: InteractionMenuIconName;
   label: string;
   bubble: string;
 }
@@ -76,10 +82,11 @@ export interface BuiltInPetManifest {
 
 export const interactionOptions = [
   {
-    id: "act-cute",
+    id: "open-weather",
     iconAction: "act-cute",
-    label: "撒娇卖萌",
-    bubble: "陪我一会儿嘛。",
+    iconName: "weather",
+    label: "双方天气",
+    bubble: "",
   },
   {
     id: "send-message",

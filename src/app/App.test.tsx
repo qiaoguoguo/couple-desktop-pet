@@ -616,7 +616,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "双方天气" })).toBeTruthy();
   });
 
   it("does not render a separate send message menu item", async () => {
@@ -1369,7 +1369,7 @@ describe("App", () => {
     act(() => {
       fireEvent.click(petImage);
     });
-    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
 
     expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
     expect(screen.queryByText("陪我一会儿嘛。")).toBeNull();
@@ -1377,7 +1377,7 @@ describe("App", () => {
 
     expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
     expect(petImage.closest("[data-motion-id]")?.getAttribute("data-motion-id")).not.toBe(
-      "act-cute",
+      "act-hug",
     );
   });
 
@@ -1445,7 +1445,7 @@ describe("App", () => {
     const scenicPackage = importedPackageSummary();
     scenicPackage.scenes = {
       ...scenicPackage.scenes,
-      "act-cute": {
+      "act-hug": {
         action: "act-wave",
         bubbleCues: [{ atMs: 1000, text: "挥挥手。" }],
         returnTo: "idle-look",
@@ -1466,14 +1466,14 @@ describe("App", () => {
     act(() => {
       fireEvent.click(petImage);
     });
-    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
 
     expect(screen.queryByText("功能开发中，先陪你待一会儿。")).toBeNull();
     expect(screen.queryByText("挥挥手。")).toBeNull();
     const stage = screen
       .getByRole("img", { name: "月亮伙伴" })
       .closest("[data-action]");
-    expect(stage?.getAttribute("data-motion-id")).toBe("act-cute");
+    expect(stage?.getAttribute("data-motion-id")).toBe("act-hug");
     expect(stage?.getAttribute("data-action")).not.toBe("act-wave");
   });
 
@@ -1563,7 +1563,7 @@ describe("App", () => {
     act(() => {
       fireEvent.click(petFrame);
     });
-    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
     await advanceTypewriterText("功能开发中，先陪你待一会儿。");
     expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
 
@@ -1571,7 +1571,7 @@ describe("App", () => {
     act(() => {
       fireEvent.click(petFrame);
     });
-    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
     await advanceTypewriterText("功能开发中，先陪你待一会儿。");
     act(() => vi.advanceTimersByTime(1000));
 

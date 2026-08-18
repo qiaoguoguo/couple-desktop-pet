@@ -58,7 +58,7 @@ describe("builtInPetManifest", () => {
 
   it("defines exactly six radial function buttons", () => {
     expect(interactionOptions.map((option) => option.id)).toEqual([
-      "act-cute",
+      "open-weather",
       "send-message",
       "act-wave",
       "act-hug",
@@ -81,6 +81,11 @@ describe("builtInPetManifest", () => {
       "生气鼓脸",
       "我的状态",
     ]);
+    expect(interactionOptions[0]).toMatchObject({
+      id: "open-weather",
+      iconName: "weather",
+      label: "双方天气",
+    });
   });
 
   it("keeps every idle and interaction action at least five seconds long", () => {

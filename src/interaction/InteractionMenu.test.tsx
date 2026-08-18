@@ -31,7 +31,7 @@ describe("InteractionMenu", () => {
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(screen.getAllByRole("menuitem")).toHaveLength(6);
-    expect(screen.getByRole("menuitem", { name: "撒娇卖萌" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "双方天气" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "我的状态" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "发消息" })).toBeNull();
@@ -49,7 +49,7 @@ describe("InteractionMenu", () => {
       />,
     );
 
-    const firstButton = screen.getByRole("menuitem", { name: "撒娇卖萌" });
+    const firstButton = screen.getByRole("menuitem", { name: "双方天气" });
 
     expect(firstButton.classList.contains("pet-interaction-button")).toBe(true);
     expect(firstButton.getAttribute("style")).toContain("--menu-x");
@@ -57,11 +57,14 @@ describe("InteractionMenu", () => {
     expect(firstButton.getAttribute("style")).toContain("--menu-delay");
     expect(firstButton.querySelector(".pet-interaction-icon img")).toBeTruthy();
     expect(firstButton.querySelector(".pet-interaction-label")?.textContent).toBe(
-      "撒娇卖萌",
+      "双方天气",
     );
+    expect(
+      firstButton.querySelector(".pet-interaction-icon--weather img"),
+    ).toBeTruthy();
   });
 
-  it("selects an interaction via callback", () => {
+  it("selects the weather surface via callback", () => {
     const onSelect = vi.fn();
     render(
       <InteractionMenu
@@ -73,9 +76,9 @@ describe("InteractionMenu", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "撒娇卖萌" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
 
-    expect(onSelect).toHaveBeenCalledWith("act-cute");
+    expect(onSelect).toHaveBeenCalledWith("open-weather");
   });
 
   it("selects the message function via callback", () => {

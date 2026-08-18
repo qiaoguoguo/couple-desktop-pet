@@ -81,4 +81,15 @@ describe("windowCommands edge peek bridge", () => {
       { surface: "surprise" },
     );
   });
+
+  it("opens the weather composer through a controlled surface argument", async () => {
+    desktopApiMock.invokeCommand.mockResolvedValueOnce(undefined);
+
+    await openMessageComposerSurface("weather");
+
+    expect(desktopApiMock.invokeCommand).toHaveBeenCalledWith(
+      "open_message_composer_surface",
+      { surface: "weather" },
+    );
+  });
 });

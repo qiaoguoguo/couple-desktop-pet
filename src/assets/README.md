@@ -4,6 +4,9 @@ The current built-in package is `builtin:q-girl`. It is a first-party PNG frame-
 
 The user-provided Q-girl reference image is used only as character and style direction. Committed frames must not be treated as copied pixels from third-party art, and no third-party web assets, downloaded asset packs, fonts, models, or audio are included here.
 
+`ui/interaction-buttons/new-tea-weather.png` is project-generated paired-weather
+radial-menu artwork with a transparent background.
+
 Generation boundary:
 - Current Q-girl frames are temporary local verification assets derived from
   the project reference image by `scripts/asset_tools/generate_q_girl_temp_frames.py`

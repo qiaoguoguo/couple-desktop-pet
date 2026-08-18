@@ -8,7 +8,7 @@ import {
 } from "./desktopApi";
 
 export type ClickThroughRecoveryReason = "show" | "settings";
-export type ComposerSurface = "message" | "surprise";
+export type ComposerSurface = "message" | "surprise" | "weather";
 
 export function readSettings(): Promise<unknown> {
   return invokeCommand<unknown>("read_settings");
