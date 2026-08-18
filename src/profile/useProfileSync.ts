@@ -48,17 +48,22 @@ export function useProfileSync({
   const createRelayClientRef = useRef(createRelayClient);
   const searchSequenceRef = useRef(0);
   const saveSequenceRef = useRef(0);
+  const saveSideEffectQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   settingsRef.current = settings;
   updateSettingsRef.current = updateSettings;
   persistSettingsRef.current = persistSettings;
   createRelayClientRef.current = createRelayClient;
 
-  const commitSettings = useCallback(async (nextSettings: PetSettings) => {
+  const applySettings = useCallback((nextSettings: PetSettings) => {
     settingsRef.current = nextSettings;
     updateSettingsRef.current(nextSettings);
-    await persistSettingsRef.current(nextSettings);
   }, []);
+
+  const commitSettings = useCallback(async (nextSettings: PetSettings) => {
+    applySettings(nextSettings);
+    await persistSettingsRef.current(nextSettings);
+  }, [applySettings]);
 
   const searchCities = useCallback(
     async (query: string) => {
@@ -128,51 +133,72 @@ export function useProfileSync({
           syncState: "saving",
         },
       };
+      applySettings(localSettings);
 
-      try {
-        await commitSettings(localSettings);
-      } catch {
-        markProfilePending(settingsRef, updateSettingsRef);
-        return { ok: false, message: "Unable to save profile locally" };
-      }
+      const operation = saveSideEffectQueueRef.current
+        .catch(() => undefined)
+        .then(async (): Promise<{ ok: boolean; message?: string }> => {
+          if (sequence !== saveSequenceRef.current) {
+            return { ok: true };
+          }
 
-      if (!identity.deviceId || !identity.deviceSecret) {
-        markProfilePending(settingsRef, updateSettingsRef);
-        return { ok: false, message: "Device identity is unavailable" };
-      }
+          try {
+            await persistSettingsRef.current(settingsRef.current);
+          } catch {
+            if (sequence !== saveSequenceRef.current) {
+              return { ok: true };
+            }
+            markProfilePending(settingsRef, updateSettingsRef);
+            return { ok: false, message: "Unable to save profile locally" };
+          }
 
-      try {
-        const result = await createRelayClientRef
-          .current(identity.relayUrl)
-          .saveProfile({
-            deviceId: identity.deviceId,
-            deviceSecret: identity.deviceSecret,
-            profile: validated.profile,
-          });
+          if (sequence !== saveSequenceRef.current) {
+            return { ok: true };
+          }
 
-        if (sequence !== saveSequenceRef.current) {
-          return result.ok
-            ? { ok: true }
-            : { ok: false, message: result.message };
-        }
+          if (!identity.deviceId || !identity.deviceSecret) {
+            markProfilePending(settingsRef, updateSettingsRef);
+            return { ok: false, message: "Device identity is unavailable" };
+          }
 
-        if (!result.ok) {
-          await commitProfileState(commitSettings, settingsRef, "pending");
-          return { ok: false, message: result.message };
-        }
+          try {
+            const result = await createRelayClientRef
+              .current(identity.relayUrl)
+              .saveProfile({
+                deviceId: identity.deviceId,
+                deviceSecret: identity.deviceSecret,
+                profile: validated.profile,
+              });
 
-        await commitProfileState(commitSettings, settingsRef, "synced");
-        return { ok: true };
-      } catch {
-        if (sequence === saveSequenceRef.current) {
-          await commitProfileState(commitSettings, settingsRef, "pending").catch(
-            () => undefined,
-          );
-        }
-        return { ok: false, message: "Relay unavailable" };
-      }
+            if (sequence !== saveSequenceRef.current) {
+              return { ok: true };
+            }
+
+            if (!result.ok) {
+              await commitProfileState(commitSettings, settingsRef, "pending");
+              return { ok: false, message: result.message };
+            }
+
+            await commitProfileState(commitSettings, settingsRef, "synced");
+            return { ok: true };
+          } catch {
+            if (sequence !== saveSequenceRef.current) {
+              return { ok: true };
+            }
+            await commitProfileState(commitSettings, settingsRef, "pending").catch(
+              () => undefined,
+            );
+            return { ok: false, message: "Relay unavailable" };
+          }
+        });
+
+      saveSideEffectQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
     },
-    [commitSettings],
+    [applySettings, commitSettings],
   );
 
   const rememberPeer = useCallback(
@@ -182,7 +208,10 @@ export function useProfileSync({
       }
 
       const current = settingsRef.current;
-      const existing = current.profile.peerByDeviceId[deviceId];
+      const peers = current.profile.peerByDeviceId;
+      const existing = Object.prototype.hasOwnProperty.call(peers, deviceId)
+        ? peers[deviceId]
+        : undefined;
       if (existing && !isNewerProfile(profile, existing)) {
         return;
       }
