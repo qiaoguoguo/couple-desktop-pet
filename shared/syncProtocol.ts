@@ -4,6 +4,13 @@ import {
   isNullableActivityStatus,
   type ActivityStatus,
 } from "./activityStatus.js";
+import {
+  PROFILE_SYNC_CAPABILITY,
+  readDeviceProfile,
+  type DeviceProfileV1,
+  type ProfileSyncCapability,
+  type ProfileUpdateV1,
+} from "./profileProtocol.js";
 
 export const MESSAGE_TEXT_MAX_LENGTH = 300;
 export const PAIR_CODE_LENGTH = 6;
@@ -11,6 +18,10 @@ export const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
 const SURPRISE_SECRET_MAX_LENGTH = 24;
 const SURPRISE_NOTE_MAX_LENGTH = 120;
 const SURPRISE_SECRET_PATTERN = /^[A-Za-z0-9-]+$/;
+const SUPPORTED_SYNC_CAPABILITIES: readonly SyncCapability[] = [
+  ACTIVITY_STATUS_CAPABILITY,
+  PROFILE_SYNC_CAPABILITY,
+];
 const SURPRISE_CONTENT_KEYS = new Set<string>([
   "kind",
   "version",
@@ -32,6 +43,10 @@ export type SyncErrorCode =
   | "peer_offline"
   | "message_empty"
   | "message_too_long"
+  | "profile_incomplete"
+  | "weather_not_configured"
+  | "provider_unavailable"
+  | "quota_exhausted"
   | "rate_limited"
   | "relay_unavailable"
   | "malformed_message";
@@ -49,6 +64,10 @@ const SYNC_ERROR_CODES = new Set<string>([
   "peer_offline",
   "message_empty",
   "message_too_long",
+  "profile_incomplete",
+  "weather_not_configured",
+  "provider_unavailable",
+  "quota_exhausted",
   "rate_limited",
   "relay_unavailable",
   "malformed_message",
@@ -65,7 +84,9 @@ export interface DeviceAuthPayload {
   deviceSecret: string;
 }
 
-export type CreatePairCodeRequest = DeviceCredentialsPayload;
+export interface CreatePairCodeRequest extends DeviceCredentialsPayload {
+  profile?: ProfileUpdateV1;
+}
 
 export interface CreatePairCodeResponse {
   code: string;
@@ -74,11 +95,13 @@ export interface CreatePairCodeResponse {
 
 export interface AcceptPairCodeRequest extends DeviceCredentialsPayload {
   code: string;
+  profile?: ProfileUpdateV1;
 }
 
 export interface AcceptPairCodeResponse {
   pairId: string;
   peerDeviceId: string;
+  peerProfile?: DeviceProfileV1;
 }
 
 export interface PairCodeStatusRequest extends DeviceAuthPayload {
@@ -87,7 +110,12 @@ export interface PairCodeStatusRequest extends DeviceAuthPayload {
 
 export type PairCodeStatusResponse =
   | { status: "pending"; expiresAt: string }
-  | { status: "paired"; pairId: string; peerDeviceId: string }
+  | {
+      status: "paired";
+      pairId: string;
+      peerDeviceId: string;
+      peerProfile?: DeviceProfileV1;
+    }
   | { status: "expired" }
   | { status: "consumed" };
 
@@ -106,8 +134,10 @@ export interface AuthClientMessage {
   deviceId: string;
   deviceSecret: string;
   pairId: string;
-  capabilities?: ActivityStatusCapability[];
+  capabilities?: SyncCapability[];
 }
+
+export type SyncCapability = ActivityStatusCapability | ProfileSyncCapability;
 
 export type SurpriseTheme =
   | "cheer"
@@ -166,7 +196,7 @@ export interface AuthOkServerMessage {
   type: "auth.ok";
   requestId: string;
   pairId: string;
-  capabilities?: ActivityStatusCapability[];
+  capabilities?: SyncCapability[];
 }
 
 export interface PeerOnlineServerMessage {
@@ -203,6 +233,14 @@ export interface MessageReceivedServerMessage {
   content?: StructuredMessageContent;
 }
 
+export interface PeerProfileServerMessage {
+  type: "peer.profile";
+  pairId: string;
+  peerDeviceId: string;
+  profile: DeviceProfileV1;
+  changedAt: string;
+}
+
 export interface MessageDeliveredServerMessage {
   type: "message.delivered";
   requestId: string;
@@ -226,6 +264,7 @@ export type ServerToClientMessage =
   | PeerOnlineServerMessage
   | PeerOfflineServerMessage
   | PeerStatusServerMessage
+  | PeerProfileServerMessage
   | MessageReceivedServerMessage
   | MessageDeliveredServerMessage
   | ErrorServerMessage
@@ -331,6 +370,8 @@ export function parseServerToClientMessage(input: unknown): ServerToClientMessag
       return readPeerPresence(input, "peer.offline");
     case "peer.status":
       return readPeerStatus(input);
+    case "peer.profile":
+      return readPeerProfile(input);
     case "message.received":
       return readMessageReceived(input);
     case "message.delivered":
@@ -429,6 +470,29 @@ function readMessageReceived(input: Record<string, unknown>): MessageReceivedSer
   };
 }
 
+function readPeerProfile(input: Record<string, unknown>): PeerProfileServerMessage | null {
+  if (
+    typeof input.pairId !== "string" ||
+    typeof input.peerDeviceId !== "string" ||
+    typeof input.changedAt !== "string"
+  ) {
+    return null;
+  }
+
+  const profile = readDeviceProfile(input.profile);
+  if (profile === null) {
+    return null;
+  }
+
+  return {
+    type: "peer.profile",
+    pairId: input.pairId,
+    peerDeviceId: input.peerDeviceId,
+    profile,
+    changedAt: input.changedAt,
+  };
+}
+
 function readMessageDelivered(input: Record<string, unknown>): MessageDeliveredServerMessage | null {
   if (
     typeof input.requestId !== "string" ||
@@ -473,7 +537,7 @@ export function isSurpriseTheme(value: string): value is SurpriseTheme {
 
 export function readSupportedCapabilities(
   value: unknown,
-): ActivityStatusCapability[] | undefined | null {
+): SyncCapability[] | undefined | null {
   if (value === undefined) {
     return undefined;
   }
@@ -482,9 +546,11 @@ export function readSupportedCapabilities(
     return null;
   }
 
-  return value.includes(ACTIVITY_STATUS_CAPABILITY)
-    ? [ACTIVITY_STATUS_CAPABILITY]
-    : [];
+  return value.filter((entry): entry is SyncCapability => isSyncCapability(entry));
+}
+
+function isSyncCapability(value: string): value is SyncCapability {
+  return SUPPORTED_SYNC_CAPABILITIES.some((capability) => capability === value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

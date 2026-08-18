@@ -1,13 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "./activityStatus";
+import { PROFILE_SYNC_CAPABILITY } from "./profileProtocol";
 import {
   MESSAGE_TEXT_MAX_LENGTH,
   PAIR_CODE_LENGTH,
   PAIR_CODE_TTL_MS,
   parseServerToClientMessage,
+  readSupportedCapabilities,
   validateStructuredMessageContent,
   validateMessageText,
+  type AcceptPairCodeRequest,
+  type AcceptPairCodeResponse,
+  type CreatePairCodeRequest,
+  type PairCodeStatusResponse,
 } from "./syncProtocol";
+
+const syncedProfile = {
+  version: 1,
+  nickname: "小满",
+  city: {
+    provider: "weatherapi",
+    providerLocationId: 1785728,
+    name: "杭州",
+    region: "浙江",
+    country: "中国",
+    latitude: 30.27,
+    longitude: 120.15,
+  },
+  updatedAt: "2026-08-18T08:00:00.000Z",
+} as const;
+
+const profileUpdate = {
+  version: 1,
+  nickname: "小满",
+  city: syncedProfile.city,
+} as const;
 
 describe("sync protocol constants", () => {
   it("uses the MVP limits from the approved realtime design", () => {
@@ -181,20 +208,34 @@ describe("parseServerToClientMessage", () => {
     ).toBeNull();
   });
 
-  it("parses supported auth.ok capabilities and filters unknown ones", () => {
+  it("preserves both supported auth.ok capabilities and filters unknown ones", () => {
     expect(
       parseServerToClientMessage({
         type: "auth.ok",
         requestId: "auth_1",
         pairId: "pair_1",
-        capabilities: [ACTIVITY_STATUS_CAPABILITY, "future-capability"],
+        capabilities: [
+          ACTIVITY_STATUS_CAPABILITY,
+          PROFILE_SYNC_CAPABILITY,
+          "future-capability",
+        ],
       }),
     ).toEqual({
       type: "auth.ok",
       requestId: "auth_1",
       pairId: "pair_1",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
     });
+  });
+
+  it("reads both supported client capability values", () => {
+    expect(
+      readSupportedCapabilities([
+        PROFILE_SYNC_CAPABILITY,
+        ACTIVITY_STATUS_CAPABILITY,
+        "future-capability",
+      ]),
+    ).toEqual([PROFILE_SYNC_CAPABILITY, ACTIVITY_STATUS_CAPABILITY]);
   });
 
   it("keeps legacy auth.ok messages compatible without capabilities", () => {
@@ -269,6 +310,83 @@ describe("parseServerToClientMessage", () => {
         changedAt: "2026-08-06T12:00:00.000Z",
       }),
     ).toBeNull();
+  });
+
+  it("parses peer profile updates", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "peer.profile",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+        profile: syncedProfile,
+        changedAt: "2026-08-18T08:01:00.000Z",
+      }),
+    ).toEqual({
+      type: "peer.profile",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      profile: syncedProfile,
+      changedAt: "2026-08-18T08:01:00.000Z",
+    });
+  });
+
+  it("rejects peer profile updates with malformed profiles", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "peer.profile",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+        profile: { ...syncedProfile, version: 2 },
+        changedAt: "2026-08-18T08:01:00.000Z",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    "profile_incomplete",
+    "weather_not_configured",
+    "provider_unavailable",
+    "quota_exhausted",
+    "rate_limited",
+  ])("parses shared profile and weather error code %s", (code) => {
+    expect(
+      parseServerToClientMessage({ type: "error", code, message: "unavailable" }),
+    ).toMatchObject({ type: "error", code });
+  });
+});
+
+describe("pairing profile contracts", () => {
+  it("keeps request profiles and response peer profiles optional", () => {
+    const legacyCreate: CreatePairCodeRequest = {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      displayName: "小满",
+    };
+    const createWithProfile: CreatePairCodeRequest = {
+      ...legacyCreate,
+      profile: profileUpdate,
+    };
+    const acceptWithProfile: AcceptPairCodeRequest = {
+      ...legacyCreate,
+      code: "123456",
+      profile: profileUpdate,
+    };
+    const legacyAcceptResponse: AcceptPairCodeResponse = {
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+    };
+    const pairedStatus: PairCodeStatusResponse = {
+      status: "paired",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      peerProfile: syncedProfile,
+    };
+
+    expect(legacyCreate).not.toHaveProperty("profile");
+    expect(createWithProfile.profile).toEqual(profileUpdate);
+    expect(acceptWithProfile.profile).toEqual(profileUpdate);
+    expect(legacyAcceptResponse).not.toHaveProperty("peerProfile");
+    expect(pairedStatus).toMatchObject({ peerProfile: syncedProfile });
   });
 });
 
