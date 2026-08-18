@@ -346,6 +346,32 @@ describe("cross-platform interop E2E harness config", () => {
     );
   });
 
+  it("scopes updated peer projection assertions to the peer weather row", () => {
+    const spec = readText("e2e/interop/specs/couple-weather.e2e.ts");
+    const projectionStart = spec.indexOf("const projectedPeerProfile");
+    const projectionEnd = spec.indexOf(
+      'await $(\'button[aria-label="关闭双方天气"]\').click()',
+      projectionStart,
+    );
+    const projectionBlock = spec.slice(projectionStart, projectionEnd);
+
+    expect(projectionStart).toBeGreaterThanOrEqual(0);
+    expect(projectionEnd).toBeGreaterThan(projectionStart);
+    expect(projectionBlock).toContain(
+      'const projectedPeerRow = await $(\'[data-testid="weather-row-peer"]\')',
+    );
+    expect(projectionBlock).toContain(
+      "const projectedPeerText = await projectedPeerRow.getText()",
+    );
+    expect(projectionBlock).toContain(
+      "expect(projectedPeerText).toContain(projectedPeerProfile.nickname)",
+    );
+    expect(projectionBlock).toContain(
+      "expect(projectedPeerText).toContain(projectedPeerProfile.cityName)",
+    );
+    expect(projectionBlock).not.toContain("projectedPanel.getText()");
+  });
+
   it("keeps every missing native artifact as an explicit release blocker", () => {
     const manual = readText("docs/manual-verification/couple-weather.md");
 

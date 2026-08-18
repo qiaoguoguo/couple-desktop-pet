@@ -211,10 +211,12 @@ describe("paired weather native experience", () => {
     await projectedMenu.$('button=双方天气').click();
     const projectedPanel = await $(weatherPanelSelector);
     await expect(projectedPanel).toBeDisplayed();
-    const projectedText = await projectedPanel.getText();
-    expect(projectedText).toContain(projectedPeerProfile.nickname);
-    expect(projectedText).toContain(projectedPeerProfile.cityName);
-    expect(projectedText).not.toContain("深圳");
+    const projectedPeerRow = await $('[data-testid="weather-row-peer"]');
+    await expect(projectedPeerRow).toBeDisplayed();
+    const projectedPeerText = await projectedPeerRow.getText();
+    expect(projectedPeerText).toContain(projectedPeerProfile.nickname);
+    expect(projectedPeerText).toContain(projectedPeerProfile.cityName);
+    expect(projectedPeerText).not.toContain("深圳");
     await $('button[aria-label="关闭双方天气"]').click();
     await waitForWindowGeometry(petGeometry);
   });
