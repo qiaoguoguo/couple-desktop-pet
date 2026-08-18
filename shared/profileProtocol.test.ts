@@ -129,4 +129,20 @@ describe("readDeviceProfile", () => {
     ).toBeNull();
     expect(readDeviceProfile({ ...profile, updatedAt: 123 })).toBeNull();
   });
+
+  it.each([
+    "not-a-date",
+    "2026-08-18T08:00:00Z",
+    "2026-08-18 08:00:00.000Z",
+    "2026-08-18T10:00:00.000+02:00",
+  ])("rejects noncanonical timestamp %s", (updatedAt) => {
+    expect(
+      readDeviceProfile({
+        version: 1,
+        nickname: "小满",
+        city: validCity,
+        updatedAt,
+      }),
+    ).toBeNull();
+  });
 });

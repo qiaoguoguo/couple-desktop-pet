@@ -98,6 +98,140 @@ describe("useProfileSync", () => {
     expect(result.current.profileSync.saveState).toBe("pending");
   });
 
+  it("retries a persisted pending profile after restart and marks it synced", async () => {
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const relayClient = successfulRelayClient();
+    const { result } = renderProfileHook({
+      initialSettings: pendingProfileSettings(profileUpdate),
+      relayClient,
+      persistSettings,
+    });
+
+    await act(async () => {
+      await result.current.profileSync.retryPendingProfile();
+    });
+
+    expect(relayClient.saveProfile).toHaveBeenCalledWith({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdate,
+    });
+    expect(result.current.profileSync.saveState).toBe("synced");
+    expect(persistSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        profile: expect.objectContaining({ syncState: "synced" }),
+      }),
+    );
+  });
+
+  it("keeps a reconnect retry pending when Relay still fails", async () => {
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const relayClient = {
+      searchLocations: vi.fn(),
+      saveProfile: vi.fn().mockResolvedValue({
+        ok: false,
+        code: "relay_unavailable",
+        message: "Relay unavailable",
+      }),
+    };
+    const { result } = renderProfileHook({
+      initialSettings: pendingProfileSettings(profileUpdate),
+      relayClient,
+      persistSettings,
+    });
+
+    let response: { ok: boolean; message?: string } | undefined;
+    await act(async () => {
+      response = await result.current.profileSync.retryPendingProfile();
+    });
+
+    expect(response).toEqual({ ok: false, message: "Relay unavailable" });
+    expect(result.current.profileSync.saveState).toBe("pending");
+  });
+
+  it("marks only the matching pairing profile synced", async () => {
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const relayClient = successfulRelayClient();
+    const { result } = renderProfileHook({
+      initialSettings: pendingProfileSettings(profileUpdate),
+      relayClient,
+      persistSettings,
+    });
+
+    await act(async () => {
+      await result.current.profileSync.markLocalProfileSynced(namedProfile("stale"));
+    });
+    expect(result.current.profileSync.saveState).toBe("pending");
+
+    await act(async () => {
+      await result.current.profileSync.markLocalProfileSynced(profileUpdate);
+    });
+    expect(result.current.profileSync.saveState).toBe("synced");
+    expect(relayClient.saveProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not let a delayed retry clear a newer save state", async () => {
+    const retryRelay = deferred<{
+      ok: true;
+      profile: DeviceProfileV1;
+    }>();
+    const profileB = namedProfile("B");
+    const relayClient = {
+      searchLocations: vi.fn(),
+      saveProfile: vi
+        .fn()
+        .mockImplementationOnce(() => retryRelay.promise)
+        .mockResolvedValueOnce({
+          ok: true,
+          profile: {
+            ...profileB,
+            updatedAt: "2026-08-18T08:00:00.001Z",
+          },
+        }),
+    };
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderProfileHook({
+      initialSettings: pendingProfileSettings(profileUpdate),
+      relayClient,
+      persistSettings,
+    });
+
+    let retry: Promise<{ ok: boolean; message?: string }> | undefined;
+    let saveB: Promise<{ ok: boolean; message?: string }> | undefined;
+    act(() => {
+      retry = result.current.profileSync.retryPendingProfile();
+    });
+    await waitFor(() => expect(relayClient.saveProfile).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      saveB = result.current.profileSync.saveLocalProfile(profileB);
+    });
+    expect(result.current.settings.profile).toMatchObject({
+      local: profileB,
+      syncState: "saving",
+    });
+
+    retryRelay.resolve({
+      ok: true,
+      profile: {
+        ...profileUpdate,
+        updatedAt: "2026-08-18T08:00:00.000Z",
+      },
+    });
+    await act(async () => {
+      await Promise.all([retry, saveB]);
+    });
+
+    expect(relayClient.saveProfile).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ profile: profileB }),
+    );
+    expect(result.current.settings.profile).toMatchObject({
+      local: profileB,
+      syncState: "synced",
+    });
+  });
+
   it("persists and uploads B last when A persistence is delayed", async () => {
     const profileA = namedProfile("A");
     const profileB = namedProfile("B");
@@ -331,6 +465,81 @@ describe("useProfileSync", () => {
     await waitFor(() => expect(persistSettings).toHaveBeenCalledTimes(1));
   });
 
+  it("accepts monotonic same-clock revisions and rejects malformed timestamp poison", async () => {
+    const baseProfile: DeviceProfileV1 = {
+      version: 1,
+      nickname: "初始昵称",
+      city: null,
+      updatedAt: "2026-08-18T08:00:00.000Z",
+    };
+    const initialSettings: PetSettings = {
+      ...defaultSettings,
+      profile: {
+        ...defaultSettings.profile,
+        peerByDeviceId: { dev_b: baseProfile },
+      },
+    };
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const relayClient = successfulRelayClient();
+    const { result } = renderProfileHook({
+      initialSettings,
+      relayClient,
+      persistSettings,
+    });
+
+    act(() => {
+      result.current.profileSync.rememberPeer("dev_b", {
+        ...baseProfile,
+        nickname: "同一时钟内的新版本",
+        updatedAt: "2026-08-18T08:00:00.001Z",
+      });
+      result.current.profileSync.rememberPeer("dev_b", {
+        ...baseProfile,
+        nickname: "污染值",
+        updatedAt: "zzzz-not-a-timestamp",
+      });
+    });
+
+    expect(result.current.settings.profile.peerByDeviceId.dev_b).toMatchObject({
+      nickname: "同一时钟内的新版本",
+      updatedAt: "2026-08-18T08:00:00.001Z",
+    });
+    await waitFor(() => expect(persistSettings).toHaveBeenCalledTimes(1));
+  });
+
+  it("replaces a malformed cached timestamp with a canonical profile", async () => {
+    const malformed: DeviceProfileV1 = {
+      version: 1,
+      nickname: "损坏缓存",
+      city: null,
+      updatedAt: "zzzz-not-a-timestamp",
+    };
+    const canonical: DeviceProfileV1 = {
+      ...malformed,
+      nickname: "恢复后的资料",
+      updatedAt: "2026-08-18T08:00:00.000Z",
+    };
+    const persistSettings = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderProfileHook({
+      initialSettings: {
+        ...defaultSettings,
+        profile: {
+          ...defaultSettings.profile,
+          peerByDeviceId: { dev_b: malformed },
+        },
+      },
+      relayClient: successfulRelayClient(),
+      persistSettings,
+    });
+
+    act(() => {
+      result.current.profileSync.rememberPeer("dev_b", canonical);
+    });
+
+    expect(result.current.settings.profile.peerByDeviceId.dev_b).toEqual(canonical);
+    await waitFor(() => expect(persistSettings).toHaveBeenCalledTimes(1));
+  });
+
   it.each(["__proto__", "constructor"])(
     "stores prototype-like peer device ID %s as an own property",
     async (deviceId) => {
@@ -361,6 +570,38 @@ describe("useProfileSync", () => {
 
 function namedProfile(nickname: string): ProfileUpdateV1 {
   return { ...profileUpdate, nickname };
+}
+
+function pendingProfileSettings(profile: ProfileUpdateV1): PetSettings {
+  return {
+    ...defaultSettings,
+    profile: {
+      ...defaultSettings.profile,
+      local: profile,
+      peerByDeviceId: {},
+      syncState: "pending",
+    },
+    sync: {
+      ...defaultSettings.sync,
+      enabled: true,
+      relayUrl: "https://relay.example.test",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+    },
+  };
+}
+
+function successfulRelayClient() {
+  return {
+    searchLocations: vi.fn(),
+    saveProfile: vi.fn(async ({ profile }: { profile: ProfileUpdateV1 }) => ({
+      ok: true as const,
+      profile: {
+        ...profile,
+        updatedAt: "2026-08-18T08:00:00.000Z",
+      },
+    })),
+  };
 }
 
 function deferred<T>() {

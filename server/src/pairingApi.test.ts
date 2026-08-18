@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -142,6 +143,40 @@ describe("pairing HTTP API", () => {
         updatedAt: "2026-08-03T12:00:00.000Z",
       },
     });
+  });
+
+  it("rejects oversized streaming bodies before identity or limiter mutation", async () => {
+    const oversizedBody = JSON.stringify({
+      deviceId: "dev_oversized",
+      deviceSecret: "poisoned_secret",
+      query: "Hangzhou",
+      padding: "x".repeat(70 * 1024),
+    });
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const splitAt = Math.floor(oversizedBody.length / 2);
+      const response = await postChunkedJson(`${baseUrl}/locations/search`, [
+        oversizedBody.slice(0, splitAt),
+        oversizedBody.slice(splitAt),
+      ]);
+
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: "invalid_request",
+          message: "Request body exceeds 65536 bytes",
+        },
+      });
+    }
+
+    const valid = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_oversized",
+      deviceSecret: "fresh_secret",
+      query: "Hangzhou",
+    });
+
+    expect(valid.status).toBe(200);
+    expect(searchLocations).toHaveBeenCalledTimes(1);
   });
 
   it("synchronizes normalized peer profiles while pairing", async () => {
@@ -659,6 +694,37 @@ function postJson(url: string, body: unknown): Promise<Response> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+function postChunkedJson(url: string, chunks: string[]): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      url,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+      (response) => {
+        const responseChunks: Buffer[] = [];
+        response.on("data", (chunk) => {
+          responseChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          resolve(
+            new Response(Buffer.concat(responseChunks), {
+              status: response.statusCode,
+              headers: response.headers as HeadersInit,
+            }),
+          );
+        });
+      },
+    );
+    request.on("error", reject);
+    for (const chunk of chunks) {
+      request.write(chunk);
+    }
+    request.end();
   });
 }
 

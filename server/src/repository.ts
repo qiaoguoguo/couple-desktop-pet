@@ -5,6 +5,7 @@ import {
   type UnpairResponse,
 } from "../../shared/syncProtocol.js";
 import {
+  parseCanonicalProfileTimestamp,
   readDeviceProfile,
   validateProfileUpdate,
   type DeviceProfileV1,
@@ -122,8 +123,9 @@ export class RelayRepository {
 
     return this.db.transaction(() => {
       const now = this.nowIso();
+      const previousUpdatedAt = this.getDeviceProfile(input.deviceId)?.updatedAt;
       this.ensureDeviceIdentityAt(input, now);
-      return this.writeProfile(input.deviceId, profile, now);
+      return this.writeProfile(input.deviceId, profile, now, previousUpdatedAt);
     })();
   }
 
@@ -370,8 +372,9 @@ export class RelayRepository {
     }
 
     const profile = readProfileUpdateOrThrow(input.profile);
+    const previousUpdatedAt = this.getDeviceProfile(input.deviceId)?.updatedAt;
     this.ensureDeviceIdentityAt(input, now);
-    this.writeProfile(input.deviceId, profile, now);
+    this.writeProfile(input.deviceId, profile, now, previousUpdatedAt);
   }
 
   private ensureDeviceAt(input: EnsureDeviceInput, now: string): void {
@@ -412,10 +415,12 @@ export class RelayRepository {
     deviceId: string,
     profile: ProfileUpdateV1,
     updatedAt: string,
+    previousUpdatedAt?: string,
   ): DeviceProfileV1 {
+    const monotonicUpdatedAt = nextProfileTimestamp(updatedAt, previousUpdatedAt);
     this.db
       .prepare("UPDATE devices SET display_name = ?, last_seen_at = ? WHERE device_id = ?")
-      .run(profile.nickname, updatedAt, deviceId);
+      .run(profile.nickname, monotonicUpdatedAt, deviceId);
     this.db
       .prepare(
         `INSERT INTO device_locations (
@@ -448,7 +453,7 @@ export class RelayRepository {
         profile.city.country,
         profile.city.latitude,
         profile.city.longitude,
-        updatedAt,
+        monotonicUpdatedAt,
       );
 
     const saved = this.getDeviceProfile(deviceId);
@@ -515,6 +520,25 @@ export class RelayRepository {
 
   private nowIso(): string {
     return this.getNow().toISOString();
+  }
+}
+
+function nextProfileTimestamp(candidate: string, previous?: string): string {
+  const candidateTimestamp = parseCanonicalProfileTimestamp(candidate);
+  if (candidateTimestamp === null) {
+    throw new RelayError("relay_unavailable", 503, "Profile clock is invalid");
+  }
+
+  const previousTimestamp = parseCanonicalProfileTimestamp(previous);
+  const nextTimestamp =
+    previousTimestamp !== null && previousTimestamp >= candidateTimestamp
+      ? previousTimestamp + 1
+      : candidateTimestamp;
+
+  try {
+    return new Date(nextTimestamp).toISOString();
+  } catch {
+    throw new RelayError("relay_unavailable", 503, "Profile clock is invalid");
   }
 }
 

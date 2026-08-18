@@ -8,6 +8,7 @@ import {
   PROFILE_SYNC_CAPABILITY,
   type ProfileUpdateV1,
 } from "../../shared/profileProtocol.js";
+import { ProfileEventHub } from "./profileEvents.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
 interface SocketInbox {
@@ -403,9 +404,9 @@ describe("websocket relay", () => {
       peerDeviceId: "dev_b",
       profile: {
         ...profileB,
-        updatedAt: "2026-08-03T12:00:00.000Z",
+        updatedAt: "2026-08-03T12:00:00.001Z",
       },
-      changedAt: "2026-08-03T12:00:00.000Z",
+      changedAt: "2026-08-03T12:00:00.001Z",
     });
     await expect(readJson(alice)).resolves.toMatchObject({
       type: "peer.offline",
@@ -415,13 +416,32 @@ describe("websocket relay", () => {
     alice.close();
   });
 
+  it("does not send an initial persisted profile without profile capability", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_b", "secret_b", profileB);
+
+    const legacyAlice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: undefined,
+    });
+
+    await expect(readJson(legacyAlice)).resolves.toMatchObject({
+      type: "peer.offline",
+      peerDeviceId: "dev_b",
+    });
+    await expectNoJson(legacyAlice);
+    legacyAlice.close();
+  });
+
   it("pushes one peer profile after a committed HTTP profile save", async () => {
     const pair = await createPair();
     await saveProfile("dev_b", "secret_b", profileB);
     const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
       capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
     });
-    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.profile" });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "peer.profile",
+      profile: { updatedAt: "2026-08-03T12:00:00.001Z" },
+    });
     await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
 
     await saveProfile("dev_b", "secret_b", {
@@ -436,13 +456,148 @@ describe("websocket relay", () => {
       profile: {
         ...profileB,
         nickname: "阿岚的新昵称",
-        updatedAt: "2026-08-03T12:00:00.000Z",
+        updatedAt: "2026-08-03T12:00:00.002Z",
       },
-      changedAt: "2026-08-03T12:00:00.000Z",
+      changedAt: "2026-08-03T12:00:00.002Z",
     });
     await expectNoJson(alice);
 
     alice.close();
+  });
+
+  it("suppresses old-pair profile projection after unpair and re-pair", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.profile" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    const unpairResponse = await postJson(`${baseUrl}/pairs/unpair`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: pair.pairId,
+    });
+    expect(unpairResponse.status).toBe(200);
+    const replacementPair = await createPairFor(
+      "dev_b",
+      "secret_b",
+      "dev_c",
+      "secret_c",
+    );
+    expect(replacementPair.pairId).not.toBe(pair.pairId);
+
+    await saveProfile("dev_b", "secret_b", profileB);
+    await expectNoJson(alice);
+    alice.close();
+  });
+
+  it("projects profile updates exactly once to the replacement socket", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_b", "secret_b", profileB);
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.profile" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const aliceClosed = onceClose(alice);
+
+    const replacement = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(replacement)).resolves.toMatchObject({
+      type: "peer.profile",
+    });
+    await expect(readJson(replacement)).resolves.toMatchObject({
+      type: "peer.offline",
+    });
+    await aliceClosed;
+
+    await saveProfile("dev_b", "secret_b", {
+      ...profileB,
+      nickname: "只投影一次",
+    });
+    await expect(readJson(replacement)).resolves.toMatchObject({
+      type: "peer.profile",
+      peerDeviceId: "dev_b",
+      profile: {
+        nickname: "只投影一次",
+        updatedAt: "2026-08-03T12:00:00.002Z",
+      },
+    });
+    await expectNoJson(replacement);
+    replacement.close();
+  });
+
+  it("orders initial profile before online presence and current peer status", async () => {
+    const pair = await createPair();
+    await saveProfile("dev_a", "secret_a", profileA);
+    await saveProfile("dev_b", "secret_b", profileB);
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.profile" });
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.offline" });
+    bob.send(
+      JSON.stringify({
+        type: "status.update",
+        requestId: "status_before_profile_peer",
+        pairId: pair.pairId,
+        activityStatus: "dazing",
+      }),
+    );
+    await expectNoJson(bob);
+
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    });
+    const orderedMessages = [
+      await readJson(alice),
+      await readJson(alice),
+      await readJson(alice),
+    ];
+    expect(orderedMessages).toMatchObject([
+      { type: "peer.profile", peerDeviceId: "dev_b" },
+      { type: "peer.online", peerDeviceId: "dev_b" },
+      {
+        type: "peer.status",
+        peerDeviceId: "dev_b",
+        activityStatus: "dazing",
+      },
+    ]);
+
+    alice.close();
+    bob.close();
+  });
+
+  it("tears down the profile event subscription when websocket relay closes", async () => {
+    const originalSubscribe = ProfileEventHub.prototype.subscribe;
+    const unsubscribe = vi.fn();
+    const subscribeSpy = vi
+      .spyOn(ProfileEventHub.prototype, "subscribe")
+      .mockImplementation(function (this: ProfileEventHub, listener) {
+        const removeListener = originalSubscribe.call(this, listener);
+        return () => {
+          unsubscribe();
+          removeListener();
+        };
+      });
+    let extraRelay: RelayServer | null = null;
+
+    try {
+      extraRelay = await createRelayServer({
+        host: "127.0.0.1",
+        port: 0,
+        databasePath: join(tempDir, "listener-teardown.sqlite"),
+      });
+      await extraRelay.close();
+      extraRelay = null;
+
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    } finally {
+      subscribeSpy.mockRestore();
+      await extraRelay?.close();
+    }
   });
 
   it("does not send peer profiles to legacy clients without capability", async () => {
@@ -791,6 +946,12 @@ function postJson(url: string, body: unknown): Promise<Response> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+function onceClose(socket: WebSocket): Promise<void> {
+  return new Promise((resolve) => {
+    socket.once("close", () => resolve());
   });
 }
 

@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { initializeRelayDatabase, openRelayDatabase } from "./database.js";
 import { RelayError } from "./errors.js";
+import { hashDeviceSecret } from "./ids.js";
 import { RelayRepository } from "./repository.js";
 
 let tempDir = "";
@@ -57,27 +58,94 @@ afterEach(() => {
 });
 
 describe("Relay database migrations", () => {
-  it("adds device_locations without changing existing pair data", () => {
-    const code = repository.createPairCode({
-      deviceId: "dev_a",
-      deviceSecret: "secret_a",
-      displayName: "小满",
-    });
-    const pair = repository.acceptPairCode({
-      deviceId: "dev_b",
-      deviceSecret: "secret_b",
-      displayName: "阿岚",
-      code: code.code,
-    });
+  it("upgrades a pre-Task-3 schema without losing device or pair data", () => {
+    db.close();
+    db = openRelayDatabase(join(tempDir, "pre-task-3.sqlite"));
+    db.exec(`
+      CREATE TABLE devices (
+        device_id TEXT PRIMARY KEY,
+        device_secret_hash TEXT NOT NULL,
+        display_name TEXT,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT
+      );
+      CREATE TABLE pair_codes (
+        code TEXT PRIMARY KEY,
+        creator_device_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (creator_device_id) REFERENCES devices(device_id)
+      );
+      CREATE TABLE pairs (
+        pair_id TEXT PRIMARY KEY,
+        device_a_id TEXT NOT NULL,
+        device_b_id TEXT NOT NULL,
+        pair_code TEXT,
+        created_at TEXT NOT NULL,
+        disabled_at TEXT,
+        FOREIGN KEY (device_a_id) REFERENCES devices(device_id),
+        FOREIGN KEY (device_b_id) REFERENCES devices(device_id)
+      );
+    `);
+    const createdAt = "2026-08-03T11:59:00.000Z";
+    db.prepare(
+      "INSERT INTO devices (device_id, device_secret_hash, display_name, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("dev_a", hashDeviceSecret("secret_a"), "小满", createdAt, createdAt);
+    db.prepare(
+      "INSERT INTO devices (device_id, device_secret_hash, display_name, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("dev_b", hashDeviceSecret("secret_b"), "阿岚", createdAt, createdAt);
+    db.prepare(
+      "INSERT INTO pair_codes (code, creator_device_id, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(
+      "123456",
+      "dev_a",
+      "2026-08-03T12:10:00.000Z",
+      "2026-08-03T12:00:00.000Z",
+      createdAt,
+    );
+    db.prepare(
+      "INSERT INTO pairs (pair_id, device_a_id, device_b_id, pair_code, created_at, disabled_at) VALUES (?, ?, ?, ?, ?, NULL)",
+    ).run("pair_legacy", "dev_a", "dev_b", "123456", createdAt);
 
     initializeRelayDatabase(db);
-    initializeRelayDatabase(db);
+    repository = new RelayRepository(db, () => now);
 
     const names = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
       .all();
     expect(names).toContainEqual({ name: "device_locations" });
-    expect(repository.getPeerDeviceId(pair.pairId, "dev_a")).toBe("dev_b");
+    expect(repository.getPeerDeviceId("pair_legacy", "dev_a")).toBe("dev_b");
+    expect(
+      repository.authenticateDeviceForPair({
+        deviceId: "dev_b",
+        deviceSecret: "secret_b",
+        pairId: "pair_legacy",
+      }),
+    ).toEqual({
+      deviceId: "dev_b",
+      pairId: "pair_legacy",
+      peerDeviceId: "dev_a",
+    });
+    expect(
+      repository.getPairCodeStatus({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        code: "123456",
+      }),
+    ).toMatchObject({
+      status: "paired",
+      pairId: "pair_legacy",
+      peerDeviceId: "dev_b",
+    });
+
+    const saved = repository.saveProfile({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdateA,
+    });
+    expect(saved).toMatchObject({ nickname: "小满", city: cityA });
+    expect(repository.getPeerDeviceId("pair_legacy", "dev_a")).toBe("dev_b");
   });
 });
 
@@ -113,6 +181,44 @@ describe("RelayRepository profiles", () => {
       updatedAt: "2026-08-03T12:00:00.000Z",
     });
     expect(repository.getDeviceProfile("dev_a")).toEqual(saved);
+  });
+
+  it("issues monotonic profile timestamps for same-millisecond saves", () => {
+    const first = repository.saveProfile({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdateA,
+    });
+    const second = repository.saveProfile({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdateB,
+    });
+
+    expect(first.updatedAt).toBe("2026-08-03T12:00:00.000Z");
+    expect(second.updatedAt).toBe("2026-08-03T12:00:00.001Z");
+    expect(repository.getDeviceProfile("dev_a")).toEqual(second);
+  });
+
+  it("ignores a malformed stored timestamp when issuing the next profile revision", () => {
+    repository.saveProfile({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdateA,
+    });
+    db.prepare("UPDATE device_locations SET updated_at = ? WHERE device_id = ?").run(
+      "poisoned-timestamp",
+      "dev_a",
+    );
+
+    const recovered = repository.saveProfile({
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      profile: profileUpdateB,
+    });
+
+    expect(recovered.updatedAt).toBe("2026-08-03T12:00:00.000Z");
+    expect(recovered.nickname).toBe("阿岚");
   });
 
   it("does not change a saved nickname when identity is ensured again", () => {

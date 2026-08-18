@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import {
+  parseCanonicalProfileTimestamp,
   validateProfileUpdate,
   type CityLocationV1,
   type DeviceProfileV1,
@@ -30,6 +31,8 @@ export interface UseProfileSyncResult {
   saveLocalProfile(
     profile: ProfileUpdateV1,
   ): Promise<{ ok: boolean; message?: string }>;
+  retryPendingProfile(): Promise<{ ok: boolean; message?: string }>;
+  markLocalProfileSynced(profile: ProfileUpdateV1): Promise<void>;
   rememberPeer(deviceId: string, profile: DeviceProfileV1): void;
 }
 
@@ -201,6 +204,141 @@ export function useProfileSync({
     [applySettings, commitSettings],
   );
 
+  const retryPendingProfile = useCallback(() => {
+    const current = settingsRef.current;
+    const profile = current.profile.local;
+    if (profile === null || current.profile.syncState !== "pending") {
+      return Promise.resolve({ ok: true });
+    }
+
+    const sequence = ++saveSequenceRef.current;
+    const identity = ensureDeviceIdentity(current.sync);
+    applySettings({
+      ...current,
+      sync: identity,
+      profile: { ...current.profile, syncState: "saving" },
+    });
+
+    const operation = saveSideEffectQueueRef.current
+      .catch(() => undefined)
+      .then(async (): Promise<{ ok: boolean; message?: string }> => {
+        if (
+          sequence !== saveSequenceRef.current ||
+          !isCurrentLocalProfile(settingsRef.current, profile)
+        ) {
+          return { ok: true };
+        }
+
+        if (identity !== current.sync) {
+          try {
+            await persistSettingsRef.current(settingsRef.current);
+          } catch {
+            markProfilePending(settingsRef, updateSettingsRef);
+            return { ok: false, message: "Unable to save device identity locally" };
+          }
+        }
+
+        if (!identity.deviceId || !identity.deviceSecret) {
+          markProfilePending(settingsRef, updateSettingsRef);
+          return { ok: false, message: "Device identity is unavailable" };
+        }
+
+        let result: Awaited<ReturnType<ProfileRelayClient["saveProfile"]>>;
+        try {
+          result = await createRelayClientRef.current(identity.relayUrl).saveProfile({
+            deviceId: identity.deviceId,
+            deviceSecret: identity.deviceSecret,
+            profile,
+          });
+        } catch {
+          if (
+            sequence === saveSequenceRef.current &&
+            isCurrentLocalProfile(settingsRef.current, profile)
+          ) {
+            await commitProfileState(commitSettings, settingsRef, "pending").catch(
+              () => markProfilePending(settingsRef, updateSettingsRef),
+            );
+          }
+          return { ok: false, message: "Relay unavailable" };
+        }
+
+        if (
+          sequence !== saveSequenceRef.current ||
+          !isCurrentLocalProfile(settingsRef.current, profile)
+        ) {
+          return { ok: true };
+        }
+
+        if (!result.ok) {
+          await commitProfileState(commitSettings, settingsRef, "pending").catch(
+            () => markProfilePending(settingsRef, updateSettingsRef),
+          );
+          return { ok: false, message: result.message };
+        }
+
+        try {
+          await commitProfileState(commitSettings, settingsRef, "synced");
+          return { ok: true };
+        } catch {
+          if (
+            sequence === saveSequenceRef.current &&
+            isCurrentLocalProfile(settingsRef.current, profile)
+          ) {
+            markProfilePending(settingsRef, updateSettingsRef);
+          }
+          return { ok: false, message: "Unable to save profile locally" };
+        }
+      });
+
+    saveSideEffectQueueRef.current = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }, [applySettings, commitSettings]);
+
+  const markLocalProfileSynced = useCallback(
+    (profile: ProfileUpdateV1): Promise<void> => {
+      const validated = validateProfileUpdate(profile);
+      if (
+        !validated.ok ||
+        !isCurrentLocalProfile(settingsRef.current, validated.profile)
+      ) {
+        return Promise.resolve();
+      }
+
+      const sequence = ++saveSequenceRef.current;
+      const operation = saveSideEffectQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            sequence !== saveSequenceRef.current ||
+            !isCurrentLocalProfile(settingsRef.current, validated.profile)
+          ) {
+            return;
+          }
+
+          try {
+            await commitProfileState(commitSettings, settingsRef, "synced");
+          } catch {
+            if (
+              sequence === saveSequenceRef.current &&
+              isCurrentLocalProfile(settingsRef.current, validated.profile)
+            ) {
+              markProfilePending(settingsRef, updateSettingsRef);
+            }
+          }
+        });
+
+      saveSideEffectQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [commitSettings],
+  );
+
   const rememberPeer = useCallback(
     (deviceId: string, profile: DeviceProfileV1) => {
       if (!deviceId.trim()) {
@@ -239,6 +377,8 @@ export function useProfileSync({
     saveState: settings.profile.syncState,
     searchCities,
     saveLocalProfile,
+    retryPendingProfile,
+    markLocalProfileSynced,
     rememberPeer,
   };
 }
@@ -268,16 +408,38 @@ function markProfilePending(
   updateSettingsRef.current(pending);
 }
 
+function isCurrentLocalProfile(
+  settings: PetSettings,
+  expected: ProfileUpdateV1,
+): boolean {
+  const current = settings.profile.local;
+  return current !== null && profilesMatch(current, expected);
+}
+
+function profilesMatch(left: ProfileUpdateV1, right: ProfileUpdateV1): boolean {
+  return (
+    left.version === right.version &&
+    left.nickname === right.nickname &&
+    left.city.provider === right.city.provider &&
+    left.city.providerLocationId === right.city.providerLocationId &&
+    left.city.name === right.city.name &&
+    left.city.region === right.city.region &&
+    left.city.country === right.city.country &&
+    left.city.latitude === right.city.latitude &&
+    left.city.longitude === right.city.longitude
+  );
+}
+
 function isNewerProfile(
   incoming: DeviceProfileV1,
   existing: DeviceProfileV1,
 ): boolean {
-  const incomingTimestamp = Date.parse(incoming.updatedAt);
-  const existingTimestamp = Date.parse(existing.updatedAt);
+  const incomingTimestamp = parseCanonicalProfileTimestamp(incoming.updatedAt);
+  const existingTimestamp = parseCanonicalProfileTimestamp(existing.updatedAt);
 
-  if (Number.isFinite(incomingTimestamp) && Number.isFinite(existingTimestamp)) {
-    return incomingTimestamp > existingTimestamp;
+  if (incomingTimestamp === null) {
+    return false;
   }
 
-  return incoming.updatedAt > existing.updatedAt;
+  return existingTimestamp === null || incomingTimestamp > existingTimestamp;
 }

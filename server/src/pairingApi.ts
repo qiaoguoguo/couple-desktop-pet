@@ -335,7 +335,10 @@ function weatherUnavailableReason(error: unknown): WeatherUnavailableReason {
 async function readBodyOrThrow(request: IncomingMessage): Promise<unknown> {
   try {
     return await readJsonBody(request);
-  } catch {
+  } catch (error) {
+    if (error instanceof RelayError) {
+      throw error;
+    }
     throw new RelayError("invalid_request", 400, "Request body must be valid JSON");
   }
 }

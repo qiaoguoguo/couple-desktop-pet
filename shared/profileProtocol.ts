@@ -57,7 +57,7 @@ export function readDeviceProfile(input: unknown): DeviceProfileV1 | null {
     !isRecord(input) ||
     input.version !== 1 ||
     typeof input.updatedAt !== "string" ||
-    input.updatedAt.length === 0
+    parseCanonicalProfileTimestamp(input.updatedAt) === null
   ) {
     return null;
   }
@@ -78,6 +78,19 @@ export function readDeviceProfile(input: unknown): DeviceProfileV1 | null {
     city,
     updatedAt: input.updatedAt,
   };
+}
+
+export function parseCanonicalProfileTimestamp(input: unknown): number | null {
+  if (typeof input !== "string" || input.length === 0) {
+    return null;
+  }
+
+  const timestamp = Date.parse(input);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return new Date(timestamp).toISOString() === input ? timestamp : null;
 }
 
 function readCityLocation(input: unknown): CityLocationV1 | null {
