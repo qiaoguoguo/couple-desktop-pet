@@ -16,6 +16,10 @@ import {
   REQUIRED_PET_ACTIONS,
   type ImportedPetPackageSummary,
 } from "../assets/petPackageContract";
+import type {
+  DeviceProfileV1,
+  ProfileUpdateV1,
+} from "../../shared/profileProtocol";
 import { App } from "./App";
 
 const windowCommandsMock = vi.hoisted(() => ({
@@ -49,6 +53,7 @@ const realtimeSyncMock = vi.hoisted(() => {
             text: string;
             at: string;
           }): void;
+          onPeerProfile?(deviceId: string, profile: DeviceProfileV1): void;
         }
       | undefined,
     client: {
@@ -85,6 +90,7 @@ const realtimeSyncMock = vi.hoisted(() => {
             text: string;
             at: string;
           }): void;
+          onPeerProfile?(deviceId: string, profile: DeviceProfileV1): void;
         },
       ) => {
         mock.callbacks = callbacks;
@@ -347,6 +353,45 @@ async function openSettingsFromContextMenu() {
     "settings-dock",
   );
   expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+}
+
+const localProfile: ProfileUpdateV1 = {
+  version: 1,
+  nickname: "小满",
+  city: {
+    provider: "weatherapi",
+    providerLocationId: 1,
+    name: "杭州",
+    region: "浙江",
+    country: "中国",
+    latitude: 30.2741,
+    longitude: 120.1551,
+  },
+};
+
+const peerProfile: DeviceProfileV1 = {
+  version: 1,
+  nickname: "阿岚",
+  city: {
+    provider: "weatherapi",
+    providerLocationId: 2,
+    name: "苏州",
+    region: "江苏",
+    country: "中国",
+    latitude: 31.2989,
+    longitude: 120.5853,
+  },
+  updatedAt: "2026-08-18T08:00:00.000Z",
+};
+
+function completeProfileSettings() {
+  return {
+    profile: {
+      local: localProfile,
+      peerByDeviceId: {},
+      syncState: "synced",
+    },
+  };
 }
 
 async function withViewport<T>(
@@ -2586,6 +2631,7 @@ describe("App", () => {
       expiresAt: "2026-08-03T12:10:00.000Z",
     });
     windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
       sync: {
         enabled: true,
         relayUrl: "http://192.168.1.47:8787",
@@ -2627,6 +2673,7 @@ describe("App", () => {
       deviceId: "dev_a",
       deviceSecret: "secret_a",
       displayName: "Q 版桌宠",
+      profile: localProfile,
     });
   });
 
@@ -2643,8 +2690,10 @@ describe("App", () => {
       status: "paired",
       pairId: "pair_1",
       peerDeviceId: "dev_b",
+      peerProfile,
     });
     windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
       sync: {
         enabled: true,
         relayUrl: "http://159.75.175.47:8787",
@@ -2686,10 +2735,120 @@ describe("App", () => {
           pairId: "pair_1",
           peerDeviceId: "dev_b",
         }),
+        profile: expect.objectContaining({
+          peerByDeviceId: { dev_b: peerProfile },
+        }),
       }),
     );
     expect(screen.queryByLabelText("当前绑定码")).toBeNull();
     expect(screen.getByText("已绑定")).toBeTruthy();
+  });
+
+  it("renders basic information between pet and remote settings", async () => {
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+
+    const basicInformation = screen.getByRole("region", { name: "基本信息" });
+    const remoteInteraction = screen.getByRole("region", { name: "远程互动" });
+    expect(
+      basicInformation.compareDocumentPosition(remoteInteraction) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("blocks create and accept while basic information is incomplete", async () => {
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+
+    expect(screen.getByText("请先完成基本信息")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "生成绑定码" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "绑定" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(relayHttpClientMock.createPairCode).not.toHaveBeenCalled();
+    expect(relayHttpClientMock.acceptPairCode).not.toHaveBeenCalled();
+  });
+
+  it("includes the complete profile when accepting and caches the returned peer profile", async () => {
+    relayHttpClientMock.acceptPairCode.mockResolvedValueOnce({
+      ok: true,
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      peerProfile,
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    fireEvent.change(screen.getByLabelText("输入绑定码"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "绑定" }));
+
+    await waitFor(() =>
+      expect(relayHttpClientMock.acceptPairCode).toHaveBeenCalledWith({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        displayName: "Q 版桌宠",
+        code: "123456",
+        profile: localProfile,
+      }),
+    );
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync: expect.objectContaining({
+          pairId: "pair_1",
+          peerDeviceId: "dev_b",
+        }),
+        profile: expect.objectContaining({
+          peerByDeviceId: { dev_b: peerProfile },
+        }),
+      }),
+    );
+  });
+
+  it("stores realtime peer profiles through the profile sync cache", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+    await flushAppEffects();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onPeerProfile?.("dev_b", peerProfile);
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profile: expect.objectContaining({
+            peerByDeviceId: { dev_b: peerProfile },
+          }),
+        }),
+      ),
+    );
   });
 
   it("unpairs through the relay before clearing local pair settings", async () => {

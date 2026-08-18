@@ -7,6 +7,7 @@ export interface SyncPanelProps {
   status: SyncRuntimeState;
   messages: SessionMessage[];
   pairCode: { code: string; expiresAt: string } | null;
+  profileComplete: boolean;
   onSyncChange(patch: Partial<SyncSettings>): void;
   onCreatePairCode(): void;
   onAcceptPairCode(code: string): void;
@@ -18,6 +19,7 @@ export function SyncPanel({
   status,
   messages,
   pairCode,
+  profileComplete,
   onCreatePairCode,
   onAcceptPairCode,
   onUnpair,
@@ -32,7 +34,7 @@ export function SyncPanel({
   function handleAccept(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const code = acceptCode.trim();
-    if (code) {
+    if (profileComplete && code) {
       onAcceptPairCode(code);
       setAcceptCode("");
     }
@@ -48,7 +50,7 @@ export function SyncPanel({
       <div className="sync-pair-actions">
         <button
           type="button"
-          disabled={Boolean(sync.pairId)}
+          disabled={Boolean(sync.pairId) || !profileComplete}
           onClick={onCreatePairCode}
         >
           生成绑定码
@@ -66,6 +68,10 @@ export function SyncPanel({
         ) : null}
       </div>
 
+      {!profileComplete ? (
+        <p className="sync-profile-required">请先完成基本信息</p>
+      ) : null}
+
       <form className="sync-inline-form" onSubmit={handleAccept}>
         <label className="sync-field">
           <span>输入绑定码</span>
@@ -73,11 +79,12 @@ export function SyncPanel({
             aria-label="输入绑定码"
             type="text"
             inputMode="numeric"
+            disabled={!profileComplete}
             value={acceptCode}
             onChange={(event) => setAcceptCode(event.currentTarget.value)}
           />
         </label>
-        <button type="submit">
+        <button type="submit" disabled={!profileComplete}>
           绑定
         </button>
       </form>

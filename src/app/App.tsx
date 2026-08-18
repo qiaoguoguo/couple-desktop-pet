@@ -44,6 +44,7 @@ import {
 } from "../sync/remoteMessageQueue";
 import { SyncPanel } from "../sync/SyncPanel";
 import { useRealtimeSync } from "../sync/useRealtimeSync";
+import { useProfileSync } from "../profile/useProfileSync";
 import type { SessionMessage } from "../sync/syncTypes";
 import { MessageComposerPanel } from "../message/MessageComposerPanel";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
@@ -54,13 +55,18 @@ import {
 } from "../pet-core/petStateMachine";
 import { FramePetStage } from "../renderer/FramePetStage";
 import { SettingsPanel } from "../settings/SettingsPanel";
+import { ProfilePanel } from "../settings/ProfilePanel";
 import {
   loadSettings,
   mergeSettings,
   saveSettings,
   type SettingsPersistenceApi,
 } from "../settings/settingsStore";
-import type { PetSettings, SyncSettings } from "../settings/settingsTypes";
+import type {
+  PetSettings,
+  ProfileSettings,
+  SyncSettings,
+} from "../settings/settingsTypes";
 import {
   interactionOptions,
   type InteractionMenuSelection,
@@ -76,6 +82,7 @@ import {
 } from "../pet-core/motionPoolDirector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
 import type { ActivityStatus } from "../../shared/activityStatus";
+import type { DeviceProfileV1 } from "../../shared/profileProtocol";
 import {
   BUILT_IN_PET_PACKAGE_ID,
   PET_ACTION_DURATION_MS,
@@ -152,6 +159,14 @@ export function App() {
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const statusPickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const edgeDragPointerHeldRef = useRef(false);
+  const profileSync = useProfileSync({
+    settings,
+    updateSettings: (nextSettings) => {
+      settingsRef.current = nextSettings;
+      setSettings(nextSettings);
+    },
+    persistSettings: (nextSettings) => saveSettings(settingsApi, nextSettings),
+  });
 
   const petPackages = useMemo(
     () =>
@@ -250,8 +265,9 @@ export function App() {
 
         setRemoteMessages((current) => enqueueRemoteMessage(current, message));
       },
+      onPeerProfile: profileSync.rememberPeer,
     }),
-    [selectedPetPackage.motions, setVisibleMotion],
+    [profileSync.rememberPeer, selectedPetPackage.motions, setVisibleMotion],
   );
   const realtime = useRealtimeSync(settings.sync, realtimeCallbacks);
   const syncStatus = useMemo(
@@ -800,6 +816,25 @@ export function App() {
     [handleSettingsChange],
   );
 
+  const storeAcceptedPair = useCallback(
+    (
+      sync: SyncSettings,
+      pairId: string,
+      peerDeviceId: string,
+      peerProfile?: DeviceProfileV1,
+    ) => {
+      const current = settingsRef.current;
+      handleSettingsChange({
+        sync: { ...sync, pairId, peerDeviceId },
+        profile:
+          peerProfile === undefined
+            ? current.profile
+            : storePeerProfile(current.profile, peerDeviceId, peerProfile),
+      });
+    },
+    [handleSettingsChange],
+  );
+
   const clearLocalPair = useCallback(() => {
     handleSyncChange({ pairId: null, peerDeviceId: null });
     setPairCode(null);
@@ -921,11 +956,12 @@ export function App() {
       }
 
       if (result.status === "paired") {
-        handleSyncChange({
-          ...currentSync,
-          pairId: result.pairId,
-          peerDeviceId: result.peerDeviceId,
-        });
+        storeAcceptedPair(
+          currentSync,
+          result.pairId,
+          result.peerDeviceId,
+          result.peerProfile,
+        );
         setPairCode(null);
         setSessionMessages([]);
         setSyncError(null);
@@ -952,10 +988,16 @@ export function App() {
       disposed = true;
       clearTimer();
     };
-  }, [handleSyncChange, pairCode]);
+  }, [pairCode, storeAcceptedPair]);
 
   const handleCreatePairCode = useCallback(async () => {
-    const currentSync = settingsRef.current.sync;
+    const current = settingsRef.current;
+    const currentSync = current.sync;
+    if (current.profile.local === null) {
+      setSyncError("请先完成基本信息");
+      return;
+    }
+
     if (!currentSync.enabled) {
       setSyncError("请先启用远程互动");
       return;
@@ -969,6 +1011,7 @@ export function App() {
       deviceId: identity.deviceId ?? "",
       deviceSecret: identity.deviceSecret ?? "",
       displayName: "Q 版桌宠",
+      profile: current.profile.local,
     });
 
     if (result.ok) {
@@ -981,8 +1024,14 @@ export function App() {
 
   const handleAcceptPairCode = useCallback(
     async (code: string) => {
+      const current = settingsRef.current;
+      if (current.profile.local === null) {
+        setSyncError("请先完成基本信息");
+        return;
+      }
+
       const identity = ensureDeviceIdentity({
-        ...settingsRef.current.sync,
+        ...current.sync,
         enabled: true,
       });
       handleSyncChange(identity);
@@ -993,14 +1042,16 @@ export function App() {
         deviceSecret: identity.deviceSecret ?? "",
         displayName: "Q 版桌宠",
         code,
+        profile: current.profile.local,
       });
 
       if (result.ok) {
-        handleSyncChange({
-          ...identity,
-          pairId: result.pairId,
-          peerDeviceId: result.peerDeviceId,
-        });
+        storeAcceptedPair(
+          identity,
+          result.pairId,
+          result.peerDeviceId,
+          result.peerProfile,
+        );
         setPairCode(null);
         setSessionMessages([]);
         return;
@@ -1008,7 +1059,7 @@ export function App() {
 
       setSyncError(readRelayUserMessage(result.code, result.message));
     },
-    [handleSyncChange],
+    [handleSyncChange, storeAcceptedPair],
   );
 
   const handleSendMessage = useCallback(
@@ -1427,11 +1478,20 @@ export function App() {
             onChange={handleSettingsChange}
             onResetPosition={handleResetPosition}
           />
+          <ProfilePanel
+            profile={settings.profile.local}
+            searchState={profileSync.searchState}
+            searchResults={profileSync.searchResults}
+            saveState={profileSync.saveState}
+            onSearch={profileSync.searchCities}
+            onSave={profileSync.saveLocalProfile}
+          />
           <SyncPanel
             sync={settings.sync}
             status={syncStatus}
             messages={sessionMessages}
             pairCode={pairCode}
+            profileComplete={profileSync.isComplete}
             onSyncChange={handleSyncChange}
             onCreatePairCode={handleCreatePairCode}
             onAcceptPairCode={handleAcceptPairCode}
@@ -1527,6 +1587,41 @@ function getInteractionMenuPosition() {
       interactionMenuBottomRadius,
     ),
   };
+}
+
+function storePeerProfile(
+  profileSettings: ProfileSettings,
+  deviceId: string,
+  incoming: DeviceProfileV1,
+): ProfileSettings {
+  const peers = profileSettings.peerByDeviceId;
+  const existing = Object.prototype.hasOwnProperty.call(peers, deviceId)
+    ? peers[deviceId]
+    : undefined;
+  if (existing && !isNewerProfile(incoming, existing)) {
+    return profileSettings;
+  }
+
+  return {
+    ...profileSettings,
+    peerByDeviceId: Object.fromEntries([
+      ...Object.entries(peers).filter(([storedId]) => storedId !== deviceId),
+      [deviceId, incoming],
+    ]),
+  };
+}
+
+function isNewerProfile(
+  incoming: DeviceProfileV1,
+  existing: DeviceProfileV1,
+): boolean {
+  const incomingTime = Date.parse(incoming.updatedAt);
+  const existingTime = Date.parse(existing.updatedAt);
+  if (Number.isFinite(incomingTime) && Number.isFinite(existingTime)) {
+    return incomingTime > existingTime;
+  }
+
+  return incoming.updatedAt > existing.updatedAt;
 }
 
 function readRelayUserMessage(code: string, fallback: string) {

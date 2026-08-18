@@ -24,6 +24,7 @@ function renderSyncPanel(props: Partial<SyncPanelProps> = {}) {
     status: syncStatus(),
     messages: [],
     pairCode: null,
+    profileComplete: true,
     onSyncChange: vi.fn(),
     onCreatePairCode: vi.fn(),
     onAcceptPairCode: vi.fn(),
@@ -63,6 +64,7 @@ describe("SyncPanel", () => {
         status={syncStatus()}
         messages={[]}
         pairCode={{ code: "123456", expiresAt: "2026-08-03T12:10:00.000Z" }}
+        profileComplete={true}
         onSyncChange={vi.fn()}
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
@@ -83,6 +85,7 @@ describe("SyncPanel", () => {
         status={syncStatus()}
         messages={[]}
         pairCode={null}
+        profileComplete={true}
         onSyncChange={vi.fn()}
         onCreatePairCode={vi.fn()}
         onAcceptPairCode={vi.fn()}
@@ -131,5 +134,30 @@ describe("SyncPanel", () => {
 
     expect(screen.getByText("对方在线")).toBeTruthy();
     expect(screen.getByText("想你啦")).toBeTruthy();
+  });
+
+  it("blocks both pairing paths until basic information is complete", () => {
+    const onCreatePairCode = vi.fn();
+    const onAcceptPairCode = vi.fn();
+    renderSyncPanel({
+      profileComplete: false,
+      onCreatePairCode,
+      onAcceptPairCode,
+    });
+
+    const createButton = screen.getByRole("button", { name: "生成绑定码" });
+    const acceptButton = screen.getByRole("button", { name: "绑定" });
+    expect(createButton.hasAttribute("disabled")).toBe(true);
+    expect(acceptButton.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("请先完成基本信息")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("输入绑定码"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(createButton);
+    fireEvent.click(acceptButton);
+
+    expect(onCreatePairCode).not.toHaveBeenCalled();
+    expect(onAcceptPairCode).not.toHaveBeenCalled();
   });
 });

@@ -583,6 +583,177 @@ body {
   color: #2c1f18;
 }
 
+.profile-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px 12px;
+  border-top: 1px solid #dedede;
+  background: #fff;
+  color: #171717;
+  font-size: 13px;
+}
+
+.profile-panel-header {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-panel h2,
+.profile-panel p {
+  margin: 0;
+}
+
+.profile-panel h2 {
+  font-size: 16px;
+}
+
+.profile-panel-header p,
+.profile-field small,
+.profile-search-status,
+.profile-privacy,
+.profile-sync-state {
+  color: #686868;
+  font-size: 12px;
+}
+
+.profile-form,
+.profile-field {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-panel input,
+.profile-panel button {
+  box-sizing: border-box;
+  height: 40px;
+  border: 1px solid #bdbdbd;
+  border-radius: 5px;
+  font: inherit;
+}
+
+.profile-panel input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  background: #fff;
+  color: #171717;
+}
+
+.profile-panel input:focus-visible,
+.profile-panel button:focus-visible {
+  outline: 2px solid #d92d2d;
+  outline-offset: 1px;
+}
+
+.profile-city-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 6px;
+}
+
+.profile-city-search button {
+  display: grid;
+  width: 40px;
+  place-items: center;
+  border-color: #171717;
+  background: #171717;
+  color: #fff;
+}
+
+.profile-panel svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.profile-city-results {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-city-results button {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #171717;
+  text-align: left;
+}
+
+.profile-city-results button > span {
+  display: grid;
+  min-width: 0;
+}
+
+.profile-city-results small {
+  overflow: hidden;
+  color: #686868;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-city-results button.is-selected {
+  border-color: #171717;
+  background: #171717;
+  color: #fff;
+}
+
+.profile-city-results button.is-selected small {
+  color: #d8d8d8;
+}
+
+.profile-city-results button.is-selected svg {
+  flex: 0 0 auto;
+  color: #f04444;
+}
+
+.profile-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.45;
+}
+
+.profile-privacy svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.profile-error {
+  color: #c82323;
+  font-size: 12px;
+}
+
+.profile-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.profile-actions button {
+  background: #fff;
+  color: #171717;
+}
+
+.profile-actions .profile-save {
+  border-color: #171717;
+  background: #171717;
+  color: #fff;
+}
+
+.profile-panel button:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
 .sync-panel {
   display: grid;
   gap: 8px;
@@ -681,6 +852,11 @@ body {
 }
 
 .sync-error {
+  margin: 0;
+  color: #8c1d18;
+}
+
+.sync-profile-required {
   margin: 0;
   color: #8c1d18;
 }
