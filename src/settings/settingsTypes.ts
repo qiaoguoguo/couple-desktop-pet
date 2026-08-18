@@ -1,4 +1,8 @@
 import type { ActivityStatus } from "../../shared/activityStatus";
+import type {
+  DeviceProfileV1,
+  ProfileUpdateV1,
+} from "../../shared/profileProtocol";
 
 export type MovementRange = "bottom" | "active-screen" | "free";
 
@@ -17,6 +21,12 @@ export interface AppearanceSettings {
   peerPetPackageByDeviceId: Record<string, string>;
 }
 
+export interface ProfileSettings {
+  local: ProfileUpdateV1 | null;
+  peerByDeviceId: Record<string, DeviceProfileV1>;
+  syncState: "idle" | "saving" | "synced" | "pending" | "error";
+}
+
 export interface PetSettings {
   scale: number;
   autoMoveEnabled: boolean;
@@ -25,5 +35,6 @@ export interface PetSettings {
   alwaysOnTop: boolean;
   clickThrough: boolean;
   appearance: AppearanceSettings;
+  profile: ProfileSettings;
   sync: SyncSettings;
 }

@@ -1,11 +1,19 @@
 import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
 import { isNullableActivityStatus } from "../../shared/activityStatus";
+import {
+  readDeviceProfile,
+  validateProfileUpdate,
+} from "../../shared/profileProtocol";
 import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
 
 const LEGACY_BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper";
 
-export type { MovementRange, PetSettings } from "./settingsTypes";
+export type {
+  MovementRange,
+  PetSettings,
+  ProfileSettings,
+} from "./settingsTypes";
 
 export interface SettingsPersistenceApi {
   readSettings(): Promise<unknown>;
@@ -23,6 +31,7 @@ export function mergeSettings(input: Partial<PetSettings>): PetSettings {
     alwaysOnTop: readBoolean(settings.alwaysOnTop, defaultSettings.alwaysOnTop),
     clickThrough: readBoolean(settings.clickThrough, defaultSettings.clickThrough),
     appearance: readAppearanceSettings(settings.appearance),
+    profile: readProfileSettings(settings.profile),
     sync: readSyncSettings(settings.sync),
   };
 }
@@ -190,6 +199,57 @@ function readAppearanceSettings(value: unknown): PetSettings["appearance"] {
       value.peerPetPackageByDeviceId,
     ),
   };
+}
+
+function readProfileSettings(value: unknown): PetSettings["profile"] {
+  if (!isRecord(value)) {
+    return {
+      local: null,
+      peerByDeviceId: {},
+      syncState: defaultSettings.profile.syncState,
+    };
+  }
+
+  const localProfile = validateProfileUpdate(value.local);
+
+  return {
+    local: localProfile.ok ? localProfile.profile : null,
+    peerByDeviceId: readPeerProfiles(value.peerByDeviceId),
+    syncState: readProfileSyncState(value.syncState),
+  };
+}
+
+function readPeerProfiles(value: unknown): PetSettings["profile"]["peerByDeviceId"] {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const profiles: PetSettings["profile"]["peerByDeviceId"] = {};
+
+  for (const [deviceId, valueProfile] of Object.entries(value)) {
+    if (!deviceId.trim()) {
+      continue;
+    }
+
+    const profile = readDeviceProfile(valueProfile);
+    if (profile !== null) {
+      profiles[deviceId] = profile;
+    }
+  }
+
+  return profiles;
+}
+
+function readProfileSyncState(value: unknown): PetSettings["profile"]["syncState"] {
+  if (value === "saving" || value === "error") {
+    return "pending";
+  }
+
+  if (value === "synced" || value === "pending") {
+    return value;
+  }
+
+  return "idle";
 }
 
 function readPetPackageMapping(value: unknown): Record<string, string> {

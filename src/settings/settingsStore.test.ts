@@ -8,6 +8,36 @@ import {
   type SettingsPersistenceApi,
 } from "./settingsStore";
 
+const city = {
+  provider: "weatherapi",
+  providerLocationId: 1785728,
+  name: "杭州",
+  region: "浙江",
+  country: "中国",
+  latitude: 30.27,
+  longitude: 120.15,
+} as const;
+
+const localProfile = {
+  version: 1,
+  nickname: "小满",
+  city,
+} as const;
+
+const peerProfile = {
+  version: 1,
+  nickname: "阿岚",
+  city: {
+    ...city,
+    providerLocationId: 1795565,
+    name: "上海",
+    region: "上海",
+    latitude: 31.23,
+    longitude: 121.47,
+  },
+  updatedAt: "2026-08-18T08:00:00.000Z",
+} as const;
+
 describe("settings defaults", () => {
   it("uses local desktop pet defaults", () => {
     expect(defaultSettings.scale).toBe(1);
@@ -33,9 +63,72 @@ describe("settings defaults", () => {
       activityStatus: null,
     });
   });
+
+  it("uses empty profile defaults", () => {
+    expect(defaultSettings.profile).toEqual({
+      local: null,
+      peerByDeviceId: {},
+      syncState: "idle",
+    });
+  });
 });
 
 describe("mergeSettings", () => {
+  it("adds empty profile state to legacy settings", () => {
+    const settings = mergeSettings({
+      scale: 1,
+      sync: { ...defaultSettings.sync },
+    });
+
+    expect(settings.profile).toEqual({
+      local: null,
+      peerByDeviceId: {},
+      syncState: "idle",
+    });
+  });
+
+  it("keeps valid local and peer profiles", () => {
+    const settings = mergeSettings({
+      profile: {
+        local: { ...localProfile, nickname: "  小满  " },
+        peerByDeviceId: { dev_b: peerProfile },
+        syncState: "synced",
+      },
+    } as never);
+
+    expect(settings.profile.local?.nickname).toBe("小满");
+    expect(settings.profile.peerByDeviceId.dev_b.nickname).toBe("阿岚");
+    expect(settings.profile.syncState).toBe("synced");
+  });
+
+  it("drops malformed local and peer profiles independently", () => {
+    const settings = mergeSettings({
+      profile: {
+        local: { ...localProfile, city: { ...city, provider: "unknown" } },
+        peerByDeviceId: {
+          dev_b: peerProfile,
+          dev_bad: { ...peerProfile, version: 2 },
+          dev_missing: null,
+        },
+        syncState: "synced",
+      },
+    } as never);
+
+    expect(settings.profile.local).toBeNull();
+    expect(settings.profile.peerByDeviceId).toEqual({ dev_b: peerProfile });
+  });
+
+  it.each(["saving", "error"])(
+    "normalizes transient %s state to pending",
+    (syncState) => {
+      expect(
+        mergeSettings({
+          profile: { local: localProfile, peerByDeviceId: {}, syncState },
+        } as never).profile.syncState,
+      ).toBe("pending");
+    },
+  );
+
   it("defaults appearance settings to the built-in package", () => {
     expect(mergeSettings({}).appearance).toEqual({
       selectedPetPackageId: "builtin:q-girl",
@@ -134,6 +227,11 @@ describe("mergeSettings", () => {
         peerPetPackageByDeviceId: {
           dev_a: "imported:moon-buddy",
         },
+      },
+      profile: {
+        local: null,
+        peerByDeviceId: {},
+        syncState: "idle",
       },
       sync: {
         enabled: true,
@@ -394,6 +492,11 @@ describe("settings persistence", () => {
         peerPetPackageByDeviceId: {
           dev_a: "imported:moon-buddy",
         },
+      },
+      profile: {
+        local: null,
+        peerByDeviceId: {},
+        syncState: "idle",
       },
       sync: {
         enabled: true,

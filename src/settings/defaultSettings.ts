@@ -14,6 +14,11 @@ export const defaultSettings: PetSettings = {
     selectedPetPackageId: BUILT_IN_PET_PACKAGE_ID,
     peerPetPackageByDeviceId: {},
   },
+  profile: {
+    local: null,
+    peerByDeviceId: {},
+    syncState: "idle",
+  },
   sync: {
     enabled: true,
     relayUrl: DEFAULT_RELAY_URL,
