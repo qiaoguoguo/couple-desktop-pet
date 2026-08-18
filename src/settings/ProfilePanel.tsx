@@ -4,9 +4,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import type {
-  CityLocationV1,
-  ProfileUpdateV1,
+import {
+  NICKNAME_MAX_LENGTH,
+  type CityLocationV1,
+  type ProfileUpdateV1,
 } from "../../shared/profileProtocol";
 import type { ProfileSettings } from "./settingsTypes";
 
@@ -40,6 +41,7 @@ export function ProfilePanel({
   const trimmedNickname = nickname.trim();
   const saving = saveState === "saving";
   const canSave = Boolean(trimmedNickname && selectedCity) && !saving;
+  const persistedProfileSignature = profileSignature(profile);
 
   useEffect(() => {
     setNickname(profile?.nickname ?? "");
@@ -47,16 +49,17 @@ export function ProfilePanel({
     setSelectedCity(profile?.city ?? null);
     setSaveAttempted(false);
     setFormError(null);
-  }, [profile]);
+  }, [persistedProfileSignature]);
 
   function requestSearch() {
     const query = cityQuery.trim();
-    setHasSearched(true);
     setFormError(null);
     if (!query) {
+      setHasSearched(false);
       return;
     }
 
+    setHasSearched(true);
     void onSearch(query);
   }
 
@@ -112,10 +115,9 @@ export function ProfilePanel({
           <input
             aria-label="昵称"
             type="text"
-            maxLength={20}
             value={nickname}
             onChange={(event) => {
-              setNickname(event.currentTarget.value);
+              setNickname(limitNickname(event.currentTarget.value));
               setFormError(null);
             }}
           />
@@ -168,7 +170,9 @@ export function ProfilePanel({
                 <button
                   key={`${city.provider}:${city.providerLocationId}`}
                   type="button"
-                  className={selected ? "is-selected" : undefined}
+                  className={`profile-city-result${
+                    selected ? " is-selected" : ""
+                  }`}
                   aria-label={label}
                   aria-pressed={selected}
                   onClick={() => {
@@ -177,9 +181,11 @@ export function ProfilePanel({
                     setFormError(null);
                   }}
                 >
-                  <span>
-                    <strong>{city.name}</strong>
-                    <small>{[city.region, city.country].filter(Boolean).join(" · ")}</small>
+                  <span className="profile-city-result-copy">
+                    <strong className="profile-city-name">{city.name}</strong>
+                    <small>
+                      {[city.region, city.country].filter(Boolean).join(" · ")}
+                    </small>
                   </span>
                   {selected ? <CheckIcon /> : null}
                 </button>
@@ -222,6 +228,28 @@ export function ProfilePanel({
 
 function cityLabel(city: CityLocationV1): string {
   return [city.name, city.region, city.country].filter(Boolean).join(" ");
+}
+
+function profileSignature(profile: ProfileUpdateV1 | null): string {
+  if (profile === null) {
+    return "";
+  }
+
+  return JSON.stringify([
+    profile.version,
+    profile.nickname,
+    profile.city.provider,
+    profile.city.providerLocationId,
+    profile.city.name,
+    profile.city.region,
+    profile.city.country,
+    profile.city.latitude,
+    profile.city.longitude,
+  ]);
+}
+
+function limitNickname(value: string): string {
+  return Array.from(value).slice(0, NICKNAME_MAX_LENGTH).join("");
 }
 
 function sameCity(

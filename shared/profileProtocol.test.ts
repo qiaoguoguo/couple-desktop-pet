@@ -39,17 +39,18 @@ describe("validateProfileUpdate", () => {
   );
 
   it("counts nickname limits by Unicode code point", () => {
+    const emoji = "😀";
     expect(
       validateProfileUpdate({
         version: 1,
-        nickname: "晴".repeat(20),
+        nickname: emoji.repeat(20),
         city: validCity,
       }),
     ).toMatchObject({ ok: true });
     expect(
       validateProfileUpdate({
         version: 1,
-        nickname: "晴".repeat(21),
+        nickname: emoji.repeat(21),
         city: validCity,
       }),
     ).toMatchObject({ ok: false });

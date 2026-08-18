@@ -58,6 +58,63 @@ describe("ProfilePanel", () => {
     expect(onSearch).toHaveBeenLastCalledWith("苏州");
   });
 
+  it("keeps an unsaved draft when the persisted profile is reconstructed unchanged", () => {
+    const initialProfile = {
+      version: 1 as const,
+      nickname: "小满",
+      city: hangzhou,
+    };
+    const view = renderProfilePanel({ profile: initialProfile });
+
+    fireEvent.change(screen.getByLabelText("昵称"), {
+      target: { value: "未保存昵称" },
+    });
+    fireEvent.change(screen.getByLabelText("所在城市"), {
+      target: { value: "未保存城市" },
+    });
+
+    view.rerender(
+      <ProfilePanel
+        {...view.props}
+        profile={{
+          ...initialProfile,
+          city: { ...initialProfile.city },
+        }}
+      />,
+    );
+
+    expect((screen.getByLabelText("昵称") as HTMLInputElement).value).toBe(
+      "未保存昵称",
+    );
+    expect((screen.getByLabelText("所在城市") as HTMLInputElement).value).toBe(
+      "未保存城市",
+    );
+  });
+
+  it("accepts 20 emoji code points and trims a 21st consistently", async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true });
+    renderProfilePanel({ searchResults: [hangzhou], onSave });
+    const nickname = screen.getByLabelText("昵称") as HTMLInputElement;
+    const twentyEmoji = "😀".repeat(20);
+
+    expect(nickname.getAttribute("maxlength")).toBeNull();
+    fireEvent.change(nickname, { target: { value: twentyEmoji } });
+    expect(nickname.value).toBe(twentyEmoji);
+
+    fireEvent.change(nickname, { target: { value: `${twentyEmoji}😀` } });
+    expect(nickname.value).toBe(twentyEmoji);
+    fireEvent.click(screen.getByRole("button", { name: /杭州 浙江 中国/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        version: 1,
+        nickname: twentyEmoji,
+        city: hangzhou,
+      }),
+    );
+  });
+
   it("requires a nickname and selected result before save", () => {
     const { props } = renderProfilePanel();
     const saveButton = screen.getByRole("button", { name: "保存资料" });
@@ -121,6 +178,35 @@ describe("ProfilePanel", () => {
       />,
     );
     expect(screen.getAllByRole("button", { name: /城市\d/ })).toHaveLength(5);
+  });
+
+  it("keeps a boundary-length city name inside an ellipsis container", () => {
+    const longName = "城".repeat(80);
+    renderProfilePanel({
+      searchResults: [{ ...hangzhou, name: longName }],
+    });
+
+    const cityName = screen.getByText(longName);
+    const copy = cityName.parentElement;
+    const result = cityName.closest("button");
+    expect(cityName.className).toBe("profile-city-name");
+    expect(copy?.className).toBe("profile-city-result-copy");
+    expect(result?.classList.contains("profile-city-result")).toBe(true);
+    expect(copy?.parentElement).toBe(result);
+  });
+
+  it("keeps prior results hidden after a blank search submission", () => {
+    const onSearch = vi.fn().mockResolvedValue(undefined);
+    renderProfilePanel({ searchResults: [hangzhou], onSearch });
+    expect(screen.getByLabelText("城市搜索结果")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("所在城市"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索城市" }));
+
+    expect(screen.queryByLabelText("城市搜索结果")).toBeNull();
+    expect(onSearch).not.toHaveBeenCalled();
   });
 
   it("selects a city and saves the normalized basic profile", async () => {

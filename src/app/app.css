@@ -687,9 +687,23 @@ body {
   text-align: left;
 }
 
-.profile-city-results button > span {
+.profile-city-result {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.profile-city-result-copy {
   display: grid;
   min-width: 0;
+  overflow: hidden;
+}
+
+.profile-city-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-city-results small {

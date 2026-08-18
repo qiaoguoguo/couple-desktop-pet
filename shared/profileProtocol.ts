@@ -1,7 +1,7 @@
 export const PROFILE_SYNC_CAPABILITY = "profile-v1" as const;
 export type ProfileSyncCapability = typeof PROFILE_SYNC_CAPABILITY;
 
-const NICKNAME_MAX_LENGTH = 20;
+export const NICKNAME_MAX_LENGTH = 20;
 const CITY_TEXT_MAX_LENGTH = 80;
 
 export interface CityLocationV1 {
