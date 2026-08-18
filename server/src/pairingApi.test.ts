@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openRelayDatabase } from "./database.js";
 import { WeatherProviderError, type ProviderWeather, type WeatherProvider } from "./weather/weatherProvider.js";
 import { createRelayServer, type RelayServer } from "./server.js";
 
@@ -435,6 +436,37 @@ describe("profile and weather HTTP API", () => {
     ).toBe(429);
   });
 
+  it("rejects a source-limited search before creating its fresh identity", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      const response = await postJson(`${baseUrl}/locations/search`, {
+        deviceId: "dev_search",
+        deviceSecret: "secret_search",
+        query: "Hangzhou",
+      });
+      expect(response.status).toBe(200);
+    }
+
+    searchLocations.mockClear();
+    const limited = await postJson(`${baseUrl}/locations/search`, {
+      deviceId: "dev_rejected",
+      deviceSecret: "secret_rejected",
+      query: "Shanghai",
+    });
+
+    expect(limited.status).toBe(429);
+    await expect(limited.json()).resolves.toEqual({
+      error: { code: "rate_limited", message: "Too many requests" },
+    });
+    expect(searchLocations).not.toHaveBeenCalled();
+
+    const inspectionDb = openRelayDatabase(join(tempDir, "relay.sqlite"));
+    const rejectedIdentity = inspectionDb
+      .prepare("SELECT device_id FROM devices WHERE device_id = ?")
+      .get("dev_rejected");
+    inspectionDb.close();
+    expect(rejectedIdentity).toBeUndefined();
+  });
+
   it("returns both offline pair members using only repository coordinates", async () => {
     const pairId = await createProfilePair();
     const response = await postJson(`${baseUrl}/pairs/weather`, {
@@ -536,6 +568,47 @@ describe("profile and weather HTTP API", () => {
       pairId,
     });
     expect(limited.status).toBe(429);
+  });
+
+  it("shares the thirty-per-minute pair-weather limit across one source IP", async () => {
+    const firstPairId = await createProfilePair();
+    const secondCodeResponse = await postJson(`${baseUrl}/pair-codes`, {
+      deviceId: "dev_c",
+      deviceSecret: "secret_c",
+      displayName: "legacy-c",
+      profile: profileA,
+    });
+    const secondCode = (await secondCodeResponse.json()) as { code: string };
+    const secondPairResponse = await postJson(`${baseUrl}/pairs/accept`, {
+      deviceId: "dev_d",
+      deviceSecret: "secret_d",
+      displayName: "legacy-d",
+      profile: profileB,
+      code: secondCode.code,
+    });
+    const secondPair = (await secondPairResponse.json()) as { pairId: string };
+
+    for (let index = 0; index < 30; index += 1) {
+      const response = await postJson(`${baseUrl}/pairs/weather`, {
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: firstPairId,
+      });
+      expect(response.status).toBe(200);
+    }
+
+    getCurrentDay.mockClear();
+    const limited = await postJson(`${baseUrl}/pairs/weather`, {
+      deviceId: "dev_c",
+      deviceSecret: "secret_c",
+      pairId: secondPair.pairId,
+    });
+
+    expect(limited.status).toBe(429);
+    await expect(limited.json()).resolves.toEqual({
+      error: { code: "rate_limited", message: "Too many requests" },
+    });
+    expect(getCurrentDay).not.toHaveBeenCalled();
   });
 
   it("starts without a key and reports weather_not_configured", async () => {

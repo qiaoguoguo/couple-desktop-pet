@@ -10,6 +10,11 @@ as of 2026-08-18. The Relay has no paid provider fallback: when the key is
 missing or unusable, pairing and messaging remain available while weather
 requests return a stable unavailable state.
 
+Every pair-weather panel open still requests the Relay. Successful weather for
+each city is considered fresh for one hour from `fetchedAt`; requests before
+that boundary use the Relay cache, while requests at or after one hour refresh
+the supplier.
+
 ```powershell
 ssh root@159.75.175.47 "mkdir -p /opt/couple-pet-relay"
 scp -r server shared package.json pnpm-lock.yaml pnpm-workspace.yaml deploy/couple-pet-relay root@159.75.175.47:/opt/couple-pet-relay/

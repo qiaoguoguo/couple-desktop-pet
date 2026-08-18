@@ -64,16 +64,16 @@ async function handleRequest(
 
     if (request.method === "POST" && url.pathname === "/locations/search") {
       const body = readLocationSearchRequest(await readBodyOrThrow(request));
+      consumeRateLimit(
+        dependencies.rateLimiter,
+        `locations:ip:${request.socket.remoteAddress ?? "unknown"}`,
+        10,
+        60_000,
+      );
       repository.ensureDeviceIdentity(body);
       consumeRateLimit(
         dependencies.rateLimiter,
         `locations:device:${body.deviceId}`,
-        10,
-        60_000,
-      );
-      consumeRateLimit(
-        dependencies.rateLimiter,
-        `locations:ip:${request.socket.remoteAddress ?? "unknown"}`,
         10,
         60_000,
       );
@@ -109,6 +109,12 @@ async function handleRequest(
 
     if (request.method === "POST" && url.pathname === "/pairs/weather") {
       const body = readPairWeatherRequest(await readBodyOrThrow(request));
+      consumeRateLimit(
+        dependencies.rateLimiter,
+        `weather:ip:${request.socket.remoteAddress ?? "unknown"}`,
+        30,
+        60_000,
+      );
       const profiles = repository.getPairProfiles(body);
       consumeRateLimit(
         dependencies.rateLimiter,
