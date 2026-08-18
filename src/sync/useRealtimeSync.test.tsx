@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DeviceProfileV1 } from "../../shared/profileProtocol";
 import { defaultSettings } from "../settings/defaultSettings";
 import {
   E2E_REALTIME_OVERRIDE_EVENT,
@@ -25,6 +26,7 @@ const realtimeMock = vi.hoisted(() => {
           text?: string;
           at?: string;
           content?: unknown;
+          profile?: DeviceProfileV1;
         }): void;
         activityStatus?: string | null;
         }
@@ -250,6 +252,43 @@ describe("useRealtimeSync", () => {
     });
   });
 
+  it("routes peer profiles through the latest callback without rebuilding the client", () => {
+    const firstCallback = vi.fn();
+    const latestCallback = vi.fn();
+    const { rerender } = render(
+      <HookProbe onPeerProfile={firstCallback} />,
+    );
+    const firstOptions = realtimeMock.latestOptions;
+    const profile: DeviceProfileV1 = {
+      version: 1,
+      nickname: "阿岚",
+      city: null,
+      updatedAt: "2026-08-18T08:01:00.000Z",
+    };
+
+    rerender(<HookProbe onPeerProfile={latestCallback} />);
+    expect(realtimeMock.latestOptions).toBe(firstOptions);
+
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({
+        type: "peerProfile",
+        peerDeviceId: "dev_b",
+        profile,
+      });
+    });
+
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(latestCallback).toHaveBeenCalledWith("dev_b", profile);
+  });
+
+  it("disconnects the realtime client on unmount", () => {
+    const { unmount } = render(<HookProbe />);
+
+    unmount();
+
+    expect(realtimeMock.disconnect).toHaveBeenCalledTimes(1);
+  });
+
   it("lets the E2E realtime override replace and release the live client state", async () => {
     vi.stubEnv("VITE_TAURI_E2E", "1");
     (window as unknown as Record<string, unknown>)[
@@ -362,6 +401,7 @@ function HookProbe({
   includeActivityStatus = false,
   includeTimestamps = false,
   onMessage = () => undefined,
+  onPeerProfile = () => undefined,
 }: {
   activityStatus?: "slacking" | "dazing" | "overtime" | null;
   includeActivityStatus?: boolean;
@@ -373,6 +413,7 @@ function HookProbe({
     at: string;
     content?: unknown;
   }) => void;
+  onPeerProfile?: (deviceId: string, profile: DeviceProfileV1) => void;
 }) {
   const { state } = useRealtimeSync(
     {
@@ -384,7 +425,7 @@ function HookProbe({
       peerDeviceId: "dev_b",
       activityStatus,
     },
-    { onMessage },
+    { onMessage, onPeerProfile },
   );
 
   if (includeActivityStatus) {

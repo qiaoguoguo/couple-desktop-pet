@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { DeviceProfileV1 } from "../../shared/profileProtocol";
 import type { SyncSettings } from "../settings/settingsTypes";
 import type { StructuredMessageContent } from "../../shared/syncProtocol";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
@@ -12,6 +13,7 @@ export interface UseRealtimeSyncCallbacks {
     at: string;
     content?: StructuredMessageContent;
   }): void;
+  onPeerProfile?(peerDeviceId: string, profile: DeviceProfileV1): void;
 }
 
 export function useRealtimeSync(
@@ -75,6 +77,14 @@ export function useRealtimeSync(
             at: event.at,
             ...(event.content === undefined ? {} : { content: event.content }),
           });
+          return;
+        }
+
+        if (event.type === "peerProfile") {
+          callbacksRef.current.onPeerProfile?.(
+            event.peerDeviceId,
+            event.profile,
+          );
           return;
         }
 

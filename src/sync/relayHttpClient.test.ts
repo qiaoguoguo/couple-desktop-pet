@@ -1,6 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 import { RelayHttpClient } from "./relayHttpClient";
 
+const city = {
+  provider: "weatherapi" as const,
+  providerLocationId: 2654428,
+  name: "Hangzhou",
+  region: "Zhejiang",
+  country: "China",
+  latitude: 30.29,
+  longitude: 120.16,
+};
+
+const profileUpdate = {
+  version: 1 as const,
+  nickname: "小满",
+  city,
+};
+
+const deviceProfile = {
+  ...profileUpdate,
+  updatedAt: "2026-08-18T08:00:00.000Z",
+};
+
 describe("RelayHttpClient", () => {
   it("creates pair codes", async () => {
     const fetchMock = vi.fn(async () =>
@@ -174,5 +195,151 @@ describe("RelayHttpClient", () => {
       code: "relay_unavailable",
       message: "Relay unavailable",
     });
+  });
+
+  it("searches locations explicitly and parses normalized city contracts", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ locations: [city] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new RelayHttpClient(
+      "http://127.0.0.1:8787",
+      fetchMock as typeof fetch,
+    );
+
+    await expect(
+      client.searchLocations({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        query: "Hangzhou",
+      }),
+    ).resolves.toEqual({ ok: true, locations: [city] });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/locations/search",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("uses PUT for profile saves and parses the saved profile", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ profile: deviceProfile }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new RelayHttpClient(
+      "http://127.0.0.1:8787",
+      fetchMock as typeof fetch,
+    );
+
+    await expect(
+      client.saveProfile({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        profile: profileUpdate,
+      }),
+    ).resolves.toEqual({ ok: true, profile: deviceProfile });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/devices/profile",
+      expect.objectContaining({ method: "PUT" }),
+    );
+  });
+
+  it("gets pair weather and rejects malformed successful contracts", async () => {
+    const weather = {
+      version: 1 as const,
+      condition: "clear" as const,
+      conditionText: "Sunny",
+      currentTemperatureC: 26,
+      maxTemperatureC: 30,
+      minTemperatureC: 20,
+      rainChancePercent: 10,
+      fetchedAt: "2026-08-18T08:01:00.000Z",
+      source: "live" as const,
+    };
+    const pairWeather = {
+      self: { status: "ready" as const, profile: deviceProfile, weather },
+      peer: {
+        status: "unavailable" as const,
+        profile: { ...deviceProfile, nickname: "阿岚" },
+        reason: "provider_unavailable" as const,
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(pairWeather), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...pairWeather, self: { status: "ready" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    const client = new RelayHttpClient(
+      "http://127.0.0.1:8787",
+      fetchMock as typeof fetch,
+    );
+    const request = {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+    };
+
+    await expect(client.getPairWeather(request)).resolves.toEqual({
+      ok: true,
+      ...pairWeather,
+    });
+    await expect(client.getPairWeather(request)).resolves.toEqual({
+      ok: false,
+      code: "relay_unavailable",
+      message: "Relay unavailable",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8787/pairs/weather",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("rejects malformed successful profile and location responses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ locations: [{ ...city, latitude: 100 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ profile: { ...deviceProfile, version: 2 } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    const client = new RelayHttpClient(
+      "http://127.0.0.1:8787",
+      fetchMock as typeof fetch,
+    );
+
+    await expect(
+      client.searchLocations({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        query: "Hangzhou",
+      }),
+    ).resolves.toMatchObject({ ok: false, code: "relay_unavailable" });
+    await expect(
+      client.saveProfile({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        profile: profileUpdate,
+      }),
+    ).resolves.toMatchObject({ ok: false, code: "relay_unavailable" });
   });
 });

@@ -3,6 +3,10 @@ import {
   type ActivityStatus,
 } from "../../shared/activityStatus";
 import {
+  PROFILE_SYNC_CAPABILITY,
+  type DeviceProfileV1,
+} from "../../shared/profileProtocol";
+import {
   parseServerToClientMessage,
   validateMessageText,
   type ClientToServerMessage,
@@ -26,6 +30,12 @@ export type RealtimeClientEvent =
       type: "peerStatus";
       peerDeviceId: string;
       peerActivityStatus: ActivityStatus | null;
+      changedAt: string;
+    }
+  | {
+      type: "peerProfile";
+      peerDeviceId: string;
+      profile: DeviceProfileV1;
       changedAt: string;
     }
   | {
@@ -136,7 +146,7 @@ export class RealtimeClient {
       deviceId: this.options.deviceId,
       deviceSecret: this.options.deviceSecret,
       pairId: this.options.pairId,
-      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
     });
   }
 
@@ -184,6 +194,14 @@ export class RealtimeClient {
           type: "peerStatus",
           peerDeviceId: parsed.peerDeviceId,
           peerActivityStatus: parsed.activityStatus,
+          changedAt: parsed.changedAt,
+        });
+        return;
+      case "peer.profile":
+        this.options.onEvent({
+          type: "peerProfile",
+          peerDeviceId: parsed.peerDeviceId,
+          profile: parsed.profile,
           changedAt: parsed.changedAt,
         });
         return;

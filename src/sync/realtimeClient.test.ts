@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus";
+import { PROFILE_SYNC_CAPABILITY } from "../../shared/profileProtocol";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
 
 class FakeWebSocket extends EventTarget {
@@ -73,7 +74,7 @@ describe("RealtimeClient", () => {
       type: "auth",
       deviceId: "dev_a",
       pairId: "pair_1",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
     });
 
     fakeSocket.emitMessage({
@@ -208,7 +209,7 @@ describe("RealtimeClient", () => {
     fakeSocket.emitOpen();
     expect(fakeSocket.sentJson[0]).toMatchObject({
       type: "auth",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY],
+      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
     });
 
     fakeSocket.emitMessage({
@@ -249,6 +250,48 @@ describe("RealtimeClient", () => {
       peerDeviceId: "dev_b",
       peerActivityStatus: "slacking",
       changedAt: "2026-08-06T12:00:00.000Z",
+    });
+  });
+
+  it("advertises profile-v1 and emits peer profiles", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+    const profile = {
+      version: 1 as const,
+      nickname: "阿岚",
+      city: {
+        provider: "weatherapi" as const,
+        providerLocationId: 1796236,
+        name: "Shanghai",
+        region: "Shanghai",
+        country: "China",
+        latitude: 31.23,
+        longitude: 121.47,
+      },
+      updatedAt: "2026-08-18T08:01:00.000Z",
+    };
+
+    client.connect();
+    const fakeSocket = expectLatestSocket();
+    fakeSocket.emitOpen();
+    expect(fakeSocket.sentJson[0]).toMatchObject({
+      type: "auth",
+      capabilities: expect.arrayContaining([PROFILE_SYNC_CAPABILITY]),
+    });
+
+    fakeSocket.emitMessage({
+      type: "peer.profile",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+      profile,
+      changedAt: profile.updatedAt,
+    });
+
+    expect(events).toContainEqual({
+      type: "peerProfile",
+      peerDeviceId: "dev_b",
+      profile,
+      changedAt: profile.updatedAt,
     });
   });
 
