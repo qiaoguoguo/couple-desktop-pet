@@ -2772,22 +2772,22 @@ describe("App", () => {
     await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
         1,
-      ),
-    );
-    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+      );
+      expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    });
 
     await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Escape" });
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
         2,
-      ),
-    );
-    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+      );
+      expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    });
   });
 
   it("does not import the retired message composer window or event bridge", () => {
