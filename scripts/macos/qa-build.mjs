@@ -10,6 +10,11 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  deliverMacosQaRelay,
+  isMacosQaRelayEnabled,
+  prepareMacosQaRelay,
+} from "./qa-relay.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const defaultBundleRoot = join(
@@ -412,7 +417,7 @@ export async function runMacosBuildVerification({
     }
   }
 
-  return { ...artifacts, mountedApp };
+  return { ...artifacts, mountedApp, evidenceDir };
 }
 
 function parseCliMode(argv) {
@@ -425,10 +430,25 @@ function parseCliMode(argv) {
 
 export async function runMacosBuildCli(
   argv,
-  { env = process.env, stderr = console } = {},
+  {
+    env = process.env,
+    stderr = console,
+    logger = console,
+    isRelayEnabled = isMacosQaRelayEnabled,
+    prepareRelay = prepareMacosQaRelay,
+    buildVerifier = runMacosBuildVerification,
+    deliverRelay = deliverMacosQaRelay,
+  } = {},
 ) {
   try {
-    await runMacosBuildVerification({ mode: parseCliMode(argv), env });
+    const mode = parseCliMode(argv);
+    const relaySession = isRelayEnabled({ mode, env })
+      ? await prepareRelay({ mode, env, logger })
+      : null;
+    const buildResult = await buildVerifier({ mode, env });
+    if (relaySession) {
+      await deliverRelay({ session: relaySession, buildResult, env, logger });
+    }
     return 0;
   } catch (error) {
     stderr.error(redactBuildLog(error.message ?? String(error), env));

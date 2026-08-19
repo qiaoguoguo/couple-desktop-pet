@@ -21,6 +21,7 @@ import {
   parseHdiutilMountPoint,
   redactBuildLog,
   resolveStepArgs,
+  runMacosBuildCli,
   runMacosBuildVerification,
   sha256File,
 } from "./qa-build.mjs";
@@ -339,5 +340,82 @@ describe("macOS QA build verifier", () => {
         APPLE_PASSWORD: "secret-value",
       }),
     ).toBe("APPLE_ID=<redacted> token <redacted>");
+  });
+
+  it("prepares the one-time relay before the QA build and delivers only after verification", async () => {
+    const events = [];
+    const env = { GITHUB_ACTIONS: "true" };
+    const buildResult = { dmgPath: "/tmp/verified.dmg", evidenceDir: "/tmp/build" };
+    const session = { runId: "32260000001" };
+
+    const exitCode = await runMacosBuildCli(["--mode", "qa"], {
+      env,
+      isRelayEnabled: () => true,
+      prepareRelay: async ({ mode, env: actualEnv }) => {
+        events.push(["prepare", mode, actualEnv]);
+        return session;
+      },
+      buildVerifier: async ({ mode, env: actualEnv }) => {
+        events.push(["build", mode, actualEnv]);
+        return buildResult;
+      },
+      deliverRelay: async (args) => {
+        events.push(["deliver", args.session, args.buildResult, args.env]);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      ["prepare", "qa", env],
+      ["build", "qa", env],
+      ["deliver", session, buildResult, env],
+    ]);
+  });
+
+  it("does not invoke relay preparation or delivery when the gate is disabled", async () => {
+    const events = [];
+    const exitCode = await runMacosBuildCli(["--mode", "qa"], {
+      env: {},
+      isRelayEnabled: () => false,
+      prepareRelay: async () => {
+        throw new Error("relay preparation must remain disabled");
+      },
+      buildVerifier: async () => {
+        events.push("build");
+        return { dmgPath: "/tmp/verified.dmg", evidenceDir: "/tmp/build" };
+      },
+      deliverRelay: async () => {
+        throw new Error("relay delivery must remain disabled");
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toEqual(["build"]);
+  });
+
+  it("returns failure when relay delivery fails after a successful build", async () => {
+    const errors = [];
+    const events = [];
+    const exitCode = await runMacosBuildCli(["--mode", "qa"], {
+      env: {},
+      stderr: { error: (message) => errors.push(message) },
+      isRelayEnabled: () => true,
+      prepareRelay: async () => {
+        events.push("prepare");
+        return { runId: "32260000001" };
+      },
+      buildVerifier: async () => {
+        events.push("build");
+        return { dmgPath: "/tmp/verified.dmg", evidenceDir: "/tmp/build" };
+      },
+      deliverRelay: async () => {
+        events.push("deliver");
+        throw new Error("relay delivery failed");
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(events).toEqual(["prepare", "build", "deliver"]);
+    expect(errors).toEqual(["relay delivery failed"]);
   });
 });
