@@ -2,19 +2,29 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
   chmodSync,
+  createReadStream,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 const relayBranch = "codex/macos-qa-relay-20260819";
 const relayHost = "root@159.75.175.47";
 const sourceProductCommit = "f36875af5e6b26bff287f9f6cecdc037afb44b37";
 const retryDelayMs = 10_000;
 const authorizationTimeoutMs = 20 * 60 * 1_000;
+const dmgPartCount = 32;
+const dmgPartPrefix = "dmg-part-";
+const partTransferConcurrency = 10;
+const partTransferRetries = 3;
+const partTransferRetryDelayMs = 2_000;
 
 export const MACOS_QA_RELAY_HOST_KEY =
   "159.75.175.47 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOmLkgzjvMo/AYdYa4mRcEpmu9Si0vAbm9G2nHi9fC2S";
@@ -33,13 +43,48 @@ REMOTE_DIR="/tmp/couple-pet-macos-$RUN_ID"
 MANIFEST="$REMOTE_DIR/delivery-manifest.txt"
 DMG_BASENAME="$(sed -n 's/^dmg_basename=//p' "$MANIFEST")"
 EXPECTED_SHA="$(sed -n 's/^sha256=//p' "$MANIFEST")"
+EXPECTED_BYTES="$(sed -n 's/^bytes=//p' "$MANIFEST")"
+PART_COUNT="$(sed -n 's/^part_count=//p' "$MANIFEST")"
+PART_PREFIX="$(sed -n 's/^part_prefix=//p' "$MANIFEST")"
 test -n "$DMG_BASENAME"
+test "$(basename "$DMG_BASENAME")" = "$DMG_BASENAME"
 [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{64}$ ]]
-ACTUAL_SHA="$(sha256sum "$REMOTE_DIR/$DMG_BASENAME" | awk '{print $1}')"
+[[ "$EXPECTED_BYTES" =~ ^[0-9]+$ ]]
+[[ "$PART_COUNT" =~ ^[0-9]+$ ]]
+[ "$PART_COUNT" -eq 32 ]
+[ "$PART_PREFIX" = "dmg-part-" ]
+
+ACTUAL_PART_COUNT="$(find "$REMOTE_DIR" -maxdepth 1 -type f -name 'dmg-part-*' -print | wc -l | tr -d '[:space:]')"
+[ "$ACTUAL_PART_COUNT" -eq "$PART_COUNT" ]
+
+TEMP_DMG="$REMOTE_DIR/.dmg-assembly-$RUN_ID.tmp"
+FINAL_DMG="$REMOTE_DIR/$DMG_BASENAME"
+rm -f "$TEMP_DMG"
+: > "$TEMP_DMG"
+for ((index = 0; index < PART_COUNT; index += 1)); do
+  printf -v PART_SUFFIX '%03d' "$index"
+  PART_PATH="$REMOTE_DIR/\${PART_PREFIX}\${PART_SUFFIX}"
+  test -f "$PART_PATH"
+  test -s "$PART_PATH"
+  cat "$PART_PATH" >> "$TEMP_DMG"
+done
+
+ACTUAL_BYTES="$(stat -c '%s' "$TEMP_DMG")"
+[ "$ACTUAL_BYTES" -eq "$EXPECTED_BYTES" ]
+ACTUAL_SHA="$(sha256sum "$TEMP_DMG" | awk '{print $1}')"
 if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
   echo "remote DMG SHA-256 mismatch" >&2
   exit 1
 fi
+
+mv "$TEMP_DMG" "$FINAL_DMG"
+for ((index = 0; index < PART_COUNT; index += 1)); do
+  printf -v PART_SUFFIX '%03d' "$index"
+  PART_PATH="$REMOTE_DIR/\${PART_PREFIX}\${PART_SUFFIX}"
+  rm "$PART_PATH"
+done
+REMAINING_PART_COUNT="$(find "$REMOTE_DIR" -maxdepth 1 -type f -name 'dmg-part-*' -print | wc -l | tr -d '[:space:]')"
+[ "$REMAINING_PART_COUNT" -eq 0 ]
 `;
 
 export function isMacosQaRelayEnabled({ mode, env = process.env }) {
@@ -68,6 +113,7 @@ export function createMacosQaRelayPlan({ mode, env = process.env }) {
   const knownHostsPath = join(env.RUNNER_TEMP, `codex-macos-relay-${runId}.known_hosts`);
   const manifestPath = join(env.RUNNER_TEMP, "delivery-manifest.txt");
   const evidenceArchivePath = join(env.RUNNER_TEMP, `macos-build-evidence-${runId}.tar.gz`);
+  const partsDir = join(env.RUNNER_TEMP, `codex-macos-relay-${runId}.parts`);
 
   return {
     runId,
@@ -76,6 +122,7 @@ export function createMacosQaRelayPlan({ mode, env = process.env }) {
     knownHostsPath,
     manifestPath,
     evidenceArchivePath,
+    partsDir,
     remoteDir: `/tmp/couple-pet-macos-${runId}`,
     remoteHost: relayHost,
     sshOptions: [
@@ -145,7 +192,7 @@ export async function deliverMacosQaRelay({
   now = Date.now,
 }) {
   assertDeliveryInputs({ session, buildResult, env });
-  const actualSha = sha256File(buildResult.dmgPath);
+  const actualSha = await sha256File(buildResult.dmgPath);
   const expectedSha = readExpectedSha256(join(buildResult.evidenceDir, "sha256-dmg.log"));
   if (actualSha !== expectedSha) {
     throw new Error("macOS QA relay DMG SHA-256 mismatch");
@@ -156,6 +203,10 @@ export async function deliverMacosQaRelay({
     throw new Error("macOS QA relay DMG basename is invalid");
   }
   const dmgBytes = statSync(buildResult.dmgPath).size;
+  const split = await splitDmgIntoParts({
+    dmgPath: buildResult.dmgPath,
+    partsDir: session.partsDir,
+  });
   writeFileSync(
     session.manifestPath,
     [
@@ -165,6 +216,8 @@ export async function deliverMacosQaRelay({
       `dmg_basename=${dmgBasename}`,
       `bytes=${dmgBytes}`,
       `sha256=${actualSha}`,
+      `part_count=${split.partPaths.length}`,
+      `part_prefix=${dmgPartPrefix}`,
       "classification=Universal QA / ad-hoc signed / not notarized",
       "",
     ].join("\n"),
@@ -189,13 +242,19 @@ export async function deliverMacosQaRelay({
     "scp",
     [
       ...session.sshOptions,
-      buildResult.dmgPath,
       session.manifestPath,
       session.evidenceArchivePath,
       `${session.remoteHost}:${session.remoteDir}/`,
     ],
     { env, shell: false },
   );
+  await transferDmgParts({
+    session,
+    partPaths: split.partPaths,
+    env,
+    commandRunner,
+    sleep,
+  });
   await commandRunner(
     "ssh",
     [...session.sshOptions, session.remoteHost, "bash", "-s", "--", session.runId],
@@ -203,8 +262,150 @@ export async function deliverMacosQaRelay({
   );
 
   logger.log(
-    `CODEX_MACOS_RELAY_DELIVERED remote_dir=${session.remoteDir} dmg=${dmgBasename} sha256=${actualSha}`,
+    `CODEX_MACOS_RELAY_DELIVERED remote_dir=${session.remoteDir} dmg=${dmgBasename} sha256=${actualSha} transfer_mode=parallel-parts part_count=${split.partPaths.length}`,
   );
+}
+
+export async function splitDmgIntoParts({
+  dmgPath,
+  partsDir,
+  partCount = dmgPartCount,
+}) {
+  const totalBytes = statSync(dmgPath).size;
+  if (!Number.isSafeInteger(partCount) || partCount < 1) {
+    throw new Error("macOS QA relay part count must be a positive integer");
+  }
+  const partSize = Math.ceil(totalBytes / partCount);
+  if (totalBytes - partSize * (partCount - 1) <= 0) {
+    throw new Error(`macOS QA relay DMG is too small for ${partCount} non-empty parts`);
+  }
+
+  rmSync(partsDir, { recursive: true, force: true });
+  mkdirSync(partsDir, { recursive: true, mode: 0o700 });
+  const partPaths = [];
+  for (let index = 0; index < partCount; index += 1) {
+    const partPath = join(partsDir, `${dmgPartPrefix}${String(index).padStart(3, "0")}`);
+    const start = index * partSize;
+    const remainingBytes = totalBytes - start;
+    const currentPartSize = Math.min(partSize, remainingBytes);
+    if (currentPartSize <= 0) {
+      throw new Error(`macOS QA relay part ${index} would be empty`);
+    }
+    await pipeline(
+      createReadStream(dmgPath, { start, end: start + currentPartSize - 1 }),
+      createWriteStream(partPath, { flags: "wx", mode: 0o600 }),
+    );
+    chmodSync(partPath, 0o600);
+    if (statSync(partPath).size !== currentPartSize) {
+      throw new Error(`macOS QA relay part ${index} has an unexpected size`);
+    }
+    partPaths.push(partPath);
+  }
+
+  const expectedNames = partPaths.map((path) => basename(path));
+  const actualNames = readdirSync(partsDir).sort();
+  if (actualNames.length !== partCount || actualNames.some((name, index) => name !== expectedNames[index])) {
+    throw new Error("macOS QA relay part directory contains unexpected files");
+  }
+  return { partPaths, partSize, totalBytes };
+}
+
+export async function transferDmgParts({
+  session,
+  partPaths,
+  env = process.env,
+  commandRunner = runRelayCommand,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  concurrency = partTransferConcurrency,
+  maxRetries = partTransferRetries,
+  retryDelay = partTransferRetryDelayMs,
+}) {
+  assertPartPaths(partPaths);
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 10) {
+    throw new Error("macOS QA relay part transfer concurrency must be between 1 and 10");
+  }
+
+  let nextIndex = 0;
+  const failures = [];
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= partPaths.length) {
+        return;
+      }
+
+      const partPath = partPaths[index];
+      try {
+        await transferPartWithRetry({
+          session,
+          partPath,
+          env,
+          commandRunner,
+          sleep,
+          maxRetries,
+          retryDelay,
+        });
+      } catch (error) {
+        failures.push({ partPath, error });
+      }
+    }
+  };
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, partPaths.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures.map(({ error }) => error),
+      `${failures.length} DMG part transfer${failures.length === 1 ? "" : "s"} failed`,
+    );
+  }
+}
+
+async function transferPartWithRetry({
+  session,
+  partPath,
+  env,
+  commandRunner,
+  sleep,
+  maxRetries,
+  retryDelay,
+}) {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      await commandRunner(
+        "scp",
+        [
+          ...session.sshOptions,
+          partPath,
+          `${session.remoteHost}:${session.remoteDir}/`,
+        ],
+        { env, shell: false },
+      );
+      return;
+    } catch (error) {
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      await sleep(retryDelay);
+    }
+  }
+}
+
+function assertPartPaths(partPaths) {
+  if (!Array.isArray(partPaths) || partPaths.length !== dmgPartCount) {
+    throw new Error(`macOS QA relay requires exactly ${dmgPartCount} DMG parts`);
+  }
+  for (let index = 0; index < partPaths.length; index += 1) {
+    const expectedName = `${dmgPartPrefix}${String(index).padStart(3, "0")}`;
+    const partPath = partPaths[index];
+    if (basename(partPath) !== expectedName || !statSync(partPath).isFile() || statSync(partPath).size <= 0) {
+      throw new Error(`macOS QA relay part ${index} is missing, empty, or misnamed`);
+    }
+  }
 }
 
 async function waitForRelayAuthorization({
@@ -277,8 +478,12 @@ function readExpectedSha256(path) {
   return match[0].toLowerCase();
 }
 
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
 }
 
 function runRelayCommand(
