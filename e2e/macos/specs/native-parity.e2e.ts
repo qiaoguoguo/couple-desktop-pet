@@ -450,6 +450,8 @@ async function verifyStatusCardAndComposer(): Promise<void> {
 async function verifyCurrentEdgeBehavior(): Promise<void> {
   for (const side of ["left", "right", "top", "bottom"] as const) {
     await invokeTauri<WindowState>("e2e_move_near_edge", { side });
+    const nearEdgeState = await waitForWindowNearEdge(side);
+    const nearEdgeMargin = readPhysicalEdgeMargin(nearEdgeState, side);
     await dispatchDragReleaseOnPetStage();
     if (side === "top") {
       const edgeStage = await $(`.edge-pet-stage[data-edge-phase="idle"]`);
@@ -468,11 +470,51 @@ async function verifyCurrentEdgeBehavior(): Promise<void> {
       await expect(companionFrame).toBeDisplayed();
       await saveNativeParityScreenshot(edgeScreenshotFiles[side], companionSelector);
     }
-    writeNativeParityLog(`edge-${side}.log`, { side, idle: true });
-    recordNativeParityEvent(`edge-${side}`, { idle: true });
+    const edgeEvidence = {
+      side,
+      idle: true,
+      nearEdgeX: nearEdgeState.position.x,
+      nearEdgeY: nearEdgeState.position.y,
+      nearEdgeMargin,
+    };
+    writeNativeParityLog(`edge-${side}.log`, edgeEvidence);
+    recordNativeParityEvent(`edge-${side}`, edgeEvidence);
     await invokeTauri<WindowState>("e2e_restore_edge", { side });
     await browser.refresh();
     await expect($(surfaceSelector)).toBeDisplayed();
+  }
+}
+
+async function waitForWindowNearEdge(side: EdgeSide): Promise<WindowState> {
+  const EDGE_TRIGGER_THRESHOLD_PHYSICAL_PX = 24;
+
+  return waitForWindowState((state) => {
+    const margin = readPhysicalEdgeMargin(state, side);
+    return margin !== null && margin <= EDGE_TRIGGER_THRESHOLD_PHYSICAL_PX;
+  });
+}
+
+function readPhysicalEdgeMargin(state: WindowState, side: EdgeSide): number | null {
+  const workArea = state.work_area;
+  if (!workArea) {
+    return null;
+  }
+
+  switch (side) {
+    case "left":
+      return Math.max(0, state.position.x - workArea.x);
+    case "right":
+      return Math.max(
+        0,
+        workArea.x + workArea.width - (state.position.x + state.size.width),
+      );
+    case "top":
+      return Math.max(0, state.position.y - workArea.y);
+    case "bottom":
+      return Math.max(
+        0,
+        workArea.y + workArea.height - (state.position.y + state.size.height),
+      );
   }
 }
 

@@ -348,6 +348,33 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(edgeSpec).toContain("await expect(companionFrame).toBeDisplayed()");
   });
 
+  it("waits for the requested physical edge threshold before dispatching drag release", () => {
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    const edgeSpec = spec.slice(
+      spec.indexOf("async function verifyCurrentEdgeBehavior"),
+      spec.indexOf("async function openSettingsFromContextMenu"),
+    );
+    const waitSpec = edgeSpec.slice(edgeSpec.indexOf("async function waitForWindowNearEdge"));
+
+    expect(edgeSpec).toMatch(
+      /await\s+invokeTauri<WindowState>\("e2e_move_near_edge",\s*\{\s*side\s*\}\);[\s\S]*?const\s+nearEdgeState\s*=\s*await\s+waitForWindowNearEdge\(side\);[\s\S]*?await\s+dispatchDragReleaseOnPetStage\(\);/,
+    );
+    expect(waitSpec).toContain("waitForWindowState");
+    expect(waitSpec).toContain("EDGE_TRIGGER_THRESHOLD_PHYSICAL_PX = 24");
+    expect(waitSpec).toContain("Math.max(0, state.position.x - workArea.x)");
+    expect(waitSpec).toMatch(
+      /Math\.max\(\s*0,\s*workArea\.x\s*\+\s*workArea\.width\s*-\s*\(state\.position\.x\s*\+\s*state\.size\.width\),?\s*\)/,
+    );
+    expect(waitSpec).toContain("Math.max(0, state.position.y - workArea.y)");
+    expect(waitSpec).toMatch(
+      /Math\.max\(\s*0,\s*workArea\.y\s*\+\s*workArea\.height\s*-\s*\(state\.position\.y\s*\+\s*state\.size\.height\),?\s*\)/,
+    );
+    expect(edgeSpec).toContain("nearEdgeMargin");
+    expect(edgeSpec).not.toContain("e2e_trigger_edge_snap");
+    expect(waitSpec).not.toContain("browser.pause");
+    expect(waitSpec).not.toContain("setTimeout");
+  });
+
   it("registers native parity driver commands only behind the e2e feature", () => {
     const mainRs = readText("src-tauri/src/main.rs");
     const e2eCommandsPath = "src-tauri/src/e2e_commands.rs";
