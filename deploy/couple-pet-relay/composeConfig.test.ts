@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 describe("couple pet relay compose config", () => {
+  it("installs the Alpine native addon toolchain before dependencies", () => {
+    const dockerfile = readFileSync("server/Dockerfile", "utf8");
+    const nativeToolchainStep = dockerfile.indexOf(
+      "RUN apk add --no-cache python3 make g++",
+    );
+    const dependencyInstallStep = dockerfile.indexOf(
+      "RUN pnpm install --frozen-lockfile --filter couple-desktop-pet-relay...",
+    );
+
+    expect(nativeToolchainStep).toBeGreaterThan(-1);
+    expect(dependencyInstallStep).toBeGreaterThan(nativeToolchainStep);
+  });
+
   it("publishes relay port and persists sqlite data", () => {
     const source = readFileSync("deploy/couple-pet-relay/compose.yaml", "utf8");
     const compose = parse(source) as {
