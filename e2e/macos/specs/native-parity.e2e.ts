@@ -183,13 +183,28 @@ async function verifyTrayAndClickThroughRecovery(): Promise<void> {
   writeNativeParityLog("click-through-enabled.log", { clickThrough: true });
 
   await invokeTauri<void>("e2e_trigger_tray_show");
-  await waitForSettings((settings) => settings.clickThrough === false);
+  await waitForSettings((settings) => settings.clickThrough === true);
+  const persistedAfterShow = await readSettings();
+  expect(persistedAfterShow.clickThrough).toBe(true);
   await saveNativeParityScreenshot("click-through-recovered.png");
-  writeNativeParityLog("click-through-recovered.log", { clickThrough: false, reason: "show" });
-  recordNativeParityEvent("click-through-recovered", { clickThrough: false });
+  writeNativeParityLog("click-through-recovered.log", {
+    clickThrough: true,
+    preferencePreserved: true,
+    reason: "show",
+  });
+  recordNativeParityEvent("click-through-recovered", {
+    clickThrough: true,
+    preferencePreserved: true,
+  });
 
   await invokeTauri<void>("e2e_trigger_tray_settings");
   await expect($(settingsSelector)).toBeDisplayed();
+  const clickThroughToggle = await $(
+    '//label[.//span[normalize-space(.)="点击穿透"]]//input[@type="checkbox"]',
+  );
+  await expect(clickThroughToggle).toBeSelected();
+  await setCheckbox("点击穿透", false);
+  await waitForSettings((settings) => settings.clickThrough === false);
   await closeSettings();
 
   await invokeTauri<void>("e2e_close_main_window");
@@ -436,9 +451,23 @@ async function verifyCurrentEdgeBehavior(): Promise<void> {
   for (const side of ["left", "right", "top", "bottom"] as const) {
     await invokeTauri<WindowState>("e2e_move_near_edge", { side });
     await dispatchDragReleaseOnPetStage();
-    const edgeStage = await $(`.edge-pet-stage[data-edge-phase="idle"]`);
-    await expect(edgeStage).toBeDisplayed();
-    await saveNativeParityScreenshot(edgeScreenshotFiles[side], ".edge-pet-stage");
+    if (side === "top") {
+      const edgeStage = await $(`.edge-pet-stage[data-edge-phase="idle"]`);
+      await expect(edgeStage).toBeDisplayed();
+      await saveNativeParityScreenshot(
+        edgeScreenshotFiles[side],
+        '.edge-pet-stage[data-edge-phase="idle"]',
+      );
+    } else {
+      const companionSelector = `.edge-companion-stage[data-edge-side="${side}"]`;
+      const companionStage = await $(companionSelector);
+      await expect(companionStage).toBeDisplayed();
+      const companionFrame = await companionStage.$(
+        '.edge-companion-frame[data-frame-kind="idle"]',
+      );
+      await expect(companionFrame).toBeDisplayed();
+      await saveNativeParityScreenshot(edgeScreenshotFiles[side], companionSelector);
+    }
     writeNativeParityLog(`edge-${side}.log`, { side, idle: true });
     recordNativeParityEvent(`edge-${side}`, { idle: true });
     await invokeTauri<WindowState>("e2e_restore_edge", { side });

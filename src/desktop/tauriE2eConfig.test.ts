@@ -309,6 +309,45 @@ describe("macOS Tauri embedded E2E config", () => {
     }
   });
 
+  it("keeps persisted click-through enabled through tray recovery before explicit cleanup", () => {
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    const recoverySpec = spec.slice(
+      spec.indexOf("async function verifyTrayAndClickThroughRecovery"),
+      spec.indexOf("async function verifyWindowPositionPersistence"),
+    );
+    const afterEnable = recoverySpec.slice(
+      recoverySpec.indexOf('await setCheckbox("点击穿透", true);'),
+    );
+
+    expect(afterEnable).toMatch(
+      /await\s+invokeTauri<void>\("e2e_trigger_tray_show"\);[\s\S]*?settings\.clickThrough\s*===\s*true[\s\S]*?const\s+persistedAfterShow\s*=\s*await\s+readSettings\(\);[\s\S]*?expect\(persistedAfterShow\.clickThrough\)\.toBe\(true\);/,
+    );
+    expect(afterEnable).toMatch(
+      /await\s+invokeTauri<void>\("e2e_trigger_tray_settings"\);[\s\S]*?const\s+clickThroughToggle\s*=\s*await\s+\$\([\s\S]*?await\s+expect\(clickThroughToggle\)\.toBeSelected\(\);[\s\S]*?await\s+setCheckbox\("点击穿透",\s*false\);[\s\S]*?settings\.clickThrough\s*===\s*false/,
+    );
+    expect(afterEnable).toMatch(
+      /writeNativeParityLog\("click-through-recovered\.log",\s*\{[\s\S]*?preferencePreserved:\s*true,[\s\S]*?\}\);/,
+    );
+    expect(afterEnable).toMatch(
+      /recordNativeParityEvent\("click-through-recovered",\s*\{[\s\S]*?preferencePreserved:\s*true,[\s\S]*?\}\);/,
+    );
+    expect(afterEnable).not.toContain("nativeInputRecovered");
+  });
+
+  it("checks top hanging idle separately from static side and bottom companion frames", () => {
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    const edgeSpec = spec.slice(
+      spec.indexOf("async function verifyCurrentEdgeBehavior"),
+      spec.indexOf("async function openSettingsFromContextMenu"),
+    );
+
+    expect(edgeSpec).toContain('if (side === "top")');
+    expect(edgeSpec).toContain('.edge-pet-stage[data-edge-phase="idle"]');
+    expect(edgeSpec).toContain('.edge-companion-stage[data-edge-side="${side}"]');
+    expect(edgeSpec).toContain('.edge-companion-frame[data-frame-kind="idle"]');
+    expect(edgeSpec).toContain("await expect(companionFrame).toBeDisplayed()");
+  });
+
   it("registers native parity driver commands only behind the e2e feature", () => {
     const mainRs = readText("src-tauri/src/main.rs");
     const e2eCommandsPath = "src-tauri/src/e2e_commands.rs";
