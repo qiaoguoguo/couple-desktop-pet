@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { activityStatusDisplayOptions } from "./activityStatusDisplay";
 import { ActivityStatusPicker } from "./ActivityStatusPicker";
 
 describe("ActivityStatusPicker", () => {
@@ -18,18 +19,31 @@ describe("ActivityStatusPicker", () => {
     expect(screen.getByRole("button", { name: "在线" }).getAttribute("aria-pressed")).toBe(
       "false",
     );
-    expect(screen.getByRole("button", { name: "摸鱼中" }).textContent).toContain(
-      "鱼",
-    );
     expect(
       screen.getByRole("button", { name: "发呆中" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByRole("button", { name: "发呆中" }).textContent).toContain(
-      "云",
-    );
-    expect(screen.getByRole("button", { name: "加班中" }).textContent).toContain(
-      "班",
-    );
+
+    for (const label of [
+      "在线",
+      "摸鱼中",
+      "发呆中",
+      "加班中",
+    ] as const) {
+      const option = activityStatusDisplayOptions.find(
+        (candidate) => candidate.label === label,
+      );
+      const iconSlot = screen
+        .getByRole("button", { name: label })
+        .querySelector(".status-picker-icon");
+      const iconImage = iconSlot?.querySelector("img");
+
+      expect(iconSlot?.textContent).toBe("");
+      expect(iconImage?.getAttribute("src")).toBe(option?.icon.src);
+      expect(iconImage?.getAttribute("src")).toMatch(
+        /^(data:image\/svg\+xml|.*\.svg)/,
+      );
+      expect(iconImage?.getAttribute("alt")).toBe("");
+    }
   });
 
   it("emits nullable activity status values", () => {

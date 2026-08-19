@@ -23,6 +23,16 @@ describe("BubbleLayer", () => {
     expect(screen.getByText("我在这里。")).toBeTruthy();
   });
 
+  it("does not register the visual-only bubble as a desktop hit region", () => {
+    render(<BubbleLayer message="我在这里。" visible />);
+
+    expect(
+      screen
+        .getByRole("status")
+        .hasAttribute("data-desktop-interactive-region"),
+    ).toBe(false);
+  });
+
   it("does not render hidden bubbles", () => {
     render(<BubbleLayer message="我在这里。" visible={false} />);
 

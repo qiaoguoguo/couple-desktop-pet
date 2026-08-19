@@ -18,10 +18,17 @@ import {
   readPairWeatherResponse,
   type PairWeatherResponse,
 } from "../../shared/weatherProtocol";
+import {
+  readSparkLeaderboardResponse,
+  readSparkStreakSnapshot,
+  type SparkLeaderboardResponseV1,
+  type SparkStreakSnapshotV1,
+} from "../../shared/sparkProtocol";
 import type {
   LocationSearchRequest,
   LocationSearchResponse,
   PairWeatherRequest,
+  PairSparkRequest,
   SaveProfileRequest,
   SaveProfileResponse,
 } from "./syncTypes";
@@ -95,6 +102,28 @@ export class RelayHttpClient {
       "POST",
       request,
       readPairWeatherResponse,
+    );
+  }
+
+  getSparkSnapshot(
+    request: PairSparkRequest,
+  ): Promise<RelayResult<SparkStreakSnapshotV1>> {
+    return this.request(
+      "/pairs/spark/snapshot",
+      "POST",
+      request,
+      readSparkStreakSnapshot,
+    );
+  }
+
+  getSparkLeaderboard(
+    request: PairSparkRequest,
+  ): Promise<RelayResult<SparkLeaderboardResponseV1>> {
+    return this.request(
+      "/pairs/spark/leaderboard",
+      "POST",
+      request,
+      readSparkLeaderboardResponse,
     );
   }
 

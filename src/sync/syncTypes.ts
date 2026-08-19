@@ -4,6 +4,9 @@ import type {
   DeviceProfileV1,
   ProfileUpdateV1,
 } from "../../shared/profileProtocol";
+import type { PairSparkRequest } from "../../shared/sparkProtocol";
+
+export type { PairSparkRequest };
 
 export type SyncConnectionStatus =
   | "disabled"

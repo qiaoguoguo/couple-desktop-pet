@@ -51,6 +51,11 @@ export function MessageComposerPanel({
   function handlePanelKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+
+      if (sending) {
+        return;
+      }
+
       onClose();
     }
   }
@@ -64,17 +69,20 @@ export function MessageComposerPanel({
 
   return (
     <section
-      className="message-composer-panel"
+      className="composer-panel message-composer-panel"
       aria-label="发送消息"
       onKeyDown={handlePanelKeyDown}
     >
-      <div className="message-composer-card">
-        <header>
-          <h1>发送消息</h1>
-          <p>写给对方桌宠的一句话</p>
+      <div
+        className="composer-card-shell message-composer-card"
+        data-desktop-interactive-region=""
+      >
+        <header className="composer-card-header">
+          <h1 className="composer-title">发送消息</h1>
+          <p className="composer-description">写给对方桌宠的一句话</p>
         </header>
         <textarea
-          className="message-composer-textarea"
+          className="composer-field-control message-composer-textarea"
           aria-label="消息内容"
           maxLength={280}
           rows={5}
@@ -84,22 +92,30 @@ export function MessageComposerPanel({
           onKeyDown={handleTextAreaKeyDown}
           autoFocus
         />
-        <div className="message-composer-actions">
-          <span>{text.length}/280</span>
-          <div className="message-composer-action-buttons">
+        <div className="composer-footer message-composer-actions">
+          <span className="composer-meta">{text.length}/280</span>
+          <div className="composer-actions message-composer-action-buttons">
             <button
               type="button"
-              className="message-composer-cancel"
+              className="composer-action composer-action--secondary message-composer-cancel"
+              disabled={sending}
               onClick={onClose}
             >
               取消
             </button>
-            <button type="button" disabled={sending} onClick={() => void submit()}>
+            <button
+              type="button"
+              className="composer-action composer-action--primary"
+              disabled={sending}
+              onClick={() => void submit()}
+            >
               {sending ? "发送中" : "发送"}
             </button>
           </div>
         </div>
-        {status ? <p className="message-composer-status">{status}</p> : null}
+        {status ? (
+          <p className="composer-status message-composer-status">{status}</p>
+        ) : null}
       </div>
     </section>
   );

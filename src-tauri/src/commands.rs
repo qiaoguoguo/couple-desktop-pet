@@ -6,31 +6,80 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, WebviewWindow,
-    WindowEvent,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime, Size,
+    WebviewWindow, WindowEvent,
 };
+
+use crate::desktop_input::InteractiveRegion;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const SETTINGS_FILE_NAME: &str = "settings.json";
+const FOCUS_TIMER_FILE_NAME: &str = "focus-timer.json";
 const WINDOW_POSITION_FILE_NAME: &str = "window-position.json";
 const DEFAULT_WINDOW_WIDTH_PX: u32 = 320;
 const DEFAULT_WINDOW_HEIGHT_PX: u32 = 360;
-const MESSAGE_COMPOSER_SURFACE_WIDTH_PX: u32 = 440;
-const MESSAGE_COMPOSER_SURFACE_HEIGHT_PX: u32 = 260;
-const SURPRISE_COMPOSER_SURFACE_WIDTH_PX: u32 = 440;
-const SURPRISE_COMPOSER_SURFACE_HEIGHT_PX: u32 = 460;
+const MESSAGE_COMPOSER_SURFACE_WIDTH_LOGICAL_PX: f64 = 440.0;
+const MESSAGE_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX: f64 = 260.0;
+const SURPRISE_COMPOSER_SURFACE_WIDTH_LOGICAL_PX: f64 = 440.0;
+const SURPRISE_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX: f64 = 460.0;
+const FOCUS_COMPOSER_SURFACE_WIDTH_LOGICAL_PX: f64 = 440.0;
+const FOCUS_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX: f64 = 320.0;
+const WEATHER_COMPOSER_SURFACE_WIDTH_LOGICAL_PX: f64 = 460.0;
+const WEATHER_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX: f64 = 504.0;
+const SPARK_COMPOSER_SURFACE_WIDTH_LOGICAL_PX: f64 = 460.0;
+const SPARK_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX: f64 = 638.0;
 const SAFE_WINDOW_MARGIN_PX: i32 = 24;
 const AUTO_MOVE_STEP_X_PX: i32 = 96;
 const AUTO_MOVE_STEP_Y_PX: i32 = 48;
 const EDGE_PEEK_TRIGGER_PX: i32 = 24;
-const EDGE_PEEK_LEFT_CONTACT_X_RATIO: f64 = 0.2203125;
-const EDGE_PEEK_RIGHT_CONTACT_X_RATIO: f64 = 0.778125;
-const EDGE_PEEK_TOP_CONTACT_Y_RATIO: f64 = 0.05;
-const EDGE_PEEK_BOTTOM_CONTACT_Y_RATIO: f64 = 0.367;
 const CLICK_THROUGH_RECOVERED_EVENT: &str = "click-through-recovered";
 const OPEN_SETTINGS_EVENT: &str = "open-settings";
+pub(crate) const WINDOW_HIDDEN_EVENT: &str = "window-hidden";
 
-static MESSAGE_COMPOSER_SURFACE_STATE: Mutex<Option<WindowGeometry>> = Mutex::new(None);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WindowHideStep {
+    EmitWindowHidden,
+    HideWindow,
+}
+
+pub(crate) fn window_hide_plan() -> [WindowHideStep; 2] {
+    [WindowHideStep::EmitWindowHidden, WindowHideStep::HideWindow]
+}
+
+fn execute_window_hide_actions<EmitHidden, HideWindow>(
+    mut emit_hidden: EmitHidden,
+    mut hide_window: HideWindow,
+) -> Result<(), String>
+where
+    EmitHidden: FnMut() -> Result<(), String>,
+    HideWindow: FnMut() -> Result<(), String>,
+{
+    let mut emit_result = Ok(());
+    let mut hide_result = Ok(());
+
+    for step in window_hide_plan() {
+        match step {
+            WindowHideStep::EmitWindowHidden => emit_result = emit_hidden(),
+            WindowHideStep::HideWindow => hide_result = hide_window(),
+        }
+    }
+
+    match (emit_result, hide_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(emit_error), Ok(())) => Err(emit_error),
+        (Ok(()), Err(hide_error)) => Err(hide_error),
+        (Err(emit_error), Err(hide_error)) => Err(format!("{emit_error}; {hide_error}")),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MessageComposerSurfaceState {
+    saved_pet_window: WindowGeometry,
+    is_open: bool,
+}
+
+static MESSAGE_COMPOSER_SURFACE_STATE: Mutex<Option<MessageComposerSurfaceState>> =
+    Mutex::new(None);
 static EDGE_PEEK_HIDDEN_STATE: Mutex<Option<EdgePeekSide>> = Mutex::new(None);
 
 #[tauri::command]
@@ -56,6 +105,23 @@ pub fn write_settings(app: AppHandle, settings: serde_json::Value) -> Result<(),
 }
 
 #[tauri::command]
+pub fn read_focus_timer(app: AppHandle) -> serde_json::Value {
+    match focus_timer_path(&app) {
+        Ok(path) => read_focus_timer_from_path(&path),
+        Err(error) => {
+            eprintln!("{error}");
+            serde_json::Value::Null
+        }
+    }
+}
+
+#[tauri::command]
+pub fn write_focus_timer(app: AppHandle, timer: serde_json::Value) -> Result<(), String> {
+    let path = focus_timer_path(&app)?;
+    write_focus_timer_to_path(&path, &timer)
+}
+
+#[tauri::command]
 pub fn set_always_on_top(app: AppHandle, enabled: bool) -> Result<(), String> {
     main_window(&app)?
         .set_always_on_top(enabled)
@@ -66,6 +132,26 @@ pub fn set_always_on_top(app: AppHandle, enabled: bool) -> Result<(), String> {
 pub fn set_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
     let window = main_window(&app)?;
     set_window_click_through(&window, enabled)
+}
+
+#[tauri::command]
+pub fn set_interactive_regions(
+    app: AppHandle,
+    regions: Vec<InteractiveRegion>,
+    device_scale_factor: f64,
+) -> Result<(), String> {
+    let window = main_window(&app)?;
+    crate::desktop_input::set_interactive_regions(&window, regions, device_scale_factor)
+}
+
+#[tauri::command]
+pub fn move_window_for_pointer_drag(
+    app: AppHandle,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<(), String> {
+    let window = main_window(&app)?;
+    crate::desktop_input::move_window_for_pointer_drag(&window, delta_x, delta_y)
 }
 
 #[tauri::command]
@@ -137,6 +223,21 @@ pub fn snap_window_to_edge_if_needed(app: AppHandle) -> Result<Option<EdgePeekSi
 }
 
 #[tauri::command]
+pub fn dock_window_at_edge(app: AppHandle, side: EdgePeekSide) -> Result<(), String> {
+    let window = main_window(&app)?;
+    let (work_area, geometry) = read_current_window_geometry(&window, "edge dock")?;
+    let position = calculate_edge_dock_position(side, work_area, geometry);
+
+    set_edge_peek_hidden_side(Some(side))?;
+    if let Err(error) = window.set_position(position) {
+        let _ = set_edge_peek_hidden_side(None);
+        return Err(format!("failed to dock main window at edge: {error}"));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn restore_window_from_edge_peek(app: AppHandle, side: EdgePeekSide) -> Result<(), String> {
     let window = main_window(&app)?;
     let (work_area, geometry) = read_current_window_geometry(&window, "edge peek restore")?;
@@ -159,18 +260,47 @@ pub fn open_message_composer_surface(
         return show_main_window(&app);
     }
 
-    let (work_area, geometry) = read_current_window_geometry(&window, "message composer")?;
-    let surface = calculate_message_composer_surface_geometry(surface, work_area, geometry);
+    if let Some(saved_geometry) = pending_message_composer_restore()? {
+        apply_window_geometry(&window, saved_geometry)?;
+        set_saved_message_composer_surface(None)?;
+    }
 
-    if !save_message_composer_surface_if_absent(surface.saved_pet_window)? {
+    let (work_area, geometry) = read_current_window_geometry(&window, "message composer")?;
+    let scale_factor = window
+        .scale_factor()
+        .map_err(|error| format!("failed to read main window scale factor: {error}"))?;
+    let surface_geometry =
+        calculate_message_composer_surface_geometry(surface, scale_factor, work_area, geometry);
+
+    if !save_message_composer_surface_if_absent(surface_geometry.saved_pet_window)? {
         return show_main_window(&app);
     }
 
-    if let Err(error) =
-        apply_window_geometry(&window, surface.window).and_then(|_| show_main_window(&app))
-    {
-        let _ = set_saved_message_composer_surface(None);
-        return Err(error);
+    execute_message_composer_open_actions(
+        surface,
+        surface_geometry,
+        |size| {
+            window
+                .set_size(size)
+                .map_err(|error| format!("failed to resize main window: {error}"))
+        },
+        || {
+            window
+                .set_position(PhysicalPosition::new(
+                    surface_geometry.window.x,
+                    surface_geometry.window.y,
+                ))
+                .map_err(|error| format!("failed to move main window: {error}"))
+        },
+        || show_and_focus_main_window(&window),
+        || apply_window_geometry(&window, surface_geometry.saved_pet_window),
+    )?;
+
+    if let Err(error) = mark_message_composer_surface_open() {
+        return match apply_window_geometry(&window, surface_geometry.saved_pet_window) {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!("{error}; rollback failed: {rollback_error}")),
+        };
     }
 
     Ok(())
@@ -265,9 +395,19 @@ fn show_and_focus_main_window<R: Runtime>(window: &WebviewWindow<R>) -> Result<(
 }
 
 pub fn hide_main_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    main_window(app)?
-        .hide()
-        .map_err(|error| format!("failed to hide main window: {error}"))
+    let window = main_window(app)?;
+
+    execute_window_hide_actions(
+        || {
+            app.emit(WINDOW_HIDDEN_EVENT, ())
+                .map_err(|error| format!("failed to emit window-hidden: {error}"))
+        },
+        || {
+            window
+                .hide()
+                .map_err(|error| format!("failed to hide main window: {error}"))
+        },
+    )
 }
 
 pub fn emit_open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -370,20 +510,39 @@ pub enum ClickThroughRecoveryReason {
 pub enum ComposerSurface {
     Message,
     Surprise,
+    Focus,
+    Weather,
+    Spark,
 }
 
 impl ComposerSurface {
-    fn size(self) -> (u32, u32) {
+    fn logical_size(self) -> LogicalSize<f64> {
         match self {
-            Self::Message => (
-                MESSAGE_COMPOSER_SURFACE_WIDTH_PX,
-                MESSAGE_COMPOSER_SURFACE_HEIGHT_PX,
+            Self::Message => LogicalSize::new(
+                MESSAGE_COMPOSER_SURFACE_WIDTH_LOGICAL_PX,
+                MESSAGE_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX,
             ),
-            Self::Surprise => (
-                SURPRISE_COMPOSER_SURFACE_WIDTH_PX,
-                SURPRISE_COMPOSER_SURFACE_HEIGHT_PX,
+            Self::Surprise => LogicalSize::new(
+                SURPRISE_COMPOSER_SURFACE_WIDTH_LOGICAL_PX,
+                SURPRISE_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX,
+            ),
+            Self::Focus => LogicalSize::new(
+                FOCUS_COMPOSER_SURFACE_WIDTH_LOGICAL_PX,
+                FOCUS_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX,
+            ),
+            Self::Weather => LogicalSize::new(
+                WEATHER_COMPOSER_SURFACE_WIDTH_LOGICAL_PX,
+                WEATHER_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX,
+            ),
+            Self::Spark => LogicalSize::new(
+                SPARK_COMPOSER_SURFACE_WIDTH_LOGICAL_PX,
+                SPARK_COMPOSER_SURFACE_HEIGHT_LOGICAL_PX,
             ),
         }
+    }
+
+    fn physical_size(self, scale_factor: f64) -> PhysicalSize<u32> {
+        self.logical_size().to_physical(scale_factor)
     }
 }
 
@@ -408,18 +567,20 @@ enum ClickThroughRecoveryStep {
 fn click_through_recovery_plan(
     reason: ClickThroughRecoveryReason,
 ) -> Vec<ClickThroughRecoveryStep> {
-    let mut steps = vec![
-        ClickThroughRecoveryStep::ClearClickThrough,
-        ClickThroughRecoveryStep::ShowWindow,
-        ClickThroughRecoveryStep::FocusWindow,
-        ClickThroughRecoveryStep::EmitRecovered(reason),
-    ];
-
-    if matches!(reason, ClickThroughRecoveryReason::Settings) {
-        steps.push(ClickThroughRecoveryStep::EmitOpenSettings);
+    match reason {
+        ClickThroughRecoveryReason::Show => vec![
+            ClickThroughRecoveryStep::ShowWindow,
+            ClickThroughRecoveryStep::FocusWindow,
+            ClickThroughRecoveryStep::EmitRecovered(reason),
+        ],
+        ClickThroughRecoveryReason::Settings => vec![
+            ClickThroughRecoveryStep::ClearClickThrough,
+            ClickThroughRecoveryStep::ShowWindow,
+            ClickThroughRecoveryStep::FocusWindow,
+            ClickThroughRecoveryStep::EmitRecovered(reason),
+            ClickThroughRecoveryStep::EmitOpenSettings,
+        ],
     }
-
-    steps
 }
 
 fn apply_window_geometry<R: Runtime>(
@@ -437,10 +598,58 @@ fn apply_window_geometry<R: Runtime>(
         .map_err(|error| format!("failed to move main window: {error}"))
 }
 
+fn execute_message_composer_open_actions<Resize, Move, Show, Rollback>(
+    surface: ComposerSurface,
+    geometry: MessageComposerSurfaceGeometry,
+    mut resize: Resize,
+    mut move_window: Move,
+    mut show: Show,
+    mut rollback: Rollback,
+) -> Result<(), String>
+where
+    Resize: FnMut(Size) -> Result<(), String>,
+    Move: FnMut() -> Result<(), String>,
+    Show: FnMut() -> Result<(), String>,
+    Rollback: FnMut() -> Result<(), String>,
+{
+    let resize_size = if surface == ComposerSurface::Spark {
+        Size::Physical(PhysicalSize::new(
+            geometry.window.width,
+            geometry.window.height,
+        ))
+    } else {
+        Size::Logical(geometry.logical_size)
+    };
+    if let Err(error) = resize(resize_size) {
+        return rollback_message_composer_open(error, &mut rollback);
+    }
+    if let Err(error) = move_window() {
+        return rollback_message_composer_open(error, &mut rollback);
+    }
+    if let Err(error) = show() {
+        return rollback_message_composer_open(error, &mut rollback);
+    }
+
+    Ok(())
+}
+
+fn rollback_message_composer_open<Rollback>(
+    error: String,
+    rollback: &mut Rollback,
+) -> Result<(), String>
+where
+    Rollback: FnMut() -> Result<(), String>,
+{
+    match rollback() {
+        Ok(()) => Err(error),
+        Err(rollback_error) => Err(format!("{error}; rollback failed: {rollback_error}")),
+    }
+}
+
 fn saved_message_composer_surface() -> Result<Option<WindowGeometry>, String> {
     MESSAGE_COMPOSER_SURFACE_STATE
         .lock()
-        .map(|state| *state)
+        .map(|state| state.map(|surface| surface.saved_pet_window))
         .map_err(|_| "failed to lock message composer surface state".to_string())
 }
 
@@ -448,7 +657,10 @@ fn set_saved_message_composer_surface(geometry: Option<WindowGeometry>) -> Resul
     MESSAGE_COMPOSER_SURFACE_STATE
         .lock()
         .map(|mut state| {
-            *state = geometry;
+            *state = geometry.map(|saved_pet_window| MessageComposerSurfaceState {
+                saved_pet_window,
+                is_open: true,
+            });
         })
         .map_err(|_| "failed to lock message composer surface state".to_string())
 }
@@ -461,8 +673,33 @@ fn save_message_composer_surface_if_absent(geometry: WindowGeometry) -> Result<b
                 return false;
             }
 
-            *state = Some(geometry);
+            *state = Some(MessageComposerSurfaceState {
+                saved_pet_window: geometry,
+                is_open: false,
+            });
             true
+        })
+        .map_err(|_| "failed to lock message composer surface state".to_string())
+}
+
+fn mark_message_composer_surface_open() -> Result<(), String> {
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map_err(|_| "failed to lock message composer surface state".to_string())?
+        .as_mut()
+        .ok_or_else(|| "message composer restore state is unavailable".to_string())
+        .map(|state| {
+            state.is_open = true;
+        })
+}
+
+fn pending_message_composer_restore() -> Result<Option<WindowGeometry>, String> {
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map(|state| {
+            state
+                .filter(|surface| !surface.is_open)
+                .map(|surface| surface.saved_pet_window)
         })
         .map_err(|_| "failed to lock message composer surface state".to_string())
 }
@@ -470,18 +707,14 @@ fn save_message_composer_surface_if_absent(geometry: WindowGeometry) -> Result<b
 fn clear_message_composer_surface_after_close(
     close_result: Result<(), String>,
 ) -> Result<(), String> {
-    let clear_result = set_saved_message_composer_surface(None);
-
-    match (close_result, clear_result) {
-        (Err(error), _) => Err(error),
-        (Ok(()), Err(error)) => Err(error),
-        (Ok(()), Ok(())) => Ok(()),
-    }
+    close_result?;
+    set_saved_message_composer_surface(None)
 }
 
 fn is_message_composer_surface_open() -> bool {
-    saved_message_composer_surface()
-        .map(|geometry| geometry.is_some())
+    MESSAGE_COMPOSER_SURFACE_STATE
+        .lock()
+        .map(|state| state.is_some_and(|surface| surface.is_open))
         .unwrap_or(false)
 }
 
@@ -541,6 +774,17 @@ fn settings_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
         .map_err(|error| format!("<app_data_dir>/{SETTINGS_FILE_NAME}: {error}"))
 }
 
+fn focus_timer_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| focus_timer_path_from_app_data_dir(&dir))
+        .map_err(|error| format!("<app_data_dir>/{FOCUS_TIMER_FILE_NAME}: {error}"))
+}
+
+fn focus_timer_path_from_app_data_dir(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(FOCUS_TIMER_FILE_NAME)
+}
+
 pub(crate) fn window_position_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -573,6 +817,37 @@ fn write_settings_to_path(path: &Path, settings: &serde_json::Value) -> Result<(
     })?;
     fs::write(path, contents)
         .map_err(|error| format!("failed to write settings {}: {error}", path.display()))
+}
+
+fn read_focus_timer_from_path(path: &Path) -> serde_json::Value {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| serde_json::from_str(&contents).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+fn write_focus_timer_to_path(path: &Path, timer: &serde_json::Value) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| {
+        format!(
+            "failed to write focus timer {}: missing parent directory",
+            path.display()
+        )
+    })?;
+    let contents = serde_json::to_string_pretty(timer).map_err(|error| {
+        format!(
+            "failed to serialize focus timer {}: {error}",
+            path.display()
+        )
+    })?;
+
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "failed to create focus timer directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    fs::write(path, contents)
+        .map_err(|error| format!("failed to write focus timer {}: {error}", path.display()))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -683,6 +958,7 @@ struct WindowGeometry {
 struct MessageComposerSurfaceGeometry {
     saved_pet_window: WindowGeometry,
     window: WindowGeometry,
+    logical_size: LogicalSize<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -789,19 +1065,30 @@ fn clamp_saved_window_position(
 
 fn calculate_message_composer_surface_geometry(
     surface: ComposerSurface,
+    scale_factor: f64,
     work_area: WorkArea,
     pet_window: WindowGeometry,
 ) -> MessageComposerSurfaceGeometry {
-    let (width, height) = surface.size();
+    let logical_size = surface.logical_size();
+    let requested_physical_size = surface.physical_size(scale_factor);
+    let physical_size = if surface == ComposerSurface::Spark {
+        PhysicalSize::new(
+            requested_physical_size.width,
+            requested_physical_size.height.min(work_area.height),
+        )
+    } else {
+        requested_physical_size
+    };
 
     MessageComposerSurfaceGeometry {
         saved_pet_window: pet_window,
         window: WindowGeometry {
-            x: centered_axis(work_area.x, work_area.width, width),
-            y: centered_axis(work_area.y, work_area.height, height),
-            width,
-            height,
+            x: centered_axis(work_area.x, work_area.width, physical_size.width),
+            y: centered_axis(work_area.y, work_area.height, physical_size.height),
+            width: physical_size.width,
+            height: physical_size.height,
         },
+        logical_size,
     }
 }
 
@@ -850,44 +1137,38 @@ fn calculate_edge_peek_snap(work_area: WorkArea, window: WindowGeometry) -> Opti
         .min_by_key(|(_, distance, priority)| (*distance, *priority))
         .map(|(side, _, _)| EdgePeekSnap {
             side,
-            position: calculate_edge_peek_snap_position(side, work_area, window),
+            position: calculate_edge_dock_position(side, work_area, window),
         })
 }
 
-fn calculate_edge_peek_snap_position(
+fn calculate_edge_dock_position(
     side: EdgePeekSide,
     work_area: WorkArea,
     window: WindowGeometry,
 ) -> PhysicalPosition<i32> {
     let work_right = work_area.x + work_area.width as i32;
     let work_bottom = work_area.y + work_area.height as i32;
-    let left_contact_x = contact_pixel(window.width, EDGE_PEEK_LEFT_CONTACT_X_RATIO);
-    let right_contact_x = contact_pixel(window.width, EDGE_PEEK_RIGHT_CONTACT_X_RATIO);
-    let top_contact_y = contact_pixel(window.height, EDGE_PEEK_TOP_CONTACT_Y_RATIO);
-    let bottom_contact_y = contact_pixel(window.height, EDGE_PEEK_BOTTOM_CONTACT_Y_RATIO);
+    let clamped_x = clamp_edge_dock_axis(window.x, work_area.x, work_area.width, window.width);
+    let clamped_y = clamp_edge_dock_axis(window.y, work_area.y, work_area.height, window.height);
 
     match side {
-        EdgePeekSide::Left => PhysicalPosition::new(
-            work_area.x - left_contact_x,
-            clamp_axis(window.y, work_area.y, work_area.height, window.height),
-        ),
-        EdgePeekSide::Right => PhysicalPosition::new(
-            work_right - right_contact_x,
-            clamp_axis(window.y, work_area.y, work_area.height, window.height),
-        ),
-        EdgePeekSide::Top => PhysicalPosition::new(
-            clamp_axis(window.x, work_area.x, work_area.width, window.width),
-            work_area.y - top_contact_y,
-        ),
-        EdgePeekSide::Bottom => PhysicalPosition::new(
-            clamp_axis(window.x, work_area.x, work_area.width, window.width),
-            work_bottom - bottom_contact_y,
-        ),
+        EdgePeekSide::Left => PhysicalPosition::new(work_area.x, clamped_y),
+        EdgePeekSide::Right => PhysicalPosition::new(work_right - window.width as i32, clamped_y),
+        EdgePeekSide::Top => PhysicalPosition::new(clamped_x, work_area.y),
+        EdgePeekSide::Bottom => {
+            PhysicalPosition::new(clamped_x, work_bottom - window.height as i32)
+        }
     }
 }
 
-fn contact_pixel(window_size: u32, normalized_anchor: f64) -> i32 {
-    (window_size as f64 * normalized_anchor).round() as i32
+fn clamp_edge_dock_axis(current: i32, area_start: i32, area_size: u32, window_size: u32) -> i32 {
+    let max = area_start + area_size as i32 - window_size as i32;
+
+    if max < area_start {
+        return area_start;
+    }
+
+    current.clamp(area_start, max)
 }
 
 fn calculate_edge_peek_restore_position(
@@ -964,28 +1245,42 @@ fn centered_axis(area_start: i32, area_size: u32, window_size: u32) -> i32 {
     area_start + ((area_size as i32 - window_size as i32) / 2).max(0)
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn set_window_click_through<R: Runtime>(
     window: &WebviewWindow<R>,
     enabled: bool,
 ) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(enabled)
-        .map_err(|error| format!("failed to set click-through: {error}"))
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-fn set_window_click_through<R: Runtime>(
-    _window: &WebviewWindow<R>,
-    enabled: bool,
-) -> Result<(), String> {
-    eprintln!("click-through unsupported on this platform; requested enabled={enabled}");
-    Ok(())
+    crate::desktop_input::set_full_click_through(window, enabled)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_hide_plan_emits_hidden_before_hiding_without_show_or_focus() {
+        assert_eq!(
+            window_hide_plan(),
+            [WindowHideStep::EmitWindowHidden, WindowHideStep::HideWindow]
+        );
+        assert_eq!(WINDOW_HIDDEN_EVENT, "window-hidden");
+    }
+
+    #[test]
+    fn window_hide_still_hides_when_hidden_event_emit_fails() {
+        let mut hide_count = 0;
+
+        let result = execute_window_hide_actions(
+            || Err("failed to emit window-hidden".to_string()),
+            || {
+                hide_count += 1;
+                Ok(())
+            },
+        );
+
+        assert_eq!(hide_count, 1);
+        assert_eq!(result, Err("failed to emit window-hidden".to_string()));
+    }
+
     use std::{
         fs,
         path::PathBuf,
@@ -1000,12 +1295,30 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn sample_message_composer_surface_geometry() -> MessageComposerSurfaceGeometry {
+        calculate_message_composer_surface_geometry(
+            ComposerSurface::Message,
+            1.0,
+            TestWorkArea {
+                x: 0,
+                y: 0,
+                width: 1200,
+                height: 800,
+            },
+            TestWindowGeometry {
+                x: 860,
+                y: 420,
+                width: 320,
+                height: 360,
+            },
+        )
+    }
+
     #[test]
-    fn click_through_recovery_plan_recovers_show_before_emitting_event() {
+    fn click_through_recovery_plan_shows_without_clearing_full_click_through() {
         assert_eq!(
             click_through_recovery_plan(ClickThroughRecoveryReason::Show),
             [
-                ClickThroughRecoveryStep::ClearClickThrough,
                 ClickThroughRecoveryStep::ShowWindow,
                 ClickThroughRecoveryStep::FocusWindow,
                 ClickThroughRecoveryStep::EmitRecovered(ClickThroughRecoveryReason::Show),
@@ -1055,6 +1368,51 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
         assert_eq!(stored_settings, settings);
         let _ = fs::remove_dir_all(settings_path.parent().unwrap());
+    }
+
+    #[test]
+    fn focus_timer_path_is_a_settings_sibling_json_file() {
+        let app_data_dir = unique_settings_path("focus-timer-sibling")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+
+        assert_eq!(
+            focus_timer_path_from_app_data_dir(&app_data_dir),
+            app_data_dir.join("focus-timer.json")
+        );
+    }
+
+    #[test]
+    fn read_focus_timer_from_path_returns_null_for_invalid_json() {
+        let timer_path =
+            unique_settings_path("focus-timer-invalid").with_file_name("focus-timer.json");
+        fs::create_dir_all(timer_path.parent().unwrap()).unwrap();
+        fs::write(&timer_path, "{not valid json").unwrap();
+
+        let timer = read_focus_timer_from_path(&timer_path);
+
+        assert_eq!(timer, serde_json::Value::Null);
+        let _ = fs::remove_dir_all(timer_path.parent().unwrap());
+    }
+
+    #[test]
+    fn write_focus_timer_to_path_creates_parent_directory_and_writes_json() {
+        let timer_path =
+            unique_settings_path("focus-timer-write").with_file_name("focus-timer.json");
+        let timer = serde_json::json!({
+            "status": "running",
+            "durationMinutes": 25,
+            "startedAt": 1_000,
+            "endsAt": 1_501_000
+        });
+
+        write_focus_timer_to_path(&timer_path, &timer).unwrap();
+
+        let stored_timer: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&timer_path).unwrap()).unwrap();
+        assert_eq!(stored_timer, timer);
+        let _ = fs::remove_dir_all(timer_path.parent().unwrap());
     }
 
     #[test]
@@ -1249,7 +1607,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-71, 240),
+                position: PhysicalPosition::new(0, 240),
             })
         );
     }
@@ -1275,7 +1633,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(951, 240),
+                position: PhysicalPosition::new(880, 240),
             })
         );
     }
@@ -1301,7 +1659,7 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(440, -18),
+                position: PhysicalPosition::new(440, 0),
             })
         );
     }
@@ -1327,13 +1685,13 @@ mod tests {
             snap,
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Bottom,
-                position: PhysicalPosition::new(440, 668),
+                position: PhysicalPosition::new(440, 440),
             })
         );
     }
 
     #[test]
-    fn edge_peek_snap_scales_contact_anchors_for_hidpi_window_sizes() {
+    fn edge_peek_snap_keeps_hidpi_window_sizes_inside_the_work_area() {
         let work_area = TestWorkArea {
             x: 0,
             y: 0,
@@ -1369,29 +1727,128 @@ mod tests {
             calculate_edge_peek_snap(work_area, left_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-88, 180),
+                position: PhysicalPosition::new(0, 180),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, right_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(889, 180),
+                position: PhysicalPosition::new(800, 180),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, top_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(400, -23),
+                position: PhysicalPosition::new(400, 0),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, bottom_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Bottom,
-                position: PhysicalPosition::new(400, 635),
+                position: PhysicalPosition::new(400, 350),
             })
+        );
+    }
+
+    #[test]
+    fn edge_dock_keeps_the_complete_window_inside_a_negative_taskbar_work_area() {
+        let work_area = TestWorkArea {
+            x: -1920,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+        let window = TestWindowGeometry {
+            x: -2500,
+            y: 900,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Left, work_area, window),
+            PhysicalPosition::new(-1920, 680),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Right, work_area, window),
+            PhysicalPosition::new(-320, 680),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Top, work_area, window),
+            PhysicalPosition::new(-1920, 0),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Bottom, work_area, window),
+            PhysicalPosition::new(-1920, 680),
+        );
+    }
+
+    #[test]
+    fn edge_dock_clamps_each_orthogonal_axis_to_the_same_work_area() {
+        let work_area = TestWorkArea {
+            x: 100,
+            y: 50,
+            width: 800,
+            height: 600,
+        };
+        let window = TestWindowGeometry {
+            x: 999,
+            y: 999,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Left, work_area, window),
+            PhysicalPosition::new(100, 290),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Right, work_area, window),
+            PhysicalPosition::new(580, 290),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Top, work_area, window),
+            PhysicalPosition::new(580, 50),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Bottom, work_area, window),
+            PhysicalPosition::new(580, 290),
+        );
+    }
+
+    #[test]
+    fn edge_dock_pins_an_oversized_orthogonal_axis_to_the_work_area_origin() {
+        let work_area = TestWorkArea {
+            x: -1280,
+            y: 40,
+            width: 240,
+            height: 220,
+        };
+        let window = TestWindowGeometry {
+            x: 500,
+            y: 500,
+            width: 320,
+            height: 360,
+        };
+
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Left, work_area, window),
+            PhysicalPosition::new(-1280, 40),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Right, work_area, window),
+            PhysicalPosition::new(-1360, 40),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Top, work_area, window),
+            PhysicalPosition::new(-1280, 40),
+        );
+        assert_eq!(
+            calculate_edge_dock_position(EdgePeekSide::Bottom, work_area, window),
+            PhysicalPosition::new(-1280, -100),
         );
     }
 
@@ -1417,7 +1874,7 @@ mod tests {
     }
 
     #[test]
-    fn edge_peek_snap_places_contact_anchor_on_negative_origin_work_area() {
+    fn edge_peek_snap_keeps_the_window_inside_a_negative_origin_work_area() {
         let work_area = TestWorkArea {
             x: -1440,
             y: -120,
@@ -1453,28 +1910,28 @@ mod tests {
             calculate_edge_peek_snap(work_area, left_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-1511, 100),
+                position: PhysicalPosition::new(-1440, 100),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, right_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(-249, 100),
+                position: PhysicalPosition::new(-320, 100),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, top_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(-880, -138),
+                position: PhysicalPosition::new(-880, -120),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, bottom_window),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Bottom,
-                position: PhysicalPosition::new(-880, 648),
+                position: PhysicalPosition::new(-880, 420),
             })
         );
     }
@@ -1504,14 +1961,14 @@ mod tests {
             calculate_edge_peek_snap(work_area, top_closer),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Top,
-                position: PhysicalPosition::new(24, -18),
+                position: PhysicalPosition::new(20, 0),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, left_closer),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-71, 24),
+                position: PhysicalPosition::new(0, 20),
             })
         );
     }
@@ -1541,14 +1998,14 @@ mod tests {
             calculate_edge_peek_snap(work_area, top_left_tie),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Left,
-                position: PhysicalPosition::new(-71, 24),
+                position: PhysicalPosition::new(0, 10),
             })
         );
         assert_eq!(
             calculate_edge_peek_snap(work_area, top_right_tie),
             Some(EdgePeekSnap {
                 side: EdgePeekSide::Right,
-                position: PhysicalPosition::new(951, 24),
+                position: PhysicalPosition::new(880, 10),
             })
         );
     }
@@ -1590,6 +2047,7 @@ mod tests {
 
         let surface = calculate_message_composer_surface_geometry(
             ComposerSurface::Message,
+            1.0,
             work_area,
             pet_window,
         );
@@ -1599,6 +2057,147 @@ mod tests {
         assert_eq!(surface.window.y, 270);
         assert_eq!(surface.window.width, 440);
         assert_eq!(surface.window.height, 260);
+    }
+
+    #[test]
+    fn composer_surfaces_scale_logical_sizes_for_physical_centering() {
+        let cases = [
+            (ComposerSurface::Message, 1.0, 440, 260),
+            (ComposerSurface::Message, 1.25, 550, 325),
+            (ComposerSurface::Message, 1.5, 660, 390),
+            (ComposerSurface::Surprise, 1.0, 440, 460),
+            (ComposerSurface::Surprise, 1.25, 550, 575),
+            (ComposerSurface::Surprise, 1.5, 660, 690),
+            (ComposerSurface::Focus, 1.0, 440, 320),
+            (ComposerSurface::Focus, 1.25, 550, 400),
+            (ComposerSurface::Focus, 1.5, 660, 480),
+            (ComposerSurface::Weather, 1.0, 460, 504),
+            (ComposerSurface::Weather, 1.25, 575, 630),
+            (ComposerSurface::Weather, 1.5, 690, 756),
+            (ComposerSurface::Spark, 1.0, 460, 638),
+            (ComposerSurface::Spark, 1.25, 575, 798),
+            (ComposerSurface::Spark, 1.5, 690, 957),
+        ];
+
+        for (surface, scale_factor, expected_width, expected_height) in cases {
+            let physical_size = surface.physical_size(scale_factor);
+
+            assert_eq!(physical_size.width, expected_width);
+            assert_eq!(physical_size.height, expected_height);
+        }
+    }
+
+    #[test]
+    fn spark_composer_clamps_only_its_height_to_a_short_work_area() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 580,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 860,
+            y: 220,
+            width: 320,
+            height: 360,
+        };
+
+        let spark = calculate_message_composer_surface_geometry(
+            ComposerSurface::Spark,
+            1.0,
+            work_area,
+            pet_window,
+        );
+        let weather = calculate_message_composer_surface_geometry(
+            ComposerSurface::Weather,
+            1.0,
+            work_area,
+            pet_window,
+        );
+        let message = calculate_message_composer_surface_geometry(
+            ComposerSurface::Message,
+            1.0,
+            work_area,
+            pet_window,
+        );
+
+        assert_eq!(spark.window.width, 460);
+        assert_eq!(spark.window.height, 580);
+        assert_eq!(spark.window.y, 0);
+        assert_eq!(weather.window.height, 504);
+        assert_eq!(message.window.height, 260);
+    }
+
+    #[test]
+    fn spark_composer_resize_action_receives_the_clamped_physical_size() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1200,
+            height: 580,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 860,
+            y: 220,
+            width: 320,
+            height: 360,
+        };
+        let geometry = calculate_message_composer_surface_geometry(
+            ComposerSurface::Spark,
+            1.0,
+            work_area,
+            pet_window,
+        );
+        let received_size = std::cell::RefCell::new(None);
+
+        execute_message_composer_open_actions(
+            ComposerSurface::Spark,
+            geometry,
+            |size| {
+                received_size.replace(Some(size));
+                Ok(())
+            },
+            || Ok(()),
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            *received_size.borrow(),
+            Some(Size::Physical(PhysicalSize::new(460, 580)))
+        );
+    }
+
+    #[test]
+    fn surprise_composer_centers_scaled_physical_geometry_from_logical_size() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let pet_window = TestWindowGeometry {
+            x: 1480,
+            y: 680,
+            width: 320,
+            height: 360,
+        };
+
+        let surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Surprise,
+            1.5,
+            work_area,
+            pet_window,
+        );
+
+        assert_eq!(surface.saved_pet_window, pet_window);
+        assert_eq!(surface.logical_size.width, 440.0);
+        assert_eq!(surface.logical_size.height, 460.0);
+        assert_eq!(surface.window.x, 630);
+        assert_eq!(surface.window.y, 195);
+        assert_eq!(surface.window.width, 660);
+        assert_eq!(surface.window.height, 690);
     }
 
     #[test]
@@ -1618,6 +2217,7 @@ mod tests {
 
         let surface = calculate_message_composer_surface_geometry(
             ComposerSurface::Message,
+            1.0,
             work_area,
             pet_window,
         );
@@ -1646,6 +2246,7 @@ mod tests {
 
         let surface = calculate_message_composer_surface_geometry(
             ComposerSurface::Surprise,
+            1.0,
             work_area,
             pet_window,
         );
@@ -1674,6 +2275,7 @@ mod tests {
 
         let surface = calculate_message_composer_surface_geometry(
             ComposerSurface::Message,
+            1.0,
             work_area,
             pet_window,
         );
@@ -1702,6 +2304,7 @@ mod tests {
 
         let surface = calculate_message_composer_surface_geometry(
             ComposerSurface::Surprise,
+            1.0,
             work_area,
             pet_window,
         );
@@ -1744,6 +2347,36 @@ mod tests {
     }
 
     #[test]
+    fn weather_composer_surface_restore_uses_saved_pet_geometry() {
+        let work_area = TestWorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let saved_pet_window = TestWindowGeometry {
+            x: 1460,
+            y: 680,
+            width: 320,
+            height: 360,
+        };
+        let weather_surface = calculate_message_composer_surface_geometry(
+            ComposerSurface::Weather,
+            1.25,
+            work_area,
+            saved_pet_window,
+        );
+
+        let restored = calculate_message_composer_restore_geometry(
+            work_area,
+            weather_surface.window,
+            Some(weather_surface.saved_pet_window),
+        );
+
+        assert_eq!(restored, saved_pet_window);
+    }
+
+    #[test]
     fn message_composer_surface_repeated_open_does_not_overwrite_saved_pet_geometry() {
         let _guard = lock_message_composer_surface_state_for_test();
         let original_pet_window = TestWindowGeometry {
@@ -1771,7 +2404,123 @@ mod tests {
     }
 
     #[test]
-    fn message_composer_surface_close_failure_clears_saved_geometry() {
+    fn message_composer_saved_geometry_is_pending_until_open_succeeds() {
+        let _guard = lock_message_composer_surface_state_for_test();
+        let original_pet_window = TestWindowGeometry {
+            x: 860,
+            y: 420,
+            width: 320,
+            height: 360,
+        };
+
+        set_saved_message_composer_surface(None).unwrap();
+        assert!(save_message_composer_surface_if_absent(original_pet_window).unwrap());
+        assert!(!is_message_composer_surface_open());
+
+        mark_message_composer_surface_open().unwrap();
+        assert!(is_message_composer_surface_open());
+        assert_eq!(
+            saved_message_composer_surface().unwrap(),
+            Some(original_pet_window)
+        );
+        set_saved_message_composer_surface(None).unwrap();
+    }
+
+    #[test]
+    fn message_composer_resize_failure_attempts_safe_rollback() {
+        let actions = std::cell::RefCell::new(Vec::new());
+        let surface = sample_message_composer_surface_geometry();
+
+        let result = execute_message_composer_open_actions(
+            ComposerSurface::Message,
+            surface,
+            |_| {
+                actions.borrow_mut().push("resize");
+                Err("resize failed".to_string())
+            },
+            || {
+                actions.borrow_mut().push("move");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("show");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("rollback");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("resize failed".to_string()));
+        assert_eq!(*actions.borrow(), vec!["resize", "rollback"]);
+    }
+
+    #[test]
+    fn message_composer_move_failure_rolls_back_applied_geometry() {
+        let actions = std::cell::RefCell::new(Vec::new());
+        let surface = sample_message_composer_surface_geometry();
+
+        let result = execute_message_composer_open_actions(
+            ComposerSurface::Message,
+            surface,
+            |_| {
+                actions.borrow_mut().push("resize");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("move");
+                Err("move failed".to_string())
+            },
+            || {
+                actions.borrow_mut().push("show");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("rollback");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("move failed".to_string()));
+        assert_eq!(*actions.borrow(), vec!["resize", "move", "rollback"]);
+    }
+
+    #[test]
+    fn message_composer_show_failure_rolls_back_size_and_position() {
+        let actions = std::cell::RefCell::new(Vec::new());
+        let surface = sample_message_composer_surface_geometry();
+
+        let result = execute_message_composer_open_actions(
+            ComposerSurface::Message,
+            surface,
+            |_| {
+                actions.borrow_mut().push("resize");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("move");
+                Ok(())
+            },
+            || {
+                actions.borrow_mut().push("show");
+                Err("show failed".to_string())
+            },
+            || {
+                actions.borrow_mut().push("rollback");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Err("show failed".to_string()));
+        assert_eq!(
+            *actions.borrow(),
+            vec!["resize", "move", "show", "rollback"]
+        );
+    }
+
+    #[test]
+    fn message_composer_surface_close_failure_preserves_saved_geometry_for_retry() {
         let _guard = lock_message_composer_surface_state_for_test();
         let original_pet_window = TestWindowGeometry {
             x: 860,
@@ -1787,7 +2536,11 @@ mod tests {
         ));
 
         assert_eq!(result, Err("failed to move main window".to_string()));
-        assert_eq!(saved_message_composer_surface().unwrap(), None);
+        assert_eq!(
+            saved_message_composer_surface().unwrap(),
+            Some(original_pet_window)
+        );
+        set_saved_message_composer_surface(None).unwrap();
     }
 
     #[test]

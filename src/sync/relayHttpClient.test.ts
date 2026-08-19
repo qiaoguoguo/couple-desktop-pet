@@ -23,6 +23,85 @@ const deviceProfile = {
 };
 
 describe("RelayHttpClient", () => {
+  it("gets strict spark snapshot and leaderboard contracts over exact POST paths", async () => {
+    const snapshot = {
+      version: 1 as const,
+      pairId: "pair_1",
+      streakDays: 28,
+      tier: "heartflame" as const,
+      calendarState: "qualified_today" as const,
+      lastQualifiedDate: "2026-08-19",
+      timezone: "Asia/Shanghai" as const,
+      asOf: "2026-08-19T08:00:00.000Z",
+      refreshAt: "2026-08-19T16:00:00.000Z",
+    };
+    const leaderboard = {
+      version: 1 as const,
+      snapshot,
+      top20: [{
+        rank: 1,
+        displayNames: ["小*", "阿*"] as [string, string],
+        cities: ["杭州", "上海"] as [string, string],
+        streakDays: 28,
+        tier: "heartflame" as const,
+      }],
+      self: {
+        rank: 27,
+        displayNames: ["小满", "阿岚"] as [string, string],
+        cities: ["杭州", "上海"] as [string, string],
+        streakDays: 28,
+        tier: "heartflame" as const,
+      },
+      asOf: snapshot.asOf,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...snapshot, tier: "stellar" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(leaderboard), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...leaderboard, top20: [{
+          ...leaderboard.top20[0],
+          deviceId: "private",
+        }] }), { status: 200 }),
+      );
+    const client = new RelayHttpClient("https://relay.example", fetchMock as typeof fetch);
+    const request = {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+    };
+
+    await expect(client.getSparkSnapshot(request)).resolves.toEqual({
+      ok: true,
+      ...snapshot,
+    });
+    await expect(client.getSparkSnapshot(request)).resolves.toMatchObject({
+      ok: false,
+      code: "relay_unavailable",
+    });
+    await expect(client.getSparkLeaderboard(request)).resolves.toEqual({
+      ok: true,
+      ...leaderboard,
+    });
+    await expect(client.getSparkLeaderboard(request)).resolves.toMatchObject({
+      ok: false,
+      code: "relay_unavailable",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://relay.example/pairs/spark/snapshot",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://relay.example/pairs/spark/leaderboard",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("creates pair codes", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(

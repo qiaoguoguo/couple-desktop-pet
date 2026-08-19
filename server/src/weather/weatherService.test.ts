@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CityLocationV1 } from "../../../shared/profileProtocol.js";
 import { WeatherProviderError, type ProviderWeather, type WeatherProvider } from "./weatherProvider.js";
+import { WeatherApiProvider } from "./weatherApiProvider.js";
 import { WeatherService } from "./weatherService.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -213,6 +214,24 @@ describe("WeatherService weather cache", () => {
 });
 
 describe("WeatherService location search cache", () => {
+  it("caches local Chinese city results without a supplier request", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const localService = new WeatherService(
+      new WeatherApiProvider({ apiKey: null, timeoutMs: 3000, fetchImpl }),
+      () => now,
+    );
+
+    const first = await localService.searchLocations("长沙市");
+    const cached = await localService.searchLocations("长沙市");
+
+    expect(first).toEqual([
+      expect.objectContaining({ name: "长沙", region: "湖南" }),
+    ]);
+    expect(cached).toEqual(first);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(localService.getCacheEntryCounts().search).toBe(1);
+  });
+
   it("normalizes and caches searches for 24 hours", async () => {
     const first = await service.searchLocations("  HangZhou  ");
     now += 23 * HOUR_MS;

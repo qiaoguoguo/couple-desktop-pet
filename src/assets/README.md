@@ -7,6 +7,10 @@ The user-provided Q-girl reference image is used only as character and style dir
 `ui/interaction-buttons/new-tea-weather.png` is project-generated paired-weather
 radial-menu artwork with a transparent background.
 
+`ui/spark/*.png` contains seven project-generated transparent spark-tier images,
+from unlit through stellar. They are first-party artwork with no text, logos, or
+third-party source assets.
+
 Generation boundary:
 - Current Q-girl frames are temporary local verification assets derived from
   the project reference image by `scripts/asset_tools/generate_q_girl_temp_frames.py`
@@ -22,8 +26,22 @@ Current built-in package:
 - `pets/q-girl/`: transparent PNG frame-sequence assets referenced by `builtInPetManifest.ts`.
 - `pets/q-girl/portrait.png` and `pets/q-girl/portrait-offline.png`: first-party
   Codex Image Gen presence portraits, processed locally with chroma-key alpha.
+- `ui/interaction-buttons/new-tea-*.png`: first-party transparent PNG radial menu
+  icons. `new-tea-focus.png` is the project-generated focus timer artwork; the
+  remaining approved icons are copied byte-for-byte from
+  `docs/assets/references/radial-menu-new-tea/`.
+- `ui/surprise/heart-surprise.png`: first-party transparent PNG surprise-heart
+  artwork copied byte-for-byte from `docs/assets/references/heart-surprise-new-tea-icon.png`.
+- `pets/q-girl/edge-companion/`: project-generated original transparent PNG
+  micro companion sprites for edge-hidden notices, produced from the approved
+  design references `docs/assets/edge-hidden-micro-mascot-approved.png` and
+  `docs/assets/edge-hidden-micro-mascot-directions-approved.png`.
 - The current manifest uses twelve actions with thirty frames per action: three idle loops, three movement/sleep actions, and six single-click interaction actions.
 - The committed Q-girl frames are temporary verification assets until the final Image Gen 12 action x 30 frame set passes visual QA.
+
+Radial menu and surprise artwork must stay brand-neutral: no platform names, no
+product logos, no emoji, no CSS-drawn fallback icons, no SVG placeholders, and no
+text-only icon replacements.
 
 ## Built-In Package Contract
 

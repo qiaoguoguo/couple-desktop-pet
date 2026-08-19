@@ -5,6 +5,7 @@ import type {
   PairCodeStatusRequest,
   UnpairRequest,
 } from "../../shared/syncProtocol.js";
+import type { PairSparkRequest } from "../../shared/sparkProtocol.js";
 import {
   validateProfileUpdate,
   type DeviceProfileV1,
@@ -21,6 +22,7 @@ import { readJsonBody, writeError, writeJson } from "./httpJson.js";
 import type { ProfileEventHub } from "./profileEvents.js";
 import { FixedWindowRateLimiter } from "./requestRateLimiter.js";
 import type { RelayRepository } from "./repository.js";
+import type { SparkRepository } from "./spark/sparkRepository.js";
 import { WeatherProviderError } from "./weather/weatherProvider.js";
 import type { WeatherService } from "./weather/weatherService.js";
 
@@ -29,6 +31,7 @@ export interface PairingApiDependencies {
   rateLimiter: FixedWindowRateLimiter;
   profileEvents: ProfileEventHub;
   weatherConfigured: boolean;
+  sparkRepository: SparkRepository;
 }
 
 export function createRelayRequestHandler(
@@ -137,6 +140,36 @@ async function handleRequest(
       return;
     }
 
+    if (
+      request.method === "POST" &&
+      (url.pathname === "/pairs/spark/snapshot" ||
+        url.pathname === "/pairs/spark/leaderboard")
+    ) {
+      const body = readPairSparkRequest(await readBodyOrThrow(request));
+      const routeKey = url.pathname.endsWith("/snapshot")
+        ? "spark:snapshot"
+        : "spark:leaderboard";
+      consumeRateLimit(
+        dependencies.rateLimiter,
+        `${routeKey}:ip:${request.socket.remoteAddress ?? "unknown"}`,
+        30,
+        60_000,
+      );
+      repository.authenticateDeviceForPair(body);
+      consumeRateLimit(
+        dependencies.rateLimiter,
+        `${routeKey}:device:${body.deviceId}`,
+        30,
+        60_000,
+      );
+
+      const result = url.pathname.endsWith("/snapshot")
+        ? dependencies.sparkRepository.getSnapshot(body.pairId)
+        : dependencies.sparkRepository.getLeaderboard(body.pairId, body.deviceId);
+      writeJson(response, 200, result);
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/pair-codes") {
       const body = readCreatePairCodeRequest(await readBodyOrThrow(request));
       writeJson(response, 200, repository.createPairCode(body));
@@ -223,6 +256,15 @@ function readPairWeatherRequest(input: unknown): {
   deviceSecret: string;
   pairId: string;
 } {
+  const record = readObjectBody(input);
+  return {
+    deviceId: readRequiredString(record.deviceId, "deviceId"),
+    deviceSecret: readRequiredString(record.deviceSecret, "deviceSecret"),
+    pairId: readRequiredString(record.pairId, "pairId"),
+  };
+}
+
+function readPairSparkRequest(input: unknown): PairSparkRequest {
   const record = readObjectBody(input);
   return {
     deviceId: readRequiredString(record.deviceId, "deviceId"),

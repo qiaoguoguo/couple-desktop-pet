@@ -2,8 +2,10 @@ import { StrictMode } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DeviceProfileV1 } from "../../shared/profileProtocol";
+import type { SparkStreakSnapshotV1 } from "../../shared/sparkProtocol";
 import { defaultSettings } from "../settings/defaultSettings";
 import {
+  E2E_INCOMING_MESSAGE_EVENT,
   E2E_REALTIME_OVERRIDE_EVENT,
   E2E_REALTIME_OVERRIDE_WINDOW_KEY,
 } from "./e2eRealtimeOverride";
@@ -27,6 +29,7 @@ const realtimeMock = vi.hoisted(() => {
           at?: string;
           content?: unknown;
           profile?: DeviceProfileV1;
+          snapshot?: SparkStreakSnapshotV1;
         }): void;
         activityStatus?: string | null;
         }
@@ -281,6 +284,36 @@ describe("useRealtimeSync", () => {
     expect(latestCallback).toHaveBeenCalledWith("dev_b", profile);
   });
 
+  it("routes spark snapshots through the latest callback without changing presence", () => {
+    const firstCallback = vi.fn();
+    const latestCallback = vi.fn();
+    const { rerender } = render(<HookProbe onSparkSnapshot={firstCallback} />);
+    const firstOptions = realtimeMock.latestOptions;
+    const snapshot: SparkStreakSnapshotV1 = {
+      version: 1,
+      pairId: "pair_1",
+      streakDays: 28,
+      tier: "heartflame",
+      calendarState: "qualified_today",
+      lastQualifiedDate: "2026-08-19",
+      timezone: "Asia/Shanghai",
+      asOf: "2026-08-19T08:00:00.000Z",
+      refreshAt: "2026-08-19T16:00:00.000Z",
+    };
+
+    rerender(<HookProbe onSparkSnapshot={latestCallback} />);
+    expect(realtimeMock.latestOptions).toBe(firstOptions);
+    act(() => {
+      realtimeMock.latestOptions?.onEvent({ type: "spark", snapshot });
+    });
+
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(latestCallback).toHaveBeenCalledWith(snapshot);
+    expect(screen.getByTestId("sync-state").textContent).toBe(
+      "disconnected:unknown",
+    );
+  });
+
   it("disconnects the realtime client on unmount", () => {
     const { unmount } = render(<HookProbe />);
 
@@ -329,6 +362,53 @@ describe("useRealtimeSync", () => {
         "disconnected:unknown:none",
       );
     });
+  });
+
+  it("routes E2E incoming-message events through the existing message callback", async () => {
+    vi.stubEnv("VITE_TAURI_E2E", "1");
+    const onMessage = vi.fn();
+    const addEventListener = vi.spyOn(window, "addEventListener");
+
+    render(<HookProbe onMessage={onMessage} />);
+
+    await waitFor(() => {
+      expect(addEventListener).toHaveBeenCalledWith(
+        E2E_INCOMING_MESSAGE_EVENT,
+        expect.any(Function),
+      );
+    });
+
+    const incomingMessage = {
+      id: "task7-message-1",
+      fromDeviceId: "task7-peer",
+      text: "有一份小心意",
+      at: "2026-08-14T05:00:00.000Z",
+      content: {
+        kind: "surprise" as const,
+        version: 1 as const,
+        theme: "general" as const,
+        secret: "7482",
+        note: "完整卡片备注",
+      },
+    };
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(E2E_INCOMING_MESSAGE_EVENT, { detail: incomingMessage }),
+      );
+    });
+
+    expect(onMessage).toHaveBeenCalledWith(incomingMessage);
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(E2E_INCOMING_MESSAGE_EVENT, {
+          detail: { id: "malformed" },
+        }),
+      );
+    });
+
+    expect(onMessage).toHaveBeenCalledTimes(1);
   });
 
   it("cleans up the E2E override listener across StrictMode mount and unmount", async () => {
@@ -402,6 +482,7 @@ function HookProbe({
   includeTimestamps = false,
   onMessage = () => undefined,
   onPeerProfile = () => undefined,
+  onSparkSnapshot = () => undefined,
 }: {
   activityStatus?: "slacking" | "dazing" | "overtime" | null;
   includeActivityStatus?: boolean;
@@ -414,6 +495,7 @@ function HookProbe({
     content?: unknown;
   }) => void;
   onPeerProfile?: (deviceId: string, profile: DeviceProfileV1) => void;
+  onSparkSnapshot?: (snapshot: SparkStreakSnapshotV1) => void;
 }) {
   const { state } = useRealtimeSync(
     {
@@ -425,7 +507,7 @@ function HookProbe({
       peerDeviceId: "dev_b",
       activityStatus,
     },
-    { onMessage, onPeerProfile },
+    { onMessage, onPeerProfile, onSparkSnapshot },
   );
 
   if (includeActivityStatus) {

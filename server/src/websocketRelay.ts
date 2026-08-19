@@ -5,6 +5,11 @@ import {
   isNullableActivityStatus,
 } from "../../shared/activityStatus.js";
 import { PROFILE_SYNC_CAPABILITY } from "../../shared/profileProtocol.js";
+import {
+  SPARK_SYNC_CAPABILITY,
+  type SparkInteractionKind,
+  type SparkStreakSnapshotV1,
+} from "../../shared/sparkProtocol.js";
 import type {
   ClientToServerMessage,
   ErrorServerMessage,
@@ -27,11 +32,13 @@ import type {
   ProfileUpdatedEvent,
 } from "./profileEvents.js";
 import type { RelayRepository } from "./repository.js";
+import type { SparkRepository } from "./spark/sparkRepository.js";
 
 export function attachWebSocketRelay(
   server: Server,
   repository: RelayRepository,
   profileEvents: ProfileEventHub,
+  sparkRepository: SparkRepository,
   now: () => Date = () => new Date(),
 ): WebSocketServer {
   const registry = new ConnectionRegistry();
@@ -51,6 +58,7 @@ export function attachWebSocketRelay(
         if (!connection) {
           connection = authenticateSocket(
             repository,
+            sparkRepository,
             registry,
             socket,
             message,
@@ -59,7 +67,13 @@ export function attachWebSocketRelay(
           return;
         }
 
-        handleAuthenticatedMessage(registry, connection, message, now);
+        handleAuthenticatedMessage(
+          registry,
+          sparkRepository,
+          connection,
+          message,
+          now,
+        );
       } catch (error) {
         sendError(socket, toErrorMessage(error, readRequestId(data)));
       }
@@ -87,6 +101,7 @@ export function attachWebSocketRelay(
 
 function authenticateSocket(
   repository: RelayRepository,
+  sparkRepository: SparkRepository,
   registry: ConnectionRegistry,
   socket: WebSocket,
   message: ClientToServerMessage,
@@ -107,6 +122,8 @@ function authenticateSocket(
       message.capabilities?.includes(ACTIVITY_STATUS_CAPABILITY) ?? false,
     supportsProfileSync:
       message.capabilities?.includes(PROFILE_SYNC_CAPABILITY) ?? false,
+    supportsSpark:
+      message.capabilities?.includes(SPARK_SYNC_CAPABILITY) ?? false,
   };
   const previous = registry.replace(connection);
   const isPresenceTransition = !previous;
@@ -118,7 +135,11 @@ function authenticateSocket(
     type: "auth.ok",
     requestId: message.requestId,
     pairId: authenticated.pairId,
-    capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+    capabilities: [
+      ACTIVITY_STATUS_CAPABILITY,
+      PROFILE_SYNC_CAPABILITY,
+      SPARK_SYNC_CAPABILITY,
+    ],
   });
 
   if (connection.supportsProfileSync) {
@@ -130,6 +151,17 @@ function authenticateSocket(
         peerDeviceId: authenticated.peerDeviceId,
         profile: peerProfile,
         changedAt: peerProfile.updatedAt,
+      });
+    }
+  }
+
+  if (connection.supportsSpark) {
+    try {
+      sendSparkSnapshot(connection, sparkRepository.getSnapshot(connection.pairId));
+    } catch {
+      console.error("Initial Spark snapshot failed", {
+        category: "spark_initial_snapshot_failed",
+        pairId: connection.pairId,
       });
     }
   }
@@ -220,6 +252,7 @@ function createPresenceChangedAt(now: () => Date): string {
 
 function handleAuthenticatedMessage(
   registry: ConnectionRegistry,
+  sparkRepository: SparkRepository,
   connection: AuthenticatedConnection,
   message: ClientToServerMessage,
   now: () => Date,
@@ -277,20 +310,82 @@ function handleAuthenticatedMessage(
   }
 
   const sentAt = new Date().toISOString();
-  sendJson(peer.socket, {
-    type: "message.received",
-    pairId: connection.pairId,
-    serverMessageId: createServerMessageId(),
-    fromDeviceId: connection.deviceId,
-    text: text.text,
-    sentAt,
-    ...(message.content ? { content: message.content } : {}),
-  });
+  sendJsonAcknowledged(
+    peer.socket,
+    {
+      type: "message.received",
+      pairId: connection.pairId,
+      serverMessageId: createServerMessageId(),
+      fromDeviceId: connection.deviceId,
+      text: text.text,
+      sentAt,
+      ...(message.content ? { content: message.content } : {}),
+    },
+    (relayed) => {
+      if (!relayed) {
+        sendError(connection.socket, {
+          type: "error",
+          requestId: message.requestId,
+          code: "peer_offline",
+          message: "Peer is offline",
+        });
+        return;
+      }
+      sendJson(connection.socket, {
+        type: "message.delivered",
+        requestId: message.requestId,
+        clientMessageId: message.clientMessageId,
+        deliveredAt: sentAt,
+      });
+
+      const interactionKind = getSparkInteractionKind(message);
+      if (interactionKind === null) {
+        return;
+      }
+
+      try {
+        const result = sparkRepository.recordQualifiedInteraction(
+          connection.pairId,
+          interactionKind,
+        );
+        if (result.changed) {
+          sendSparkSnapshot(connection, result.snapshot);
+          if (peer.pairId === connection.pairId) {
+            sendSparkSnapshot(peer, result.snapshot);
+          }
+        }
+      } catch {
+        console.error("Spark persistence failed", {
+          category: "spark_persistence_failed",
+          pairId: connection.pairId,
+        });
+      }
+    },
+  );
+}
+
+function getSparkInteractionKind(
+  message: Extract<ClientToServerMessage, { type: "message.send" }>,
+): SparkInteractionKind | null {
+  if (message.content === undefined) {
+    return "message";
+  }
+
+  return message.content.kind === "surprise" ? "surprise" : null;
+}
+
+function sendSparkSnapshot(
+  connection: AuthenticatedConnection,
+  snapshot: SparkStreakSnapshotV1,
+): void {
+  if (!connection.supportsSpark) {
+    return;
+  }
+
   sendJson(connection.socket, {
-    type: "message.delivered",
-    requestId: message.requestId,
-    clientMessageId: message.clientMessageId,
-    deliveredAt: sentAt,
+    type: "spark.updated",
+    pairId: connection.pairId,
+    snapshot,
   });
 }
 
@@ -446,12 +541,39 @@ function sendError(socket: WebSocket, message: ErrorServerMessage): void {
   sendJson(socket, message);
 }
 
-function sendJson(socket: WebSocket, message: ServerToClientMessage): void {
+function sendJson(socket: WebSocket, message: ServerToClientMessage): boolean {
   if (socket.readyState !== WebSocket.OPEN) {
-    return;
+    return false;
   }
 
   socket.send(JSON.stringify(message));
+  return true;
+}
+
+function sendJsonAcknowledged(
+  socket: WebSocket,
+  message: ServerToClientMessage,
+  onComplete: (sent: boolean) => void,
+): void {
+  if (socket.readyState !== WebSocket.OPEN) {
+    onComplete(false);
+    return;
+  }
+
+  let completed = false;
+  const complete = (sent: boolean) => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    onComplete(sent);
+  };
+
+  try {
+    socket.send(JSON.stringify(message), (error) => complete(error == null));
+  } catch {
+    complete(false);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

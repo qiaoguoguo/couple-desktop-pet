@@ -11,6 +11,12 @@ import {
   type ProfileSyncCapability,
   type ProfileUpdateV1,
 } from "./profileProtocol.js";
+import {
+  SPARK_SYNC_CAPABILITY,
+  readSparkStreakSnapshot,
+  type SparkStreakSnapshotV1,
+  type SparkSyncCapability,
+} from "./sparkProtocol.js";
 
 export const MESSAGE_TEXT_MAX_LENGTH = 300;
 export const PAIR_CODE_LENGTH = 6;
@@ -21,6 +27,7 @@ const SURPRISE_SECRET_PATTERN = /^[A-Za-z0-9-]+$/;
 const SUPPORTED_SYNC_CAPABILITIES: readonly SyncCapability[] = [
   ACTIVITY_STATUS_CAPABILITY,
   PROFILE_SYNC_CAPABILITY,
+  SPARK_SYNC_CAPABILITY,
 ];
 const SURPRISE_CONTENT_KEYS = new Set<string>([
   "kind",
@@ -137,7 +144,10 @@ export interface AuthClientMessage {
   capabilities?: SyncCapability[];
 }
 
-export type SyncCapability = ActivityStatusCapability | ProfileSyncCapability;
+export type SyncCapability =
+  | ActivityStatusCapability
+  | ProfileSyncCapability
+  | SparkSyncCapability;
 
 export type SurpriseTheme =
   | "cheer"
@@ -241,6 +251,12 @@ export interface PeerProfileServerMessage {
   changedAt: string;
 }
 
+export interface SparkUpdatedServerMessage {
+  type: "spark.updated";
+  pairId: string;
+  snapshot: SparkStreakSnapshotV1;
+}
+
 export interface MessageDeliveredServerMessage {
   type: "message.delivered";
   requestId: string;
@@ -265,6 +281,7 @@ export type ServerToClientMessage =
   | PeerOfflineServerMessage
   | PeerStatusServerMessage
   | PeerProfileServerMessage
+  | SparkUpdatedServerMessage
   | MessageReceivedServerMessage
   | MessageDeliveredServerMessage
   | ErrorServerMessage
@@ -372,6 +389,8 @@ export function parseServerToClientMessage(input: unknown): ServerToClientMessag
       return readPeerStatus(input);
     case "peer.profile":
       return readPeerProfile(input);
+    case "spark.updated":
+      return readSparkUpdated(input);
     case "message.received":
       return readMessageReceived(input);
     case "message.delivered":
@@ -529,6 +548,17 @@ function readError(input: Record<string, unknown>): ErrorServerMessage | null {
 
 export function isSyncErrorCode(code: string): code is SyncErrorCode {
   return SYNC_ERROR_CODES.has(code);
+}
+
+function readSparkUpdated(input: Record<string, unknown>): SparkUpdatedServerMessage | null {
+  if (typeof input.pairId !== "string") {
+    return null;
+  }
+  const snapshot = readSparkStreakSnapshot(input.snapshot);
+  if (snapshot === null || snapshot.pairId !== input.pairId) {
+    return null;
+  }
+  return { type: "spark.updated", pairId: input.pairId, snapshot };
 }
 
 export function isSurpriseTheme(value: string): value is SurpriseTheme {

@@ -473,6 +473,7 @@ dependencies = [
 name = "couple-desktop-pet"
 version = "0.1.0"
 dependencies = [
+ "gtk",
  "serde",
  "serde_json",
  "tauri",
@@ -480,6 +481,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-wdio",
  "tauri-plugin-wdio-webdriver",
+ "windows",
  "zip",
 ]
 

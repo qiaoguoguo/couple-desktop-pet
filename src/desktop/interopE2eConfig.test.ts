@@ -220,6 +220,52 @@ describe("cross-platform interop E2E harness config", () => {
     expect(weatherHook).toContain('import("../sync/e2eRealtimeOverride")');
   });
 
+  it("registers deterministic spark leaderboard native QA without production controls", () => {
+    const sparkSpecPath = "e2e/interop/specs/couple-spark.e2e.ts";
+    expect(existsSync(join(repoRoot, sparkSpecPath))).toBe(true);
+
+    for (const configPath of [
+      "e2e/interop/wdio.windows.conf.ts",
+      "e2e/interop/wdio.macos.conf.ts",
+    ]) {
+      expect(readText(configPath)).toContain(
+        'spark: ["./specs/couple-spark.e2e.ts"]',
+      );
+    }
+
+    const spec = readText(sparkSpecPath);
+    for (const requiredAssertion of [
+      "全服火花榜",
+      "看看哪一对把心意守得最久",
+      "小满 & 阿岚",
+      "我的排名",
+      "27",
+      "28天",
+      "周末休息，火花会替你们守到周一",
+      "火花榜暂时不可用",
+      "spark-loading",
+      "spark-loaded-28-day-rank-27",
+      "spark-weekend",
+      "spark-zero-day",
+      "spark-server-unavailable",
+      "e2e_window_state",
+      "writeE2eSettingsSafely",
+      "assertDedicatedE2eAppDataPaths",
+    ]) {
+      expect(spec).toContain(requiredAssertion);
+    }
+
+    const overrideSupport = readText("e2e/support/realtimeOverride.ts");
+    expect(overrideSupport).toContain("createE2eSparkLeaderboardFixture");
+    expect(overrideSupport).toContain("setE2eSparkLeaderboardOverride");
+    expect(overrideSupport).toContain("clearE2eSparkLeaderboardOverride");
+    expect(overrideSupport).not.toContain("localStorage");
+
+    const sparkHook = readText("src/spark/useSparkStreak.ts");
+    expect(sparkHook).toContain('import.meta.env.VITE_TAURI_E2E === "1"');
+    expect(sparkHook).toContain('import("../sync/e2eRealtimeOverride")');
+  });
+
   it("fails closed before every weather E2E settings write unless app data is dedicated", () => {
     const qaSafety = interopEnv as typeof interopEnv & {
       assertDedicatedE2eAppDataPaths?: (

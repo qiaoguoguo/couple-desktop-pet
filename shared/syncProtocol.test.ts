@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "./activityStatus";
 import { PROFILE_SYNC_CAPABILITY } from "./profileProtocol";
+import { SPARK_SYNC_CAPABILITY } from "./sparkProtocol";
 import {
   MESSAGE_TEXT_MAX_LENGTH,
   PAIR_CODE_LENGTH,
@@ -217,6 +218,7 @@ describe("parseServerToClientMessage", () => {
         capabilities: [
           ACTIVITY_STATUS_CAPABILITY,
           PROFILE_SYNC_CAPABILITY,
+          SPARK_SYNC_CAPABILITY,
           "future-capability",
         ],
       }),
@@ -224,7 +226,11 @@ describe("parseServerToClientMessage", () => {
       type: "auth.ok",
       requestId: "auth_1",
       pairId: "pair_1",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+      capabilities: [
+        ACTIVITY_STATUS_CAPABILITY,
+        PROFILE_SYNC_CAPABILITY,
+        SPARK_SYNC_CAPABILITY,
+      ],
     });
   });
 
@@ -233,9 +239,38 @@ describe("parseServerToClientMessage", () => {
       readSupportedCapabilities([
         PROFILE_SYNC_CAPABILITY,
         ACTIVITY_STATUS_CAPABILITY,
+        SPARK_SYNC_CAPABILITY,
         "future-capability",
       ]),
-    ).toEqual([PROFILE_SYNC_CAPABILITY, ACTIVITY_STATUS_CAPABILITY]);
+    ).toEqual([
+      PROFILE_SYNC_CAPABILITY,
+      ACTIVITY_STATUS_CAPABILITY,
+      SPARK_SYNC_CAPABILITY,
+    ]);
+  });
+
+  it("parses spark snapshot updates", () => {
+    expect(
+      parseServerToClientMessage({
+        type: "spark.updated",
+        pairId: "pair_1",
+        snapshot: {
+          version: 1,
+          pairId: "pair_1",
+          streakDays: 28,
+          tier: "heartflame",
+          calendarState: "qualified_today",
+          lastQualifiedDate: "2026-08-19",
+          timezone: "Asia/Shanghai",
+          asOf: "2026-08-19T02:00:00.000Z",
+          refreshAt: "2026-08-19T16:00:00.000Z",
+        },
+      }),
+    ).toEqual({
+      type: "spark.updated",
+      pairId: "pair_1",
+      snapshot: expect.objectContaining({ streakDays: 28, tier: "heartflame" }),
+    });
   });
 
   it("keeps legacy auth.ok messages compatible without capabilities", () => {

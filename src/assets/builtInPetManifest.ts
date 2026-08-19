@@ -45,18 +45,28 @@ export interface PetMotionDefinition {
 export type InteractionFunctionId =
   | "open-weather"
   | "send-message"
+  | "send-surprise"
+  | "open-focus-timer"
+  | "open-spark"
   | "open-status";
 
 export type InteractionMenuSelection =
   | InteractionActionName
   | InteractionFunctionId;
 
-export type InteractionMenuIconName = InteractionActionName | "weather";
+export type InteractionMenuOptionId = InteractionMenuSelection;
+
+export type InteractionMenuIconName =
+  | "weather"
+  | "message"
+  | "focus"
+  | "spark"
+  | "surprise"
+  | "status";
 
 export interface PetInteractionOption {
-  id: InteractionMenuSelection;
-  iconAction: InteractionActionName;
-  iconName?: InteractionMenuIconName;
+  id: InteractionMenuOptionId;
+  iconName: InteractionMenuIconName;
   label: string;
   bubble: string;
 }
@@ -83,38 +93,37 @@ export interface BuiltInPetManifest {
 export const interactionOptions = [
   {
     id: "open-weather",
-    iconAction: "act-cute",
     iconName: "weather",
     label: "双方天气",
     bubble: "",
   },
   {
     id: "send-message",
-    iconAction: "act-typing",
-    label: "敲电脑",
+    iconName: "message",
+    label: "发消息",
     bubble: "",
   },
   {
-    id: "act-wave",
-    iconAction: "act-wave",
-    label: "打招呼",
-    bubble: "嗨，我在这里！",
+    id: "open-focus-timer",
+    iconName: "focus",
+    label: "专注一下",
+    bubble: "",
   },
   {
-    id: "act-hug",
-    iconAction: "act-hug",
-    label: "求抱抱",
-    bubble: "可以抱一下吗？",
+    id: "open-spark",
+    iconName: "spark",
+    label: "续火花",
+    bubble: "",
   },
   {
-    id: "act-pout",
-    iconAction: "act-pout",
-    label: "生气鼓脸",
-    bubble: "哼，快哄我。",
+    id: "send-surprise",
+    iconName: "surprise",
+    label: "外卖到啦",
+    bubble: "",
   },
   {
     id: "open-status",
-    iconAction: "act-drowsy",
+    iconName: "status",
     label: "我的状态",
     bubble: "",
   },

@@ -1,4 +1,5 @@
 import type { CityLocationV1 } from "../../../shared/profileProtocol.js";
+import { searchChinaCities } from "./chinaCitySearch.js";
 import { mapWeatherApiCondition } from "./weatherCondition.js";
 import {
   WeatherProviderError,
@@ -32,6 +33,11 @@ export class WeatherApiProvider implements WeatherProvider {
   }
 
   async searchLocations(query: string): Promise<CityLocationV1[]> {
+    const localLocations = searchChinaCities(query);
+    if (localLocations.length > 0) {
+      return localLocations;
+    }
+
     const result = await this.#request("search.json", { q: query.trim() });
     if (!result.ok) {
       if (readProviderErrorCode(result.payload) === 1006) {
@@ -46,7 +52,7 @@ export class WeatherApiProvider implements WeatherProvider {
       throw new WeatherProviderError("invalid-response");
     }
 
-    return payload.map(readLocation);
+    return dedupeLocations(payload.map(readLocation));
   }
 
   async getCurrentDay(city: CityLocationV1): Promise<ProviderWeather> {
@@ -96,6 +102,18 @@ export class WeatherApiProvider implements WeatherProvider {
       clearTimeout(timeout);
     }
   }
+}
+
+function dedupeLocations(locations: CityLocationV1[]): CityLocationV1[] {
+  const seenIds = new Set<number>();
+  return locations.filter((location) => {
+    if (seenIds.has(location.providerLocationId)) {
+      return false;
+    }
+
+    seenIds.add(location.providerLocationId);
+    return true;
+  });
 }
 
 async function readJson(response: Response): Promise<unknown> {

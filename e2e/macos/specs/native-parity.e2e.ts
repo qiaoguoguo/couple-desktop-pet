@@ -399,7 +399,7 @@ async function verifyStatusCardAndComposer(): Promise<void> {
   });
 
   const interactionMenu = await openInteractionMenu();
-  await interactionMenu.$('//button[@role="menuitem" and normalize-space(.)="敲电脑"]').click();
+  await interactionMenu.$('//button[@role="menuitem" and normalize-space(.)="发消息"]').click();
   const composer = await $('section[aria-label="发送消息"]');
   await expect(composer).toBeDisplayed();
   await saveNativeParityScreenshot("message-composer.png", 'section[aria-label="发送消息"]');

@@ -1,14 +1,25 @@
 import type { MovementRange, PetSettings } from "../settings/settingsTypes";
+import type { PersistedFocusTimer } from "../focus-timer/focusTimer";
 import type { EdgePeekSide } from "./edgePeek";
 import {
   invokeCommand,
   listenToDesktopEvent,
-  startCurrentWindowDrag,
   type DesktopEventUnlisten,
 } from "./desktopApi";
 
 export type ClickThroughRecoveryReason = "show" | "settings";
-export type ComposerSurface = "message" | "surprise" | "weather";
+export type ComposerSurface =
+  | "message"
+  | "surprise"
+  | "focus"
+  | "weather"
+  | "spark";
+export interface InteractiveRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export function readSettings(): Promise<unknown> {
   return invokeCommand<unknown>("read_settings");
@@ -18,12 +29,30 @@ export function writeSettings(settings: PetSettings): Promise<void> {
   return invokeCommand<void>("write_settings", { settings });
 }
 
+export function readFocusTimer(): Promise<unknown> {
+  return invokeCommand<unknown>("read_focus_timer");
+}
+
+export function writeFocusTimer(timer: PersistedFocusTimer): Promise<void> {
+  return invokeCommand<void>("write_focus_timer", { timer });
+}
+
 export function setAlwaysOnTop(enabled: boolean): Promise<void> {
   return invokeCommand<void>("set_always_on_top", { enabled });
 }
 
 export function setClickThrough(enabled: boolean): Promise<void> {
   return invokeCommand<void>("set_click_through", { enabled });
+}
+
+export function setInteractiveRegions(
+  regions: InteractiveRegion[],
+  deviceScaleFactor: number,
+): Promise<void> {
+  return invokeCommand<void>("set_interactive_regions", {
+    regions,
+    deviceScaleFactor,
+  });
 }
 
 export function resetWindowPosition(): Promise<void> {
@@ -40,6 +69,10 @@ export function snapWindowToEdgeIfNeeded(): Promise<EdgePeekSide | null> {
   return invokeCommand<EdgePeekSide | null>("snap_window_to_edge_if_needed");
 }
 
+export function dockWindowAtEdge(side: EdgePeekSide): Promise<void> {
+  return invokeCommand<void>("dock_window_at_edge", { side });
+}
+
 export function restoreWindowFromEdgePeek(
   side: EdgePeekSide,
 ): Promise<void> {
@@ -47,7 +80,7 @@ export function restoreWindowFromEdgePeek(
 }
 
 export function openMessageComposerSurface(
-  surface: ComposerSurface = "message",
+  surface: ComposerSurface,
 ): Promise<void> {
   return invokeCommand<void>("open_message_composer_surface", { surface });
 }
@@ -80,6 +113,15 @@ export function listenForClickThroughRecovered(
   return listenToDesktopEvent("click-through-recovered", handler);
 }
 
-export function startWindowDrag(): Promise<void> {
-  return startCurrentWindowDrag();
+export function listenForWindowHidden(
+  handler: () => void,
+): Promise<DesktopEventUnlisten> {
+  return listenToDesktopEvent("window-hidden", handler);
+}
+
+export function moveWindowForPointerDrag(
+  deltaX: number,
+  deltaY: number,
+): Promise<void> {
+  return invokeCommand<void>("move_window_for_pointer_drag", { deltaX, deltaY });
 }

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PeerStatusView } from "./peerStatusPresentation";
+import {
+  peerDefaultAvatarAsset,
+  peerPresenceSurfaceAsset,
+} from "./statusIconAssets";
 
 interface PeerStatusCardProps {
   view: PeerStatusView;
@@ -11,7 +15,11 @@ export function PeerStatusCard({
   imageCandidates = [],
 }: PeerStatusCardProps) {
   const usableImageCandidates = useMemo(
-    () => normalizeImageCandidates(imageCandidates),
+    () =>
+      normalizeImageCandidates([
+        ...imageCandidates,
+        peerDefaultAvatarAsset.src,
+      ]),
     [imageCandidates],
   );
   const imageCandidatesKey = useMemo(
@@ -25,6 +33,7 @@ export function PeerStatusCard({
   const imageIndex =
     imageState.key === imageCandidatesKey ? imageState.index : 0;
   const imageUrl = usableImageCandidates[imageIndex] ?? null;
+  const statusLabel = useMemo(() => readCompactStatusLabel(view.title), [view.title]);
 
   useEffect(() => {
     setImageState((current) =>
@@ -36,16 +45,23 @@ export function PeerStatusCard({
 
   return (
     <aside
-      className="peer-status-card"
+      className="peer-presence-tag"
       aria-label="对方状态"
       data-status-variant={view.variant}
     >
+      <img
+        className="peer-presence-surface"
+        src={peerPresenceSurfaceAsset.src}
+        alt={peerPresenceSurfaceAsset.alt}
+        aria-hidden="true"
+        draggable={false}
+      />
       <span className="peer-status-avatar" aria-hidden={imageUrl ? undefined : "true"}>
         {imageUrl ? (
           <img
             src={imageUrl}
-            width={28}
-            height={28}
+            width={12}
+            height={16}
             alt="对方头像"
             onError={() =>
               setImageState({
@@ -54,21 +70,14 @@ export function PeerStatusCard({
               })
             }
           />
-        ) : (
-          "TA"
-        )}
+        ) : null}
       </span>
       <span key={view.variant} className="peer-status-content">
-        <span className="peer-status-copy">
-          <span className="peer-status-title">
-            <span className="peer-status-dot" aria-hidden="true" />
-            <strong>{view.title}</strong>
-          </span>
-          <span className="peer-status-detail">{view.detail}</span>
-        </span>
+        <span className="peer-status-dot" aria-hidden="true" />
         <span className="peer-status-icon" aria-hidden="true">
-          {view.iconText}
+          <img src={view.icon.src} alt="" draggable={false} />
         </span>
+        <strong className="peer-status-label">{statusLabel}</strong>
       </span>
     </aside>
   );
@@ -90,4 +99,8 @@ function normalizeImageCandidates(
   }
 
   return normalized;
+}
+
+function readCompactStatusLabel(title: string) {
+  return title.replace(/\s+/g, "");
 }

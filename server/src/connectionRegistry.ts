@@ -9,6 +9,7 @@ export interface AuthenticatedConnection {
   activityStatus: ActivityStatus | null;
   supportsActivityStatus: boolean;
   supportsProfileSync: boolean;
+  supportsSpark: boolean;
 }
 
 export class ConnectionRegistry {

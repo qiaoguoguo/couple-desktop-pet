@@ -8,8 +8,10 @@ import {
   PROFILE_SYNC_CAPABILITY,
   type ProfileUpdateV1,
 } from "../../shared/profileProtocol.js";
+import { SPARK_SYNC_CAPABILITY } from "../../shared/sparkProtocol.js";
 import { ProfileEventHub } from "./profileEvents.js";
 import { createRelayServer, type RelayServer } from "./server.js";
+import { SparkRepository } from "./spark/sparkRepository.js";
 
 interface SocketInbox {
   messages: unknown[];
@@ -23,6 +25,7 @@ let wsUrl = "";
 const inboxes = new WeakMap<WebSocket, SocketInbox>();
 const readTimeoutMs = 1500;
 const noMessageTimeoutMs = 150;
+let nowValue = "2026-08-03T12:00:00.000Z";
 
 const cityA = {
   provider: "weatherapi",
@@ -54,12 +57,13 @@ const profileB = {
 } as const;
 
 beforeEach(async () => {
+  nowValue = "2026-08-03T12:00:00.000Z";
   tempDir = mkdtempSync(join(tmpdir(), "couple-pet-relay-ws-"));
   relay = await createRelayServer({
     host: "127.0.0.1",
     port: 0,
     databasePath: join(tempDir, "relay.sqlite"),
-    now: () => new Date("2026-08-03T12:00:00.000Z"),
+    now: () => new Date(nowValue),
   });
   baseUrl = `http://127.0.0.1:${relay.port}`;
   wsUrl = `ws://127.0.0.1:${relay.port}/ws`;
@@ -72,6 +76,286 @@ afterEach(async () => {
 });
 
 describe("websocket relay", () => {
+  it("advertises spark-v1 and sends an initial snapshot only to capable clients", async () => {
+    const pair = await createPair();
+    const capable = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [SPARK_SYNC_CAPABILITY],
+    });
+
+    await expect(readJson(capable)).resolves.toMatchObject({
+      type: "spark.updated",
+      pairId: pair.pairId,
+      snapshot: {
+        pairId: pair.pairId,
+        streakDays: 0,
+        tier: "unlit",
+      },
+    });
+    await expect(readJson(capable)).resolves.toMatchObject({ type: "peer.offline" });
+    const capableClosed = onceClose(capable);
+    capable.close();
+    await capableClosed;
+
+    const legacy = await connectAndAuth("dev_b", "secret_b", pair.pairId, {
+      capabilities: [],
+    });
+    await expect(readJson(legacy)).resolves.toMatchObject({ type: "peer.offline" });
+    await expectNoJson(legacy);
+    legacy.close();
+  });
+
+  it("keeps authentication, messaging, presence, and cleanup usable when the initial spark snapshot fails", async () => {
+    const pair = await createPair();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(SparkRepository.prototype, "getSnapshot").mockImplementationOnce(() => {
+      throw new Error("private sqlite snapshot detail");
+    });
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [SPARK_SYNC_CAPABILITY],
+    });
+
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId, {
+      capabilities: [],
+    });
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    sendText(alice, pair.pairId, "after_snapshot_failure", "认证仍然可用");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+
+    const aliceClosed = onceClose(alice);
+    alice.close();
+    await aliceClosed;
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "peer.offline",
+      peerDeviceId: "dev_a",
+    });
+    expect(errorSpy).toHaveBeenCalledWith("Initial Spark snapshot failed", {
+      category: "spark_initial_snapshot_failed",
+      pairId: pair.pairId,
+    });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(
+      "private sqlite snapshot detail",
+    );
+
+    bob.close();
+  });
+
+  it("records one weekday text interaction and pushes one snapshot to both capable peers", async () => {
+    const pair = await createPair();
+    const { alice, bob } = await connectSparkPeers(pair.pairId);
+
+    sendText(alice, pair.pairId, "first", "想你啦");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 1, tier: "glimmer" },
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 1, tier: "glimmer" },
+    });
+
+    sendText(alice, pair.pairId, "duplicate", "今天第二次想你");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expectNoJson(alice);
+    await expectNoJson(bob);
+
+    alice.close();
+    bob.close();
+  });
+
+  it("does not acknowledge or qualify a peer message when its async send callback fails", async () => {
+    const pair = await createPair();
+    const { alice, bob } = await connectSparkPeers(pair.pairId);
+    const recordInteraction = vi.spyOn(
+      SparkRepository.prototype,
+      "recordQualifiedInteraction",
+    );
+    const originalSend = WebSocket.prototype.send;
+    vi.spyOn(WebSocket.prototype, "send").mockImplementation((function (
+      this: WebSocket,
+      ...args: unknown[]
+    ) {
+      const payload = args[0];
+      let message: { type?: unknown } | null = null;
+      try {
+        message = JSON.parse(String(payload)) as { type?: unknown };
+      } catch {
+        message = null;
+      }
+
+      if (message?.type === "message.received") {
+        const callback =
+          typeof args[1] === "function"
+            ? args[1]
+            : typeof args[2] === "function"
+              ? args[2]
+              : undefined;
+        queueMicrotask(() => {
+          callback?.(new Error("private async transport detail"));
+        });
+        return;
+      }
+
+      Reflect.apply(originalSend, this, args);
+    }) as never);
+
+    sendText(alice, pair.pairId, "async-failure", "这条消息没有刷入对端");
+
+    const senderResult = await readJson(alice);
+    expect(senderResult).toEqual({
+      type: "error",
+      requestId: "async-failure",
+      code: "peer_offline",
+      message: "Peer is offline",
+    });
+    expect(JSON.stringify(senderResult)).not.toContain("private async transport detail");
+    await expectNoJson(alice);
+    await expectNoJson(bob);
+    expect(recordInteraction).not.toHaveBeenCalled();
+
+    const snapshotResponse = await postJson(`${baseUrl}/pairs/spark/snapshot`, {
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: pair.pairId,
+    });
+    expect(snapshotResponse.status).toBe(200);
+    await expect(snapshotResponse.json()).resolves.toMatchObject({
+      pairId: pair.pairId,
+      streakDays: 0,
+      tier: "unlit",
+    });
+
+    alice.close();
+    bob.close();
+  });
+
+  it("qualifies structured surprises but ignores weekend sends", async () => {
+    const pair = await createPair();
+    const { alice, bob } = await connectSparkPeers(pair.pairId);
+
+    alice.send(JSON.stringify({
+      type: "message.send",
+      requestId: "surprise_first",
+      pairId: pair.pairId,
+      clientMessageId: "surprise_first",
+      text: "给你一个惊喜",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "general",
+        secret: "7482",
+      },
+    }));
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 1 },
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "spark.updated" });
+
+    nowValue = "2026-08-08T04:00:00.000Z";
+    sendText(alice, pair.pairId, "weekend", "周末也想你");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expectNoJson(alice);
+    await expectNoJson(bob);
+
+    alice.close();
+    bob.close();
+  });
+
+  it("does not qualify peer-offline or malformed sends", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [SPARK_SYNC_CAPABILITY],
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 0 },
+    });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+
+    sendText(alice, pair.pairId, "offline", "在吗");
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "error",
+      code: "peer_offline",
+    });
+    alice.send("not-json");
+    await expect(readJson(alice)).resolves.toMatchObject({
+      type: "error",
+      code: "malformed_message",
+    });
+
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId, {
+      capabilities: [SPARK_SYNC_CAPABILITY],
+    });
+    await expect(readJson(bob)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 0 },
+    });
+
+    alice.close();
+    bob.close();
+  });
+
+  it("keeps legacy delivery successful and still accounts it server-side", async () => {
+    const pair = await createPair();
+    const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+    const bob = await connectAndAuth("dev_b", "secret_b", pair.pairId);
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+
+    sendText(alice, pair.pairId, "legacy", "旧客户端消息");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expectNoJson(alice);
+    await expectNoJson(bob);
+
+    const replacement = await connectAndAuth("dev_a", "secret_a", pair.pairId, {
+      capabilities: [SPARK_SYNC_CAPABILITY],
+    });
+    await expect(readJson(replacement)).resolves.toMatchObject({
+      type: "spark.updated",
+      snapshot: { streakDays: 1 },
+    });
+
+    replacement.close();
+    bob.close();
+  });
+
+  it("delivers the original message when spark persistence fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const pair = await createPair();
+    const { alice, bob } = await connectSparkPeers(pair.pairId);
+    vi.spyOn(SparkRepository.prototype, "recordQualifiedInteraction")
+      .mockImplementationOnce(() => {
+        throw new Error("sqlite detail must stay private");
+      });
+
+    sendText(alice, pair.pairId, "persistence-failure", "不要记录这段正文");
+    await expect(readJson(bob)).resolves.toMatchObject({ type: "message.received" });
+    await expect(readJson(alice)).resolves.toMatchObject({ type: "message.delivered" });
+    await expectNoJson(alice);
+    await expectNoJson(bob);
+    expect(errorSpy).toHaveBeenCalledWith("Spark persistence failed", {
+      category: "spark_persistence_failed",
+      pairId: pair.pairId,
+    });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("不要记录这段正文");
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("sqlite detail");
+
+    alice.close();
+    bob.close();
+  });
+
   it("authenticates paired devices and forwards an online message", async () => {
     const pair = await createPair();
     const alice = await connectAndAuth("dev_a", "secret_a", pair.pairId);
@@ -876,10 +1160,46 @@ async function connectAndAuth(
   });
   if (options.capabilities?.includes(PROFILE_SYNC_CAPABILITY)) {
     expect(authMessage).toMatchObject({
-      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+      capabilities: expect.arrayContaining([
+        ACTIVITY_STATUS_CAPABILITY,
+        PROFILE_SYNC_CAPABILITY,
+      ]),
     });
   }
+  expect(authMessage).toMatchObject({
+    capabilities: expect.arrayContaining([SPARK_SYNC_CAPABILITY]),
+  });
   return socket;
+}
+
+async function connectSparkPeers(pairId: string): Promise<{
+  alice: WebSocket;
+  bob: WebSocket;
+}> {
+  const capabilities = [SPARK_SYNC_CAPABILITY];
+  const alice = await connectAndAuth("dev_a", "secret_a", pairId, { capabilities });
+  await expect(readJson(alice)).resolves.toMatchObject({ type: "spark.updated" });
+  await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.offline" });
+  const bob = await connectAndAuth("dev_b", "secret_b", pairId, { capabilities });
+  await expect(readJson(bob)).resolves.toMatchObject({ type: "spark.updated" });
+  await expect(readJson(bob)).resolves.toMatchObject({ type: "peer.online" });
+  await expect(readJson(alice)).resolves.toMatchObject({ type: "peer.online" });
+  return { alice, bob };
+}
+
+function sendText(
+  socket: WebSocket,
+  pairId: string,
+  requestId: string,
+  text: string,
+): void {
+  socket.send(JSON.stringify({
+    type: "message.send",
+    requestId,
+    pairId,
+    clientMessageId: requestId,
+    text,
+  }));
 }
 
 function onceOpen(socket: WebSocket): Promise<void> {

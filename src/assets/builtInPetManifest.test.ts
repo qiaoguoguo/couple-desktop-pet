@@ -8,8 +8,8 @@ import {
   builtInPetManifest,
   idleActionNames,
   interactionOptions,
-  type InteractionActionName,
-  type InteractionMenuSelection,
+  type InteractionMenuIconName,
+  type PetInteractionOption,
   type PetActionName,
 } from "./builtInPetManifest";
 
@@ -60,25 +60,25 @@ describe("builtInPetManifest", () => {
     expect(interactionOptions.map((option) => option.id)).toEqual([
       "open-weather",
       "send-message",
-      "act-wave",
-      "act-hug",
-      "act-pout",
+      "open-focus-timer",
+      "open-spark",
+      "send-surprise",
       "open-status",
-    ] satisfies InteractionMenuSelection[]);
-    expect(interactionOptions.map((option) => option.iconAction)).toEqual([
-      "act-cute",
-      "act-typing",
-      "act-wave",
-      "act-hug",
-      "act-pout",
-      "act-drowsy",
-    ] satisfies InteractionActionName[]);
+    ] satisfies Array<PetInteractionOption["id"]>);
+    expect(interactionOptions.map((option) => option.iconName)).toEqual([
+      "weather",
+      "message",
+      "focus",
+      "spark",
+      "surprise",
+      "status",
+    ] satisfies InteractionMenuIconName[]);
     expect(interactionOptions.map((option) => option.label)).toEqual([
-      "撒娇卖萌",
-      "敲电脑",
-      "打招呼",
-      "求抱抱",
-      "生气鼓脸",
+      "双方天气",
+      "发消息",
+      "专注一下",
+      "续火花",
+      "外卖到啦",
       "我的状态",
     ]);
     expect(interactionOptions[0]).toMatchObject({
@@ -91,12 +91,14 @@ describe("builtInPetManifest", () => {
   it("keeps every idle and interaction action at least five seconds long", () => {
     const longActionIds = [
       ...idleActionNames,
-      ...interactionOptions.map((option) => option.iconAction),
+      ...Object.keys(builtInPetManifest.actions).filter((action) =>
+        action.startsWith("act-"),
+      ),
     ];
 
     for (const actionId of longActionIds) {
       expect(
-        builtInPetManifest.actions[actionId].durationMs,
+        builtInPetManifest.actions[actionId as PetActionName].durationMs,
       ).toBeGreaterThanOrEqual(5000);
     }
   });

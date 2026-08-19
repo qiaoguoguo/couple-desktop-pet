@@ -579,6 +579,34 @@ describe("getBuiltInEdgeProfile", () => {
     expect(getBuiltInEdgeProfile("builtin:q-girl", "top")?.idle.frames).toHaveLength(22);
   });
 
+  it("attaches micro companion visuals only to built-in side and bottom profiles", () => {
+    expect(
+      getBuiltInEdgeProfile("builtin:q-girl", "left")?.companion,
+    ).toMatchObject({
+      placement: "side",
+      mirrorX: true,
+      baseVisibleHeightPx: 34,
+    });
+    expect(
+      getBuiltInEdgeProfile("builtin:q-girl", "right")?.companion,
+    ).toMatchObject({
+      placement: "side",
+      mirrorX: false,
+      baseVisibleHeightPx: 34,
+    });
+    expect(
+      getBuiltInEdgeProfile("builtin:q-girl", "bottom")?.companion,
+    ).toMatchObject({
+      placement: "bottom",
+      mirrorX: false,
+      baseVisibleHeightPx: 34,
+    });
+    expect(
+      getBuiltInEdgeProfile("builtin:q-girl", "top")?.companion,
+    ).toBeUndefined();
+    expect(getBuiltInEdgeProfile("imported:any", "right")).toBeNull();
+  });
+
   it("registers every bundled Q-girl edge PNG with continuous numbering", () => {
     const uniqueFrames = new Set<string>();
 

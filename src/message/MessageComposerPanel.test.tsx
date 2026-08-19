@@ -2,7 +2,33 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MessageComposerPanel } from "./MessageComposerPanel";
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 describe("MessageComposerPanel", () => {
+  it("uses the shared visible card as its only desktop hit region", () => {
+    render(<MessageComposerPanel onSubmit={vi.fn()} onClose={vi.fn()} />);
+
+    const panel = screen.getByRole("region", { name: "发送消息" });
+    const card = panel.querySelector(".composer-card-shell");
+    const textarea = screen.getByLabelText("消息内容");
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const submit = screen.getByRole("button", { name: "发送" });
+
+    expect(panel.classList.contains("composer-panel")).toBe(true);
+    expect(panel.hasAttribute("data-desktop-interactive-region")).toBe(false);
+    expect(card?.hasAttribute("data-desktop-interactive-region")).toBe(true);
+    expect(textarea.classList.contains("composer-field-control")).toBe(true);
+    expect(cancel.classList.contains("composer-action--secondary")).toBe(true);
+    expect(submit.classList.contains("composer-action--primary")).toBe(true);
+  });
+
   it("submits trimmed text and closes only after a successful send", async () => {
     const onSubmit = vi.fn().mockResolvedValue({ ok: true });
     const onClose = vi.fn();
@@ -35,6 +61,33 @@ describe("MessageComposerPanel", () => {
     expect(
       (screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled,
     ).toBe(false);
+  });
+
+  it("disables cancellation and ignores Escape while sending", async () => {
+    const deferred = createDeferred<{ ok: boolean }>();
+    const onClose = vi.fn();
+    render(
+      <MessageComposerPanel
+        onSubmit={() => deferred.promise}
+        onClose={onClose}
+      />,
+    );
+
+    const input = screen.getByLabelText("消息内容");
+    const cancel = screen.getByRole("button", { name: "取消" });
+    fireEvent.change(input, { target: { value: "晚安" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() =>
+      expect((cancel as HTMLButtonElement).disabled).toBe(true),
+    );
+    fireEvent.keyDown(input, { key: "Escape" });
+    fireEvent.click(cancel);
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    deferred.resolve({ ok: true });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it("does not submit empty text", () => {

@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  edgeStageContactAnchors,
   getEdgePhaseMotion,
   transitionEdgeInteraction,
   type EdgeInteractionProfile,
 } from "./edgeInteraction";
+
+describe("edgeStageContactAnchors", () => {
+  it("maps every legacy stage contact to the real stage edge", () => {
+    expect(edgeStageContactAnchors).toEqual({
+      left: { x: 0, y: 0.5 },
+      right: { x: 1, y: 0.5 },
+      top: { x: 0.5, y: 0 },
+      bottom: { x: 0.5, y: 1 },
+    });
+  });
+});
 
 const profile: EdgeInteractionProfile = {
   side: "left",
@@ -42,66 +54,26 @@ const profile: EdgeInteractionProfile = {
 };
 
 describe("transitionEdgeInteraction", () => {
-  it("runs the enter idle react exit state flow", () => {
+  it("enters the single idle state after snapping", () => {
     expect(transitionEdgeInteraction(null, { type: "SNAPPED", side: "left" }))
-      .toEqual({ side: "left", phase: "enter" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "left", phase: "enter" },
-        { type: "PHASE_FINISHED" },
-      ),
-    ).toEqual({ side: "left", phase: "idle" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "left", phase: "idle" },
-        { type: "POINTER_ENTER" },
-      ),
-    ).toEqual({ side: "left", phase: "react" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "left", phase: "react" },
-        { type: "PHASE_FINISHED" },
-      ),
-    ).toEqual({ side: "left", phase: "idle" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "left", phase: "idle" },
-        { type: "REQUEST_EXIT" },
-      ),
-    ).toEqual({ side: "left", phase: "exit" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "left", phase: "exit" },
-        { type: "PHASE_FINISHED" },
-      ),
-    ).toBeNull();
+      .toEqual({ side: "left", phase: "idle" });
   });
 
-  it("ignores events that would race enter and exit phases", () => {
+  it("clears idle on cancel and ignores obsolete animation events", () => {
+    const idle = { side: "left", phase: "idle" } as const;
+
     expect(
-      transitionEdgeInteraction(
-        { side: "top", phase: "enter" },
-        { type: "POINTER_ENTER" },
-      ),
-    ).toEqual({ side: "top", phase: "enter" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "top", phase: "exit" },
-        { type: "SNAPPED", side: "bottom" },
-      ),
-    ).toEqual({ side: "top", phase: "exit" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "top", phase: "exit" },
-        { type: "POINTER_ENTER" },
-      ),
-    ).toEqual({ side: "top", phase: "exit" });
-    expect(
-      transitionEdgeInteraction(
-        { side: "top", phase: "exit" },
-        { type: "CANCEL" },
-      ),
+      transitionEdgeInteraction(idle, { type: "CANCEL" }),
     ).toBeNull();
+    expect(transitionEdgeInteraction(idle, { type: "PHASE_FINISHED" })).toBe(
+      idle,
+    );
+    expect(transitionEdgeInteraction(idle, { type: "POINTER_ENTER" })).toBe(
+      idle,
+    );
+    expect(transitionEdgeInteraction(idle, { type: "REQUEST_EXIT" })).toBe(
+      idle,
+    );
   });
 });
 

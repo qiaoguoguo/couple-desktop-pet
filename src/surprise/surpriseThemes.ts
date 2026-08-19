@@ -1,6 +1,7 @@
-import type {
-  SurpriseMessageContent,
-  SurpriseTheme,
+import {
+  validateStructuredMessageContent,
+  type SurpriseMessageContent,
+  type SurpriseTheme,
 } from "../../shared/syncProtocol";
 
 export interface SurpriseThemeCopy {
@@ -85,4 +86,43 @@ export function buildSurpriseFallbackText(
   const note = content.note?.trim();
 
   return `一份小心意在等你。惊喜暗号：${secret}。${note ? note : ""}`;
+}
+
+const surpriseFallbackPrefix = "一份小心意在等你。惊喜暗号：";
+
+export function recoverSurpriseContentFromFallbackText(
+  text: string,
+): SurpriseMessageContent | null {
+  if (!text.startsWith(surpriseFallbackPrefix)) {
+    return null;
+  }
+
+  const payload = text.slice(surpriseFallbackPrefix.length);
+  const secretTerminatorIndex = payload.indexOf("。");
+  if (secretTerminatorIndex < 0) {
+    return null;
+  }
+
+  const secret = payload.slice(0, secretTerminatorIndex);
+  const note = payload.slice(secretTerminatorIndex + 1);
+  const theme =
+    SURPRISE_THEME_ORDER.find(
+      (candidate) => SURPRISE_THEME_COPY[candidate].defaultNote === note,
+    ) ?? "general";
+  const validation = validateStructuredMessageContent({
+    kind: "surprise",
+    version: 1,
+    theme,
+    secret,
+    ...(note ? { note } : {}),
+  });
+
+  if (
+    !validation.ok ||
+    buildSurpriseFallbackText(validation.content) !== text
+  ) {
+    return null;
+  }
+
+  return validation.content;
 }

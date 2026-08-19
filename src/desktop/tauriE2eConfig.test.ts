@@ -281,6 +281,8 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(statusComposerSpec.indexOf("setE2eRealtimeOverride")).toBeLessThan(
       statusComposerSpec.indexOf("openInteractionMenu"),
     );
+    expect(statusComposerSpec).toContain('normalize-space(.)="发消息"');
+    expect(statusComposerSpec).not.toContain('normalize-space(.)="敲电脑"');
     expect(spec).toContain("clearE2eRealtimeOverride");
 
     const useRealtimeSync = readText("src/sync/useRealtimeSync.ts");

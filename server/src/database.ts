@@ -49,6 +49,39 @@ export function initializeRelayDatabase(db: Database.Database): void {
       FOREIGN KEY (device_a_id) REFERENCES devices(device_id),
       FOREIGN KEY (device_b_id) REFERENCES devices(device_id)
     );
+
+    CREATE TABLE IF NOT EXISTS pair_spark_activity_days (
+      pair_id TEXT NOT NULL,
+      activity_date TEXT NOT NULL CHECK (
+        activity_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      ),
+      first_interaction_kind TEXT NOT NULL CHECK (
+        first_interaction_kind IN ('message', 'surprise')
+      ),
+      first_interaction_at TEXT NOT NULL CHECK (length(first_interaction_at) > 0),
+      PRIMARY KEY (pair_id, activity_date),
+      FOREIGN KEY (pair_id) REFERENCES pairs(pair_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS pair_spark_streaks (
+      pair_id TEXT PRIMARY KEY,
+      streak_days INTEGER NOT NULL CHECK (
+        typeof(streak_days) = 'integer' AND streak_days > 0
+      ),
+      last_qualified_date TEXT NOT NULL CHECK (
+        last_qualified_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      ),
+      last_qualified_at TEXT NOT NULL CHECK (length(last_qualified_at) > 0),
+      updated_at TEXT NOT NULL CHECK (length(updated_at) > 0),
+      FOREIGN KEY (pair_id) REFERENCES pairs(pair_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pair_spark_active_ranking
+      ON pair_spark_streaks (
+        streak_days DESC,
+        last_qualified_at DESC,
+        pair_id ASC
+      );
   `);
   ensurePairsPairCodeColumn(db);
 }

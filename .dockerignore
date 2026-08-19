@@ -1,0 +1,39 @@
+# Version control and agent workspaces
+.git
+.git/**
+.tmp
+.tmp/**
+**/.tmp
+**/.tmp/**
+.superpowers
+.superpowers/**
+**/.superpowers
+**/.superpowers/**
+
+# JavaScript dependencies and build output
+node_modules
+node_modules/**
+**/node_modules
+**/node_modules/**
+dist
+dist/**
+**/dist
+**/dist/**
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Runtime data
+.data
+.data/**
+**/.data
+**/.data/**
+
+# Rust and temporary build output
+target
+target/**
+**/target
+**/target/**
+target-*
+target-*/**
+**/target-*
+**/target-*/**

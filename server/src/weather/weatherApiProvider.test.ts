@@ -67,7 +67,7 @@ describe("WeatherApiProvider", () => {
     });
   });
 
-  it("normalizes location search results and encodes the query", async () => {
+  it("normalizes WeatherAPI fallback results and encodes a Latin query", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       response(200, [
         {
@@ -87,7 +87,7 @@ describe("WeatherApiProvider", () => {
       fetchImpl,
     });
 
-    await expect(provider.searchLocations(" 杭 州 ")).resolves.toEqual([
+    await expect(provider.searchLocations(" Hang Zhou ")).resolves.toEqual([
       {
         provider: "weatherapi",
         providerLocationId: 1785728,
@@ -103,7 +103,43 @@ describe("WeatherApiProvider", () => {
     expect(`${url.origin}${url.pathname}`).toBe(
       "https://api.weatherapi.com/v1/search.json",
     );
-    expect(url.searchParams.get("q")).toBe("杭 州");
+    expect(url.searchParams.get("q")).toBe("Hang Zhou");
+  });
+
+  it("returns a Chinese local-index match without an API key or fetch", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const provider = new WeatherApiProvider({ apiKey: null, timeoutMs: 3000, fetchImpl });
+
+    await expect(provider.searchLocations("长沙市")).resolves.toEqual([
+      {
+        provider: "weatherapi",
+        providerLocationId: 1815551,
+        name: "长沙",
+        region: "湖南",
+        country: "中国",
+        latitude: 28.19874,
+        longitude: 112.97087,
+      },
+    ]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("uses selected local coordinates for the existing WeatherAPI forecast", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(200, validForecast));
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+    const city = (await provider.searchLocations("长沙市"))[0];
+
+    expect(city).toBeDefined();
+    await provider.getCurrentDay(city!);
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const url = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/v1/forecast.json");
+    expect(url.searchParams.get("q")).toBe("28.19874,112.97087");
   });
 
   it("returns an empty location list when WeatherAPI reports no search match", async () => {
@@ -118,7 +154,45 @@ describe("WeatherApiProvider", () => {
       fetchImpl,
     });
 
-    await expect(provider.searchLocations("not-a-city")).resolves.toEqual([]);
+    await expect(provider.searchLocations("不存在城市")).resolves.toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("falls back for an unmatched Chinese query and preserves supplier errors", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("network down"));
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+
+    await expect(provider.searchLocations("火星市")).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("deduplicates repeated WeatherAPI fallback locations by stable ID", async () => {
+    const location = {
+      id: 1785728,
+      name: "Hangzhou",
+      region: "Zhejiang",
+      country: "China",
+      lat: 30.27,
+      lon: 120.15,
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response(200, [location, { ...location }]));
+    const provider = new WeatherApiProvider({
+      apiKey: "secret-key",
+      timeoutMs: 3000,
+      fetchImpl,
+    });
+
+    await expect(provider.searchLocations("Hangzhou")).resolves.toHaveLength(1);
   });
 
   it("clamps rain chance and rounds temperatures at the boundary", async () => {

@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 mod commands;
+mod desktop_input;
 #[cfg(feature = "e2e")]
 mod e2e_commands;
 mod pet_packages;
@@ -14,6 +15,25 @@ static EXPLICIT_APP_QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 pub(crate) enum MainWindowCloseAction {
     Hide,
     AllowClose,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayMenuAction {
+    Show,
+    Hide,
+    Settings,
+    Quit,
+    Ignore,
+}
+
+fn tray_menu_action(id: &str) -> TrayMenuAction {
+    match id {
+        "show" => TrayMenuAction::Show,
+        "hide" => TrayMenuAction::Hide,
+        "settings" => TrayMenuAction::Settings,
+        "quit" => TrayMenuAction::Quit,
+        _ => TrayMenuAction::Ignore,
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +57,9 @@ pub fn run() {
         if let Err(error) = commands::track_window_position(app.handle()) {
             eprintln!("failed to track window position: {error}");
         }
+        if let Err(error) = desktop_input::start_pointer_passthrough_monitor(app.handle()) {
+            eprintln!("failed to start pointer passthrough monitor: {error}");
+        }
         Ok(())
     });
 
@@ -45,11 +68,16 @@ pub fn run() {
         commands::ping,
         commands::read_settings,
         commands::write_settings,
+        commands::read_focus_timer,
+        commands::write_focus_timer,
         commands::set_always_on_top,
         commands::set_click_through,
+        commands::set_interactive_regions,
+        commands::move_window_for_pointer_drag,
         commands::reset_window_position,
         commands::move_window_for_auto_step,
         commands::snap_window_to_edge_if_needed,
+        commands::dock_window_at_edge,
         commands::restore_window_from_edge_peek,
         commands::open_message_composer_surface,
         commands::close_message_composer_surface,
@@ -81,11 +109,16 @@ pub fn run() {
         commands::ping,
         commands::read_settings,
         commands::write_settings,
+        commands::read_focus_timer,
+        commands::write_focus_timer,
         commands::set_always_on_top,
         commands::set_click_through,
+        commands::set_interactive_regions,
+        commands::move_window_for_pointer_drag,
         commands::reset_window_position,
         commands::move_window_for_auto_step,
         commands::snap_window_to_edge_if_needed,
+        commands::dock_window_at_edge,
         commands::restore_window_from_edge_peek,
         commands::open_message_composer_surface,
         commands::close_message_composer_surface,
@@ -156,18 +189,18 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .tooltip("情侣桌宠")
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
-            let result = match event.id().as_ref() {
-                "show" => commands::recover_click_through_and_show_main_window(
+            let result = match tray_menu_action(event.id().as_ref()) {
+                TrayMenuAction::Show => commands::recover_click_through_and_show_main_window(
                     app,
                     commands::ClickThroughRecoveryReason::Show,
                 ),
-                "hide" => commands::hide_main_window(app),
-                "settings" => commands::emit_open_settings(app),
-                "quit" => {
+                TrayMenuAction::Hide => commands::hide_main_window(app),
+                TrayMenuAction::Settings => commands::emit_open_settings(app),
+                TrayMenuAction::Quit => {
                     request_app_exit(app, 0);
                     Ok(())
                 }
-                _ => Ok(()),
+                TrayMenuAction::Ignore => Ok(()),
             };
 
             if let Err(error) = result {
@@ -198,6 +231,25 @@ mod tests {
         assert_eq!(
             main_window_close_action(true),
             MainWindowCloseAction::AllowClose
+        );
+        assert_eq!(
+            commands::window_hide_plan(),
+            [
+                commands::WindowHideStep::EmitWindowHidden,
+                commands::WindowHideStep::HideWindow,
+            ]
+        );
+    }
+
+    #[test]
+    fn tray_hide_routes_through_the_unified_window_hide_plan() {
+        assert_eq!(tray_menu_action("hide"), TrayMenuAction::Hide);
+        assert_eq!(
+            commands::window_hide_plan(),
+            [
+                commands::WindowHideStep::EmitWindowHidden,
+                commands::WindowHideStep::HideWindow,
+            ]
         );
     }
 

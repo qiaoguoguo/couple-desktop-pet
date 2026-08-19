@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 import type { PetActionName } from "../assets/petActionNames";
 import type {
@@ -17,8 +18,17 @@ import type {
   EdgeInteractionProfile,
   EdgePhase,
 } from "../pet/edgeInteraction";
+import type { EdgeNoticeState } from "../pet/edgeNotice";
+import { EdgeCompanionStage } from "./EdgeCompanionStage";
+import { EdgeNoticeCard } from "./EdgeNoticeCard";
 import { getFrameIndex } from "./animationPlayer";
 import { EdgePetStage } from "./EdgePetStage";
+import {
+  createFallbackCssAlphaBounds,
+  mapAlphaBoundsToCssRect,
+  resolveFrameAlphaBounds,
+  type CssAlphaBounds,
+} from "./frameAlphaBounds";
 
 interface FramePetStageProps {
   action: PetActionName;
@@ -33,9 +43,15 @@ interface FramePetStageProps {
   onEdgePointerEnter?(): void;
   onEdgePointerLeave?(): void;
   onEdgeLoadError?(): void;
+  edgeNotice?: EdgeNoticeState | null;
+  onEdgeNoticePointerEnter?(): void;
+  onEdgeNoticePointerLeave?(): void;
+  onEdgeNoticeActivate?(notice: NonNullable<EdgeNoticeState["active"]>): void;
   onPetClick(): void;
   onDragStart(): void;
+  onDragMove?(delta: { x: number; y: number }): void;
   onDragEnd(): void;
+  children?: ReactNode;
 }
 
 const actionLabels: Record<PetActionName, string> = {
@@ -53,6 +69,8 @@ const actionLabels: Record<PetActionName, string> = {
   "act-drowsy": "犯困",
 };
 const dragClickThresholdPx = 4;
+const displayWidthPx = 256;
+const displayHeightPx = 320;
 
 export function FramePetStage({
   action,
@@ -60,20 +78,27 @@ export function FramePetStage({
   scale,
   petPackage,
   edgeInteraction = null,
-  onEdgePhaseComplete,
-  onEdgePointerEnter,
-  onEdgePointerLeave,
   onEdgeLoadError,
+  edgeNotice = null,
+  onEdgeNoticeActivate,
   onPetClick,
   onDragStart,
+  onDragMove,
   onDragEnd,
+  children,
 }: FramePetStageProps) {
   const activePointerIdRef = useRef<number | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastDragScreenPositionRef = useRef<{ x: number; y: number } | null>(
+    null,
+  );
   const draggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
+  const [alphaHitBounds, setAlphaHitBounds] = useState<CssAlphaBounds>(() =>
+    createFallbackCssAlphaBounds(displayWidthPx, displayHeightPx),
+  );
 
   const currentFrameUrl = useMemo(() => {
     if (!motion.frames.length) {
@@ -106,7 +131,52 @@ export function FramePetStage({
     setImageFailed(false);
   }, [currentFrameUrl]);
 
+  useEffect(() => {
+    let disposed = false;
+
+    if (!currentFrameUrl || imageFailed) {
+      setAlphaHitBounds(
+        createFallbackCssAlphaBounds(displayWidthPx, displayHeightPx),
+      );
+      return () => {
+        disposed = true;
+      };
+    }
+
+    setAlphaHitBounds(
+      createFallbackCssAlphaBounds(displayWidthPx, displayHeightPx),
+    );
+
+    void resolveFrameAlphaBounds(currentFrameUrl).then((bounds) => {
+      if (disposed) {
+        return;
+      }
+
+      setAlphaHitBounds(
+        bounds
+          ? mapAlphaBoundsToCssRect(bounds, displayWidthPx, displayHeightPx)
+          : createFallbackCssAlphaBounds(displayWidthPx, displayHeightPx),
+      );
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [currentFrameUrl, imageFailed]);
+
   const isEdgeInteraction = Boolean(edgeInteraction);
+  const useMicroCompanion = Boolean(
+    edgeInteraction?.profile.companion &&
+      edgeInteraction.profile.side !== "top" &&
+      (edgeInteraction.phase === "idle" || edgeInteraction.phase === "react"),
+  );
+  const showLegacyTopNotice = Boolean(
+    edgeNotice?.presentation === "expanded" &&
+      (edgeNotice.active?.kind === "message" ||
+        edgeNotice.active?.kind === "surprise") &&
+      edgeInteraction?.profile.side === "top" &&
+      (edgeInteraction.phase === "idle" || edgeInteraction.phase === "react"),
+  );
   const showFallback = !currentFrameUrl || imageFailed;
   const stageStyle = {
     "--pet-scale": String(scale),
@@ -128,6 +198,7 @@ export function FramePetStage({
 
       activePointerIdRef.current = null;
       pointerStartRef.current = null;
+      lastDragScreenPositionRef.current = null;
       draggingRef.current = false;
 
       if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -146,8 +217,11 @@ export function FramePetStage({
         return;
       }
 
+      const screenPosition = readPointerScreenPosition(event);
+
       activePointerIdRef.current = event.pointerId;
-      pointerStartRef.current = { x: event.clientX, y: event.clientY };
+      pointerStartRef.current = screenPosition;
+      lastDragScreenPositionRef.current = screenPosition;
       draggingRef.current = false;
       suppressNextClickRef.current = false;
 
@@ -163,17 +237,29 @@ export function FramePetStage({
         return;
       }
 
-      const deltaX = event.clientX - pointerStart.x;
-      const deltaY = event.clientY - pointerStart.y;
+      const currentScreenPosition = readPointerScreenPosition(event);
+      const deltaX = currentScreenPosition.x - pointerStart.x;
+      const deltaY = currentScreenPosition.y - pointerStart.y;
 
       if (Math.hypot(deltaX, deltaY) > dragClickThresholdPx) {
         if (!draggingRef.current) {
           draggingRef.current = true;
           onDragStart();
         }
+
+        const lastDragScreenPosition = lastDragScreenPositionRef.current;
+
+        if (lastDragScreenPosition) {
+          onDragMove?.({
+            x: currentScreenPosition.x - lastDragScreenPosition.x,
+            y: currentScreenPosition.y - lastDragScreenPosition.y,
+          });
+        }
+
+        lastDragScreenPositionRef.current = currentScreenPosition;
       }
     },
-    [onDragStart],
+    [onDragMove, onDragStart],
   );
   const handleClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -188,6 +274,15 @@ export function FramePetStage({
     },
     [onPetClick],
   );
+  const handleClickCapture = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClickRef.current) {
+      return;
+    }
+
+    suppressNextClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
 
   return (
     <div
@@ -201,25 +296,56 @@ export function FramePetStage({
       data-pet-package-id={petPackage.id}
       data-edge-interaction-side={edgeInteraction?.profile.side}
       style={stageStyle}
+      onClickCapture={handleClickCapture}
       onClick={isEdgeInteraction ? undefined : handleClick}
-      onPointerDown={isEdgeInteraction ? undefined : handlePointerDown}
-      onPointerMove={isEdgeInteraction ? undefined : handlePointerMove}
-      onPointerUp={isEdgeInteraction ? undefined : finishDrag}
-      onPointerCancel={isEdgeInteraction ? undefined : finishDrag}
-      onPointerLeave={isEdgeInteraction ? undefined : finishDrag}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onPointerLeave={finishDrag}
     >
-      {edgeInteraction ? (
+      {edgeInteraction && !useMicroCompanion ? (
         <EdgePetStage
           profile={edgeInteraction.profile}
           phase={edgeInteraction.phase}
           scale={scale}
-          onPhaseComplete={onEdgePhaseComplete ?? (() => undefined)}
-          onPointerEnter={onEdgePointerEnter}
-          onPointerLeave={onEdgePointerLeave}
-          onPetClick={onPetClick}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
+          frozen={
+            edgeInteraction.profile.side === "top" &&
+            edgeInteraction.phase === "idle"
+          }
           onLoadError={onEdgeLoadError}
+        />
+      ) : null}
+      {showLegacyTopNotice && edgeNotice ? (
+        <EdgeNoticeCard
+          side="top"
+          state={edgeNotice}
+          onActivate={onEdgeNoticeActivate}
+        />
+      ) : null}
+      {edgeInteraction?.profile.companion && useMicroCompanion ? (
+        <EdgeCompanionStage
+          profile={edgeInteraction.profile.companion}
+          scale={scale}
+          noticeState={edgeNotice}
+          onNoticeActivate={onEdgeNoticeActivate}
+          onLoadError={onEdgeLoadError}
+        />
+      ) : null}
+      {!isEdgeInteraction ? children : null}
+      {!isEdgeInteraction ? (
+        <span
+          className="pet-alpha-hit-region"
+          data-testid="pet-alpha-hit-region"
+          data-desktop-interactive-region=""
+          style={{
+            position: "absolute",
+            left: alphaHitBounds.left,
+            top: alphaHitBounds.top,
+            width: alphaHitBounds.width,
+            height: alphaHitBounds.height,
+            pointerEvents: "none",
+          }}
         />
       ) : null}
       {!isEdgeInteraction && currentFrameUrl && !imageFailed ? (
@@ -241,4 +367,11 @@ export function FramePetStage({
       ) : null}
     </div>
   );
+}
+
+function readPointerScreenPosition(event: PointerEvent<HTMLDivElement>) {
+  return {
+    x: event.screenX,
+    y: event.screenY,
+  };
 }

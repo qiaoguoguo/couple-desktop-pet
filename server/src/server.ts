@@ -5,6 +5,7 @@ import { createRelayRequestHandler } from "./pairingApi.js";
 import { ProfileEventHub } from "./profileEvents.js";
 import { FixedWindowRateLimiter } from "./requestRateLimiter.js";
 import { RelayRepository } from "./repository.js";
+import { SparkRepository } from "./spark/sparkRepository.js";
 import { WeatherApiProvider } from "./weather/weatherApiProvider.js";
 import type { WeatherProvider } from "./weather/weatherProvider.js";
 import { WeatherService } from "./weather/weatherService.js";
@@ -31,6 +32,7 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
   initializeRelayDatabase(db);
   const now = options.now ?? (() => new Date());
   const repository = new RelayRepository(db, now);
+  const sparkRepository = new SparkRepository(db, now);
   const weatherProvider =
     options.weatherProvider ??
     new WeatherApiProvider({
@@ -43,6 +45,7 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
       weatherService: new WeatherService(weatherProvider, () => now().getTime()),
       rateLimiter: new FixedWindowRateLimiter(() => now().getTime()),
       profileEvents,
+      sparkRepository,
       weatherConfigured:
         options.weatherConfigured ?? options.weatherProvider !== undefined,
     }),
@@ -51,6 +54,7 @@ export async function createRelayServer(options: RelayServerOptions): Promise<Re
     server,
     repository,
     profileEvents,
+    sparkRepository,
     options.now,
   );
 

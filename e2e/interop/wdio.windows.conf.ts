@@ -39,6 +39,7 @@ export const config: WebdriverIO.Config = {
     interop: ["./specs/cross-platform.e2e.ts"],
     restart: ["./specs/restart-unpaired.e2e.ts"],
     weather: ["./specs/couple-weather.e2e.ts"],
+    spark: ["./specs/couple-spark.e2e.ts"],
   },
   maxInstances: 1,
   logLevel: "error",

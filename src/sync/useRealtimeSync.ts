@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeviceProfileV1 } from "../../shared/profileProtocol";
+import type { SparkStreakSnapshotV1 } from "../../shared/sparkProtocol";
 import type { SyncSettings } from "../settings/settingsTypes";
 import type { StructuredMessageContent } from "../../shared/syncProtocol";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
@@ -14,6 +15,7 @@ export interface UseRealtimeSyncCallbacks {
     content?: StructuredMessageContent;
   }): void;
   onPeerProfile?(peerDeviceId: string, profile: DeviceProfileV1): void;
+  onSparkSnapshot?(snapshot: SparkStreakSnapshotV1): void;
 }
 
 export function useRealtimeSync(
@@ -39,18 +41,23 @@ export function useRealtimeSync(
   useEffect(() => {
     if (import.meta.env.VITE_TAURI_E2E === "1") {
       let cancelled = false;
-      let unsubscribe = () => {};
+      let unsubscribeState = () => {};
+      let unsubscribeMessages = () => {};
 
       void import("./e2eRealtimeOverride").then((module) => {
         if (cancelled) {
           return;
         }
-        unsubscribe = module.subscribeToE2eRealtimeOverride(setE2eOverrideState);
+        unsubscribeState = module.subscribeToE2eRealtimeOverride(setE2eOverrideState);
+        unsubscribeMessages = module.subscribeToE2eIncomingMessages((message) => {
+          callbacksRef.current.onMessage(message);
+        });
       });
 
       return () => {
         cancelled = true;
-        unsubscribe();
+        unsubscribeState();
+        unsubscribeMessages();
       };
     }
 
@@ -85,6 +92,11 @@ export function useRealtimeSync(
             event.peerDeviceId,
             event.profile,
           );
+          return;
+        }
+
+        if (event.type === "spark") {
+          callbacksRef.current.onSparkSnapshot?.(event.snapshot);
           return;
         }
 

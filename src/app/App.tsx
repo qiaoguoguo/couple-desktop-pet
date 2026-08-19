@@ -15,6 +15,7 @@ import {
   type BubbleState,
 } from "../bubble/bubbleStore";
 import {
+  dockWindowAtEdge,
   hideWindow,
   listenForClickThroughRecovered,
   listenForOpenSettings,
@@ -22,15 +23,22 @@ import {
   closeMessageComposerSurface,
   openMessageComposerSurface,
   quitApp,
+  readFocusTimer,
   readSettings as readDesktopSettings,
   resetWindowPosition,
   restoreWindowFromEdgePeek,
   setAlwaysOnTop,
   setClickThrough,
+  setInteractiveRegions,
   snapWindowToEdgeIfNeeded,
-  startWindowDrag,
+  moveWindowForPointerDrag,
   writeSettings as writeDesktopSettings,
+  writeFocusTimer,
 } from "../desktop/windowCommands";
+import {
+  collectInteractiveRegions,
+  observeInteractiveRegions,
+} from "../desktop/interactiveRegions";
 import { getBuiltInEdgeProfile } from "../assets/builtInEdgeInteraction";
 import { ensureDeviceIdentity } from "../sync/deviceIdentity";
 import { RelayHttpClient } from "../sync/relayHttpClient";
@@ -41,12 +49,15 @@ import {
   enqueueRemoteMessage,
   markRemoteMessageDismissing,
   markRemoteMessageHovered,
+  revealRemoteSurprise,
 } from "../sync/remoteMessageQueue";
 import { SyncPanel } from "../sync/SyncPanel";
 import { useRealtimeSync } from "../sync/useRealtimeSync";
 import { useProfileSync } from "../profile/useProfileSync";
 import type { SessionMessage } from "../sync/syncTypes";
 import { MessageComposerPanel } from "../message/MessageComposerPanel";
+import { SurpriseComposerPanel } from "../surprise/SurpriseComposerPanel";
+import { recoverSurpriseContentFromFallbackText } from "../surprise/surpriseThemes";
 import { getNextScheduledEvent } from "../pet-core/petScheduler";
 import {
   createInitialPetState,
@@ -82,6 +93,10 @@ import {
 } from "../pet-core/motionPoolDirector";
 import { InteractionMenu } from "../interaction/InteractionMenu";
 import type { ActivityStatus } from "../../shared/activityStatus";
+import type {
+  StructuredMessageContent,
+  SurpriseMessageContent,
+} from "../../shared/syncProtocol";
 import type { DeviceProfileV1 } from "../../shared/profileProtocol";
 import {
   BUILT_IN_PET_PACKAGE_ID,
@@ -99,7 +114,19 @@ import { ActivityStatusPicker } from "../status/ActivityStatusPicker";
 import { PeerStatusCard } from "../status/PeerStatusCard";
 import { resolvePeerStatusView } from "../status/peerStatusPresentation";
 import { useEdgeInteraction } from "../pet/useEdgeInteraction";
+import type { EdgeNoticeState } from "../pet/edgeNotice";
 import { preloadEdgeFrames } from "../pet/edgeFramePreloader";
+import { projectStaticEdgeNotice } from "./edgeNoticeProjection";
+import { FocusTimerCompletion } from "../focus-timer/FocusTimerCompletion";
+import { FocusTimerPanel } from "../focus-timer/FocusTimerPanel";
+import { FocusTimerPill } from "../focus-timer/FocusTimerPill";
+import { projectFocusTimerPresentation } from "../focus-timer/focusTimerPresentation";
+import { useFocusTimer } from "../focus-timer/useFocusTimer";
+import { WeatherPanel } from "../weather/WeatherPanel";
+import { usePairWeather } from "../weather/usePairWeather";
+import { SparkLeaderboardPanel } from "../spark/SparkLeaderboardPanel";
+import { useSparkStreak } from "../spark/useSparkStreak";
+import type { SparkStreakSnapshotV1 } from "../../shared/sparkProtocol";
 
 const bubbleMessage = "我在这里。";
 const placeholderInteractionMessage = "功能开发中，先陪你待一会儿。";
@@ -113,6 +140,30 @@ const pairCodePollIntervalMs = 2000;
 const remoteMessageDismissDelayMs = 800;
 const sentMessageBubbleDurationMs = 5000;
 
+type ComposerMode =
+  | "message"
+  | "surprise"
+  | "focus"
+  | "weather"
+  | "spark"
+  | null;
+type OpenComposerMode = Exclude<ComposerMode, null>;
+
+function isSurpriseContent(
+  content: StructuredMessageContent | undefined,
+): content is SurpriseMessageContent {
+  return content?.kind === "surprise";
+}
+
+function selectSurpriseMotion(
+  motions: Parameters<typeof selectMotionForTag>[0],
+): string | null {
+  return (
+    selectMotionForTag(motions, "surprise") ??
+    selectMotionForTag(motions, "message")
+  );
+}
+
 export function App() {
   const settingsApi = useMemo<SettingsPersistenceApi>(
     () => ({
@@ -121,6 +172,11 @@ export function App() {
     }),
     [],
   );
+  const focusTimerApi = useMemo(
+    () => ({ readFocusTimer, writeFocusTimer }),
+    [],
+  );
+  const focusTimer = useFocusTimer({ api: focusTimerApi });
   const petPackageApi = useMemo(() => createPetPackageCommands(), []);
   const [petState, setPetState] = useState<PetState>(() =>
     createInitialPetState(Date.now()),
@@ -138,7 +194,13 @@ export function App() {
     createEmptyRemoteMessageQueue(),
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [messageComposerOpen, setMessageComposerOpen] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>(null);
+  const [focusTimerControlsOpen, setFocusTimerControlsOpen] = useState(false);
+  const [focusCompletionVisibleSince, setFocusCompletionVisibleSince] =
+    useState<number | null>(null);
+  const [focusPresentationNow, setFocusPresentationNow] = useState(() =>
+    Date.now(),
+  );
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number;
@@ -154,11 +216,23 @@ export function App() {
   } | null>(null);
   const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const remoteMessageClickThroughOverrideRef = useRef(false);
+  const settingsClickThroughTemporaryRestoreRef = useRef(false);
   const petSurfaceRef = useRef<HTMLElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const statusPickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const edgeDragPointerHeldRef = useRef(false);
+  const pendingPointerDragDeltaRef = useRef({ x: 0, y: 0 });
+  const pointerDragFrameRef = useRef<number | null>(null);
+  const pointerDragMoveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const customPointerDragActiveRef = useRef(false);
+  const composerTransitionGenerationRef = useRef(0);
+  const composerOpenTaskRef = useRef<Promise<boolean> | null>(null);
+  const composerRestoreTaskRef = useRef<Promise<boolean> | null>(null);
+  const composerNativeSurfaceOpenRef = useRef(false);
+  const profileRetryConnectionActiveRef = useRef(false);
+  const sparkSnapshotHandlerRef = useRef<
+    (snapshot: SparkStreakSnapshotV1) => void
+  >(() => undefined);
   const profileSync = useProfileSync({
     settings,
     updateSettings: (nextSettings) => {
@@ -167,6 +241,7 @@ export function App() {
     },
     persistSettings: (nextSettings) => saveSettings(settingsApi, nextSettings),
   });
+  const pairWeather = usePairWeather();
 
   const petPackages = useMemo(
     () =>
@@ -208,6 +283,31 @@ export function App() {
   );
   const activeRemoteMessage = remoteMessages.active;
   const isRemoteMessageActive = Boolean(activeRemoteMessage);
+  const composerSurfaceActive = composerMode !== null;
+  const transientSurfaceOwnerActive =
+    composerSurfaceActive || isRemoteMessageActive;
+  const focusReminderSurfaceOwnerActive =
+    composerSurfaceActive ||
+    isRemoteMessageActive ||
+    settingsOpen ||
+    statusPickerOpen ||
+    Boolean(contextMenuPosition) ||
+    Boolean(interactionMenuPosition);
+  const focusTimerPresentation = useMemo(
+    () =>
+      projectFocusTimerPresentation(
+        focusTimer.state,
+        focusReminderSurfaceOwnerActive,
+        focusPresentationNow,
+        focusCompletionVisibleSince,
+      ),
+    [
+      focusCompletionVisibleSince,
+      focusPresentationNow,
+      focusReminderSurfaceOwnerActive,
+      focusTimer.state,
+    ],
+  );
   const refreshPetPackages = useCallback(async () => {
     const packages = await petPackageApi.listPetPackages();
     setImportedPetPackages(packages);
@@ -243,7 +343,20 @@ export function App() {
         fromDeviceId: string;
         text: string;
         at: string;
+        content?: StructuredMessageContent;
       }) => {
+        const resolvedContent =
+          message.content === undefined
+            ? recoverSurpriseContentFromFallbackText(message.text)
+            : message.content;
+        const remoteMessage = {
+          id: message.id,
+          fromDeviceId: message.fromDeviceId,
+          text: message.text,
+          at: message.at,
+          ...(resolvedContent === null ? {} : { content: resolvedContent }),
+        };
+
         setSessionMessages((current) => [
           ...current,
           {
@@ -254,22 +367,52 @@ export function App() {
           },
         ]);
 
-        const messageMotionId = selectMotionForTag(
-          selectedPetPackage.motions,
-          "message",
-        );
+        const messageMotionId = isSurpriseContent(resolvedContent ?? undefined)
+          ? selectSurpriseMotion(selectedPetPackage.motions)
+          : selectMotionForTag(selectedPetPackage.motions, "message");
 
         if (messageMotionId) {
           setVisibleMotion(messageMotionId);
         }
 
-        setRemoteMessages((current) => enqueueRemoteMessage(current, message));
+        setRemoteMessages((current) => enqueueRemoteMessage(current, remoteMessage));
       },
       onPeerProfile: profileSync.rememberPeer,
+      onSparkSnapshot: (snapshot: SparkStreakSnapshotV1) => {
+        sparkSnapshotHandlerRef.current(snapshot);
+      },
     }),
     [profileSync.rememberPeer, selectedPetPackage.motions, setVisibleMotion],
   );
   const realtime = useRealtimeSync(settings.sync, realtimeCallbacks);
+  const sparkRelayClient = useMemo(
+    () => new RelayHttpClient(settings.sync.relayUrl),
+    [settings.sync.relayUrl],
+  );
+  const sparkStreak = useSparkStreak(
+    settings.sync,
+    sparkRelayClient,
+    realtime.state.status,
+  );
+  sparkSnapshotHandlerRef.current = sparkStreak.acceptSnapshot;
+  useEffect(() => {
+    if (realtime.state.status !== "connected") {
+      profileRetryConnectionActiveRef.current = false;
+      return;
+    }
+
+    if (
+      profileSync.saveState === "pending" &&
+      !profileRetryConnectionActiveRef.current
+    ) {
+      profileRetryConnectionActiveRef.current = true;
+      void profileSync.retryPendingProfile();
+    }
+  }, [
+    profileSync.retryPendingProfile,
+    profileSync.saveState,
+    realtime.state.status,
+  ]);
   const syncStatus = useMemo(
     () => ({
       ...realtime.state,
@@ -317,22 +460,28 @@ export function App() {
     renderState: edgeInteractionRenderState,
     snapAfterDrag: snapEdgeAfterDrag,
     requestExitThen: requestEdgeExitThen,
-    handlePhaseComplete: handleEdgePhaseComplete,
-    handlePointerEnter: handleEdgePointerEnter,
     handleLoadError: handleEdgeLoadError,
   } = useEdgeInteraction({
     packageId: selectedPetPackage.id,
     snapWindowToEdgeIfNeeded,
     restoreWindowFromEdgePeek,
+    dockWindowAtEdge,
     resetWindowPosition,
     preloadFrames: preloadEdgeFrames,
     getProfile: getBuiltInEdgeProfile,
   });
   const isEdgeInteractionActive = Boolean(edgeInteractionState);
+  const stableEdgeNotice = useMemo(
+    () =>
+      isEdgeInteractionActive
+        ? projectStaticEdgeNotice(remoteMessages)
+        : null,
+    [isEdgeInteractionActive, remoteMessages],
+  );
   const shouldShowPeerStatus =
     Boolean(peerStatusView) &&
     !settingsOpen &&
-    !messageComposerOpen &&
+    !composerSurfaceActive &&
     !activeRemoteMessage &&
     !interactionMenuPosition &&
     !statusPickerOpen &&
@@ -392,30 +541,95 @@ export function App() {
     runDesktopCommand(() => setClickThrough(settings.clickThrough));
   }, [settings.clickThrough]);
 
-  useEffect(() => {
-    const shouldDisableClickThroughForRemoteMessage =
-      Boolean(remoteMessages.active) && settings.clickThrough;
+  const syncInteractiveRegions = useCallback(() => {
+    runDesktopCommand(() =>
+      setInteractiveRegions(
+        collectInteractiveRegions(),
+        window.devicePixelRatio || 1,
+      ),
+    );
+  }, []);
 
+  useEffect(() => observeInteractiveRegions(syncInteractiveRegions), [
+    syncInteractiveRegions,
+  ]);
+
+  useEffect(() => {
+    syncInteractiveRegions();
+  }, [
+    activeRemoteMessage?.id,
+    activeRemoteMessage?.stage,
+    bubble.id,
+    bubble.visible,
+    composerMode,
+    contextMenuPosition,
+    interactionMenuPosition,
+    isEdgeInteractionActive,
+    focusTimer.state.status,
+    focusTimerControlsOpen,
+    focusTimerPresentation,
+    peerStatusView?.variant,
+    settings.scale,
+    settingsOpen,
+    statusPickerOpen,
+    syncInteractiveRegions,
+  ]);
+
+  useEffect(() => {
     if (
-      shouldDisableClickThroughForRemoteMessage &&
-      !remoteMessageClickThroughOverrideRef.current
+      focusTimer.state.status !== "completed-unacknowledged" ||
+      focusTimer.state.collapsed
     ) {
-      remoteMessageClickThroughOverrideRef.current = true;
-      runDesktopCommand(() => setClickThrough(false));
+      setFocusCompletionVisibleSince(null);
       return;
     }
 
-    if (
-      !shouldDisableClickThroughForRemoteMessage &&
-      remoteMessageClickThroughOverrideRef.current
-    ) {
-      remoteMessageClickThroughOverrideRef.current = false;
-
-      if (settings.clickThrough) {
-        runDesktopCommand(() => setClickThrough(true));
-      }
+    if (focusReminderSurfaceOwnerActive) {
+      setFocusCompletionVisibleSince(null);
+      return;
     }
-  }, [remoteMessages.active, settings.clickThrough]);
+
+    if (focusCompletionVisibleSince === null) {
+      const visibleAt = Date.now();
+      setFocusCompletionVisibleSince(visibleAt);
+      setFocusPresentationNow(visibleAt);
+    }
+  }, [
+    focusCompletionVisibleSince,
+    focusReminderSurfaceOwnerActive,
+    focusTimer.state,
+  ]);
+
+  useEffect(() => {
+    if (
+      focusTimer.state.status !== "completed-unacknowledged" ||
+      focusTimer.state.collapsed ||
+      focusReminderSurfaceOwnerActive ||
+      focusCompletionVisibleSince === null
+    ) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      setFocusPresentationNow(Date.now());
+    }, 250);
+
+    return () => window.clearInterval(timerId);
+  }, [
+    focusCompletionVisibleSince,
+    focusReminderSurfaceOwnerActive,
+    focusTimer.state,
+  ]);
+
+  useEffect(() => {
+    if (
+      focusTimerPresentation === "collapsed" &&
+      focusTimer.state.status === "completed-unacknowledged" &&
+      !focusTimer.state.collapsed
+    ) {
+      focusTimer.collapse();
+    }
+  }, [focusTimer.collapse, focusTimer.state, focusTimerPresentation]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -428,44 +642,90 @@ export function App() {
     [settingsApi],
   );
 
-  const persistRecoveredClickThrough = useCallback(() => {
-    const currentSettings = settingsRef.current;
+  const restoreComposerPanel = useCallback((): Promise<boolean> => {
+    composerTransitionGenerationRef.current += 1;
 
-    if (!currentSettings.clickThrough) {
-      return;
+    if (composerRestoreTaskRef.current) {
+      return composerRestoreTaskRef.current;
     }
 
-    const nextSettings = mergeSettings({
-      ...currentSettings,
-      clickThrough: false,
+    let restoreTask: Promise<boolean>;
+    restoreTask = (async () => {
+      const pendingOpen = composerOpenTaskRef.current;
+      if (pendingOpen) {
+        await pendingOpen;
+      }
+
+      if (!composerNativeSurfaceOpenRef.current) {
+        setComposerMode(null);
+        return true;
+      }
+
+      try {
+        await closeMessageComposerSurface();
+      } catch {
+        return false;
+      }
+
+      composerNativeSurfaceOpenRef.current = false;
+      setComposerMode(null);
+      return true;
+    })().finally(() => {
+      if (composerRestoreTaskRef.current === restoreTask) {
+        composerRestoreTaskRef.current = null;
+      }
     });
+    composerRestoreTaskRef.current = restoreTask;
+    return restoreTask;
+  }, []);
 
-    settingsRef.current = nextSettings;
-    setSettings(nextSettings);
-    persistSettings(nextSettings);
-  }, [persistSettings]);
-
-  const openSettingsPanel = useCallback(() => {
+  const showSettingsPanel = useCallback(() => {
     const currentSettings = settingsRef.current;
 
     if (currentSettings.clickThrough) {
-      const nextSettings = mergeSettings({
-        ...currentSettings,
-        clickThrough: false,
-      });
-
-      settingsRef.current = nextSettings;
-      setSettings(nextSettings);
-      persistSettings(nextSettings);
+      settingsClickThroughTemporaryRestoreRef.current = true;
       runDesktopCommand(() => setClickThrough(false));
     }
 
+    setContextMenuPosition(null);
+    setInteractionMenuPosition(null);
     setSettingsOpen(true);
     setStatusPickerOpen(false);
-  }, [persistSettings]);
+    setBubble((current) => hideBubble(current));
+  }, []);
+
+  const openSettingsPanel = useCallback(() => {
+    if (composerSurfaceActive) {
+      return;
+    }
+
+    if (
+      composerOpenTaskRef.current ||
+      composerNativeSurfaceOpenRef.current
+    ) {
+      void restoreComposerPanel().then((restored) => {
+        if (restored) {
+          showSettingsPanel();
+        }
+      });
+      return;
+    }
+
+    showSettingsPanel();
+  }, [composerSurfaceActive, restoreComposerPanel, showSettingsPanel]);
 
   const closeSettingsPanel = useCallback(() => {
     setSettingsOpen(false);
+
+    if (!settingsClickThroughTemporaryRestoreRef.current) {
+      return;
+    }
+
+    settingsClickThroughTemporaryRestoreRef.current = false;
+
+    if (settingsRef.current.clickThrough) {
+      runDesktopCommand(() => setClickThrough(true));
+    }
   }, []);
 
   useEffect(() => {
@@ -495,9 +755,7 @@ export function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    void listenForClickThroughRecovered(() => {
-      persistRecoveredClickThrough();
-    })
+    void listenForClickThroughRecovered(() => undefined)
       .then((unsubscribe) => {
         if (disposed) {
           unsubscribe();
@@ -512,7 +770,7 @@ export function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [persistRecoveredClickThrough]);
+  }, []);
 
   useEffect(() => {
     if (!bubble.visible) {
@@ -545,13 +803,16 @@ export function App() {
       return;
     }
 
+    const messageId = activeMessage.id;
     const dismissTimer = window.setTimeout(() => {
       setRemoteMessages((current) =>
-        completeRemoteMessageDismissal(current, activeMessage.id),
+        completeRemoteMessageDismissal(current, messageId),
       );
     }, remoteMessageDismissDelayMs);
 
-    return () => window.clearTimeout(dismissTimer);
+    return () => {
+      window.clearTimeout(dismissTimer);
+    };
   }, [remoteMessages.active]);
 
   useEffect(() => {
@@ -683,7 +944,12 @@ export function App() {
       const nextSettings = mergeSettings({ ...settings, ...patch });
 
       if (patch.clickThrough === true && settingsOpen) {
-        setSettingsOpen(false);
+        settingsClickThroughTemporaryRestoreRef.current = false;
+        closeSettingsPanel();
+      }
+
+      if (patch.clickThrough === false) {
+        settingsClickThroughTemporaryRestoreRef.current = false;
       }
 
       settingsRef.current = nextSettings;
@@ -696,7 +962,7 @@ export function App() {
         }),
       );
     },
-    [persistSettings, settings, settingsOpen],
+    [closeSettingsPanel, persistSettings, settings, settingsOpen],
   );
 
   const handleImportPetPackage = useCallback(async () => {
@@ -1015,12 +1281,13 @@ export function App() {
     });
 
     if (result.ok) {
+      await profileSync.markLocalProfileSynced(current.profile.local);
       setPairCode({ code: result.code, expiresAt: result.expiresAt });
       return;
     }
 
     setSyncError(readRelayUserMessage(result.code, result.message));
-  }, [handleSyncChange]);
+  }, [handleSyncChange, profileSync.markLocalProfileSynced]);
 
   const handleAcceptPairCode = useCallback(
     async (code: string) => {
@@ -1046,6 +1313,7 @@ export function App() {
       });
 
       if (result.ok) {
+        await profileSync.markLocalProfileSynced(current.profile.local);
         storeAcceptedPair(
           identity,
           result.pairId,
@@ -1059,7 +1327,11 @@ export function App() {
 
       setSyncError(readRelayUserMessage(result.code, result.message));
     },
-    [handleSyncChange, storeAcceptedPair],
+    [
+      handleSyncChange,
+      profileSync.markLocalProfileSynced,
+      storeAcceptedPair,
+    ],
   );
 
   const handleSendMessage = useCallback(
@@ -1119,14 +1391,95 @@ export function App() {
     ],
   );
 
+  const handleSendSurprise = useCallback(
+    (content: SurpriseMessageContent, fallbackText: string) => {
+      if (
+        realtime.state.status !== "connected" ||
+        realtime.state.peerPresence !== "online"
+      ) {
+        setSyncError("对方当前不在线");
+        return { ok: false as const, message: "对方当前不在线" };
+      }
+
+      const result = realtime.client?.sendMessage(fallbackText, content) ?? {
+        ok: false as const,
+        message: "Relay is not connected",
+      };
+
+      if (!result.ok) {
+        setSyncError(result.message);
+        return { ok: false as const, message: result.message };
+      }
+
+      setSyncError(null);
+      setSessionMessages((current) => [
+        ...current,
+        {
+          id: result.clientMessageId,
+          direction: "sent",
+          text: fallbackText.trim(),
+          at: new Date().toISOString(),
+        },
+      ]);
+
+      if (settingsRef.current.bubblesEnabled) {
+        setBubble(
+          showBubble("小心意已送出", {
+            durationMs: sentMessageBubbleDurationMs,
+          }),
+        );
+      }
+
+      const surpriseMotionId = selectSurpriseMotion(selectedPetPackage.motions);
+
+      if (surpriseMotionId) {
+        setVisibleMotion(surpriseMotionId);
+      }
+
+      return { ok: true as const };
+    },
+    [
+      realtime.client,
+      realtime.state.peerPresence,
+      realtime.state.status,
+      selectedPetPackage.motions,
+      setVisibleMotion,
+    ],
+  );
+
   const handleRemoteMessageAcknowledge = useCallback((messageId: string) => {
     setRemoteMessages((current) =>
       markRemoteMessageHovered(current, messageId),
     );
   }, []);
 
+  const handleRemoteSurpriseReveal = useCallback((messageId: string) => {
+    setRemoteMessages((current) => revealRemoteSurprise(current, messageId));
+  }, []);
+
+  const handleRemoteSurpriseDismiss = useCallback((messageId: string) => {
+    setRemoteMessages((current) =>
+      markRemoteMessageDismissing(current, messageId),
+    );
+  }, []);
+
+  const handleEdgeNoticeActivate = useCallback(
+    (notice: NonNullable<EdgeNoticeState["active"]>) => {
+      if (notice.kind === "presence") {
+        return;
+      }
+
+      requestEdgeExitThen(() => undefined);
+    },
+    [requestEdgeExitThen],
+  );
+
+  const handleEdgeRecovery = useCallback(() => {
+    void handleEdgeLoadError();
+  }, [handleEdgeLoadError]);
+
   const openInteractionMenu = useCallback(() => {
-    if (messageComposerOpen) {
+    if (settingsOpen || transientSurfaceOwnerActive) {
       return;
     }
 
@@ -1135,24 +1488,117 @@ export function App() {
     setInteractionMenuPosition((current) =>
       current ? null : getInteractionMenuPosition(),
     );
-  }, [messageComposerOpen]);
+  }, [settingsOpen, transientSurfaceOwnerActive]);
 
   const handlePetClick = useCallback(() => {
-    if (settingsOpen) {
+    if (settingsOpen || transientSurfaceOwnerActive) {
       return;
     }
 
     requestEdgeExitThen(openInteractionMenu);
-  }, [openInteractionMenu, requestEdgeExitThen, settingsOpen]);
+  }, [
+    openInteractionMenu,
+    requestEdgeExitThen,
+    settingsOpen,
+    transientSurfaceOwnerActive,
+  ]);
 
-  const openMessageComposerPanel = useCallback(() => {
+  const openComposerPanel = useCallback((mode: OpenComposerMode) => {
+    if (
+      settingsOpen ||
+      transientSurfaceOwnerActive ||
+      composerOpenTaskRef.current ||
+      composerRestoreTaskRef.current
+    ) {
+      return Promise.resolve(false);
+    }
+
     setInteractionMenuPosition(null);
     setStatusPickerOpen(false);
     setContextMenuPosition(null);
-    runDesktopCommand(openMessageComposerSurface);
+    const generation = ++composerTransitionGenerationRef.current;
+
+    let openTask: Promise<boolean>;
+    openTask = (async () => {
+      try {
+        await openMessageComposerSurface(mode);
+      } catch {
+        return false;
+      }
+
+      composerNativeSurfaceOpenRef.current = true;
+      if (composerTransitionGenerationRef.current !== generation) {
+        return false;
+      }
+
+      setBubble((current) => hideBubble(current));
+      setComposerMode(mode);
+      return true;
+    })().finally(() => {
+      if (composerOpenTaskRef.current === openTask) {
+        composerOpenTaskRef.current = null;
+      }
+    });
+    composerOpenTaskRef.current = openTask;
+    return openTask;
+  }, [settingsOpen, transientSurfaceOwnerActive]);
+
+  const openMessageComposerPanel = useCallback(() => {
+    void openComposerPanel("message");
+  }, [openComposerPanel]);
+
+  const openSurpriseComposerPanel = useCallback(() => {
+    void openComposerPanel("surprise");
+  }, [openComposerPanel]);
+
+  const requestPairWeather = useCallback(() => {
+    const { relayUrl, deviceId, deviceSecret, pairId } =
+      settingsRef.current.sync;
+
+    if (!relayUrl || !deviceId || !deviceSecret || !pairId) {
+      return;
+    }
+
+    void pairWeather.open({ relayUrl, deviceId, deviceSecret, pairId });
+  }, [pairWeather.open]);
+
+  const openWeatherPanel = useCallback(() => {
+    void openComposerPanel("weather").then((opened) => {
+      if (opened) {
+        requestPairWeather();
+      }
+    });
+  }, [openComposerPanel, requestPairWeather]);
+
+  const openSparkPanel = useCallback(() => {
+    void openComposerPanel("spark").then((opened) => {
+      if (opened) {
+        void sparkStreak.requestLeaderboard();
+      }
+    });
+  }, [openComposerPanel, sparkStreak.requestLeaderboard]);
+
+  const openFocusTimerPanel = useCallback(() => {
     setBubble((current) => hideBubble(current));
-    setMessageComposerOpen(true);
-  }, []);
+
+    if (
+      focusTimer.state.status === "running" ||
+      focusTimer.state.status === "paused"
+    ) {
+      setFocusTimerControlsOpen(true);
+      return;
+    }
+
+    if (focusTimer.state.status === "completed-unacknowledged") {
+      const visibleAt = Date.now();
+      focusTimer.expand();
+      setFocusCompletionVisibleSince(visibleAt);
+      setFocusPresentationNow(visibleAt);
+      return;
+    }
+
+    void openComposerPanel("focus");
+  }, [focusTimer.expand, focusTimer.state, openComposerPanel]);
 
   const closeStatusPicker = useCallback(() => {
     setStatusPickerOpen(false);
@@ -1172,13 +1618,17 @@ export function App() {
   }, []);
 
   const openStatusPicker = useCallback(() => {
+    if (settingsOpen || transientSurfaceOwnerActive) {
+      return;
+    }
+
     statusPickerReturnFocusRef.current =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
     setStatusPickerOpen(true);
     setBubble((current) => hideBubble(current));
-  }, []);
+  }, [settingsOpen, transientSurfaceOwnerActive]);
 
   const handleActivityStatusSelect = useCallback(
     (activityStatus: ActivityStatus | null) => {
@@ -1201,19 +1651,44 @@ export function App() {
   const handleInteractionSelect = useCallback((selection: InteractionMenuSelection) => {
     setInteractionMenuPosition(null);
 
-    if (selection === "send-message") {
-      const sendable =
-        settingsRef.current.sync.enabled &&
-        Boolean(settingsRef.current.sync.pairId) &&
-        realtime.state.status === "connected" &&
-        realtime.state.peerPresence === "online";
+    if (selection === "open-focus-timer") {
+      openFocusTimerPanel();
+      return;
+    }
 
+    if (selection === "open-weather") {
+      openWeatherPanel();
+      return;
+    }
+
+    if (selection === "open-spark") {
+      openSparkPanel();
+      return;
+    }
+
+    const sendable =
+      settingsRef.current.sync.enabled &&
+      Boolean(settingsRef.current.sync.pairId) &&
+      realtime.state.status === "connected" &&
+      realtime.state.peerPresence === "online";
+
+    if (selection === "send-message") {
       if (!sendable) {
         setBubble(showBubble("对方在线后再发消息吧。", { durationMs: 5000 }));
         return;
       }
 
       openMessageComposerPanel();
+      return;
+    }
+
+    if (selection === "send-surprise") {
+      if (!sendable) {
+        setBubble(showBubble("对方在线后再发消息吧。", { durationMs: 5000 }));
+        return;
+      }
+
+      openSurpriseComposerPanel();
       return;
     }
 
@@ -1258,17 +1733,74 @@ export function App() {
     );
   }, [
     openMessageComposerPanel,
+    openFocusTimerPanel,
+    openSparkPanel,
+    openSurpriseComposerPanel,
     openStatusPicker,
+    openWeatherPanel,
     realtime.state.peerPresence,
     realtime.state.status,
     selectedPetPackage,
     setVisibleMotion,
   ]);
 
-  const closeMessageComposerPanel = useCallback(() => {
-    setMessageComposerOpen(false);
-    runDesktopCommand(closeMessageComposerSurface);
-  }, []);
+  const closeComposerPanel = useCallback(async () => {
+    const closingMode = composerMode;
+    const restored = await restoreComposerPanel();
+    if (restored && closingMode === "weather") {
+      pairWeather.close();
+    }
+    if (restored && closingMode === "spark") {
+      sparkStreak.clearLeaderboard();
+    }
+
+    return restored;
+  }, [
+    composerMode,
+    pairWeather.close,
+    restoreComposerPanel,
+    sparkStreak.clearLeaderboard,
+  ]);
+
+  const openSettingsFromWeather = useCallback(() => {
+    void closeComposerPanel().then((restored) => {
+      if (restored) {
+        showSettingsPanel();
+      }
+    });
+  }, [closeComposerPanel, showSettingsPanel]);
+
+  const handleFocusTimerStart = useCallback(
+    (minutes: number) => {
+      focusTimer.start(minutes);
+      setFocusTimerControlsOpen(false);
+      closeComposerPanel();
+    },
+    [closeComposerPanel, focusTimer.start],
+  );
+
+  const handleFocusTimerEnd = useCallback(() => {
+    setFocusTimerControlsOpen(false);
+    focusTimer.end();
+  }, [focusTimer.end]);
+
+  const handleFocusTimerAcknowledge = useCallback(() => {
+    setFocusCompletionVisibleSince(null);
+    focusTimer.acknowledge();
+  }, [focusTimer.acknowledge]);
+
+  const handleFocusTimerRepeat = useCallback(() => {
+    setFocusCompletionVisibleSince(null);
+    setFocusTimerControlsOpen(false);
+    focusTimer.repeat();
+  }, [focusTimer.repeat]);
+
+  const handleFocusTimerExpand = useCallback(() => {
+    const visibleAt = Date.now();
+    focusTimer.expand();
+    setFocusCompletionVisibleSince(visibleAt);
+    setFocusPresentationNow(visibleAt);
+  }, [focusTimer.expand]);
 
   const handleMessageComposerSubmit = useCallback(
     (text: string) => handleSendMessage(text),
@@ -1279,6 +1811,14 @@ export function App() {
     (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
+
+      if (
+        isEdgeInteractionActive ||
+        settingsOpen ||
+        transientSurfaceOwnerActive
+      ) {
+        return;
+      }
 
       const nextPosition = {
         x: clampMenuAxis(event.clientX, window.innerWidth, contextMenuWidth),
@@ -1298,8 +1838,11 @@ export function App() {
     },
     [
       dismissStatusPicker,
+      isEdgeInteractionActive,
       requestEdgeExitThen,
+      settingsOpen,
       statusPickerOpen,
+      transientSurfaceOwnerActive,
     ],
   );
 
@@ -1313,12 +1856,86 @@ export function App() {
       ?.focus();
   }, [contextMenuPosition]);
 
+  const enqueuePointerDragMove = useCallback((delta: { x: number; y: number }) => {
+    const runMove = () =>
+      moveWindowForPointerDrag(delta.x, delta.y).catch(() => undefined);
+    const nextMove = pointerDragMoveQueueRef.current.then(runMove, runMove);
+
+    pointerDragMoveQueueRef.current = nextMove;
+    return nextMove;
+  }, []);
+
+  const flushPendingPointerDrag = useCallback((): Promise<void> => {
+    if (pointerDragFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerDragFrameRef.current);
+      pointerDragFrameRef.current = null;
+    }
+
+    const delta = pendingPointerDragDeltaRef.current;
+
+    if (delta.x === 0 && delta.y === 0) {
+      return pointerDragMoveQueueRef.current;
+    }
+
+    pendingPointerDragDeltaRef.current = { x: 0, y: 0 };
+    return enqueuePointerDragMove(delta);
+  }, [enqueuePointerDragMove]);
+
+  const clearPendingPointerDrag = useCallback(() => {
+    if (pointerDragFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerDragFrameRef.current);
+      pointerDragFrameRef.current = null;
+    }
+
+    pendingPointerDragDeltaRef.current = { x: 0, y: 0 };
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pointerDragFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerDragFrameRef.current);
+        pointerDragFrameRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const handleDragMove = useCallback(
+    (delta: { x: number; y: number }) => {
+      if (
+        !customPointerDragActiveRef.current &&
+        !edgeDragPointerHeldRef.current
+      ) {
+        return;
+      }
+
+      pendingPointerDragDeltaRef.current = {
+        x: pendingPointerDragDeltaRef.current.x + delta.x,
+        y: pendingPointerDragDeltaRef.current.y + delta.y,
+      };
+
+      if (!customPointerDragActiveRef.current) {
+        return;
+      }
+
+      if (pointerDragFrameRef.current !== null) {
+        return;
+      }
+
+      pointerDragFrameRef.current = window.requestAnimationFrame(() => {
+        pointerDragFrameRef.current = null;
+        flushPendingPointerDrag();
+      });
+    },
+    [flushPendingPointerDrag],
+  );
+
   const handleDragStart = useCallback(() => {
     setInteractionMenuPosition(null);
     setStatusPickerOpen(false);
     setContextMenuPosition(null);
     const startDrag = () => {
-      runDesktopCommand(startWindowDrag);
+      customPointerDragActiveRef.current = true;
       setVisibleMotionForAction("drag");
       setPetState((currentState) =>
         transitionPetState(currentState, {
@@ -1326,6 +1943,7 @@ export function App() {
           at: Date.now(),
         }),
       );
+      void flushPendingPointerDrag();
     };
 
     if (edgeInteractionState) {
@@ -1339,20 +1957,40 @@ export function App() {
     }
 
     startDrag();
-  }, [edgeInteractionState, requestEdgeExitThen, setVisibleMotionForAction]);
+  }, [
+    edgeInteractionState,
+    flushPendingPointerDrag,
+    requestEdgeExitThen,
+    setVisibleMotionForAction,
+  ]);
 
   const handleDragEnd = useCallback(() => {
-    if (edgeInteractionState) {
-      edgeDragPointerHeldRef.current = false;
-      return;
-    }
+    void (async () => {
+      if (edgeInteractionState) {
+        edgeDragPointerHeldRef.current = false;
 
-    setVisibleMotionForAction("idle-breathe");
-    setPetState((currentState) =>
-      transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
-    );
-    void snapEdgeAfterDrag().catch(() => undefined);
-  }, [edgeInteractionState, setVisibleMotionForAction, snapEdgeAfterDrag]);
+        if (!customPointerDragActiveRef.current) {
+          clearPendingPointerDrag();
+        }
+
+        return;
+      }
+
+      await flushPendingPointerDrag();
+      customPointerDragActiveRef.current = false;
+      setVisibleMotionForAction("idle-breathe");
+      setPetState((currentState) =>
+        transitionPetState(currentState, { type: "DRAG_ENDED", at: Date.now() }),
+      );
+      await snapEdgeAfterDrag().catch(() => undefined);
+    })();
+  }, [
+    clearPendingPointerDrag,
+    edgeInteractionState,
+    flushPendingPointerDrag,
+    setVisibleMotionForAction,
+    snapEdgeAfterDrag,
+  ]);
 
   const handleResetPosition = useCallback(() => {
     runDesktopCommand(resetWindowPosition);
@@ -1360,17 +1998,14 @@ export function App() {
 
   const handleSettingsToggle = useCallback(() => {
     if (settingsOpen) {
-      setSettingsOpen(false);
+      closeSettingsPanel();
       return;
     }
 
-    setInteractionMenuPosition(null);
-    setStatusPickerOpen(false);
     openSettingsPanel();
-  }, [openSettingsPanel, settingsOpen]);
+  }, [closeSettingsPanel, openSettingsPanel, settingsOpen]);
 
   const handleContextSettings = useCallback(() => {
-    setContextMenuPosition(null);
     openSettingsPanel();
   }, [openSettingsPanel]);
 
@@ -1389,12 +2024,37 @@ export function App() {
     runDesktopCommand(quitApp);
   }, []);
 
+  const sparkSnapshotCandidate =
+    "snapshot" in sparkStreak.snapshotState
+      ? sparkStreak.snapshotState.snapshot ?? null
+      : null;
+  const sparkSnapshotMatchesPair =
+    sparkSnapshotCandidate?.pairId === settings.sync.pairId;
+  const currentSparkSnapshot = sparkSnapshotMatchesPair
+    ? sparkSnapshotCandidate
+    : null;
+  const currentSparkAvailability =
+    sparkSnapshotCandidate !== null && !sparkSnapshotMatchesPair
+      ? "loading"
+      : sparkStreak.snapshotState.status === "ready"
+        ? "available"
+        : sparkStreak.snapshotState.status === "failed"
+          ? "unavailable"
+          : "loading";
+  const currentSparkLeaderboardState =
+    sparkStreak.leaderboardState.status === "ready" &&
+    sparkStreak.leaderboardState.response.snapshot.pairId !==
+      settings.sync.pairId
+      ? ({ status: "loading" } as const)
+      : sparkStreak.leaderboardState;
+
   return (
     <main className="app-shell">
       <section
         ref={petSurfaceRef}
-        className="pet-surface"
+        className={`pet-surface${composerSurfaceActive ? " composer-active" : ""}`}
         aria-label="情侣桌宠 MVP"
+        aria-hidden={composerSurfaceActive ? "true" : undefined}
         tabIndex={-1}
         onContextMenu={handlePetContextMenu}
       >
@@ -1408,29 +2068,57 @@ export function App() {
           scale={settings.scale}
           petPackage={selectedPetPackage}
           edgeInteraction={edgeInteractionRenderState}
-          onEdgePhaseComplete={handleEdgePhaseComplete}
-          onEdgePointerEnter={handleEdgePointerEnter}
-          onEdgeLoadError={handleEdgeLoadError}
+          edgeNotice={stableEdgeNotice}
+          onEdgeLoadError={handleEdgeRecovery}
+          onEdgeNoticeActivate={handleEdgeNoticeActivate}
           onPetClick={handlePetClick}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
-        />
+        >
+          {shouldShowPeerStatus && peerStatusView ? (
+            <PeerStatusCard
+              view={peerStatusView}
+              imageCandidates={peerStatusImageCandidates}
+            />
+          ) : null}
+        </FramePetStage>
+        {(focusTimer.state.status === "running" ||
+          focusTimer.state.status === "paused") &&
+        !focusReminderSurfaceOwnerActive ? (
+          <FocusTimerPill
+            state={focusTimer.state}
+            now={focusTimer.now}
+            controlsOpen={focusTimerControlsOpen}
+            onToggleControls={() =>
+              setFocusTimerControlsOpen((current) => !current)
+            }
+            onPause={focusTimer.pause}
+            onResume={focusTimer.resume}
+            onEnd={handleFocusTimerEnd}
+            edge={isEdgeInteractionActive}
+            edgeSide={edgeInteractionState?.side}
+          />
+        ) : null}
+        {focusTimer.state.status === "completed-unacknowledged" ? (
+          <FocusTimerCompletion
+            state={focusTimer.state}
+            presentation={focusTimerPresentation}
+            onAcknowledge={handleFocusTimerAcknowledge}
+            onRepeat={handleFocusTimerRepeat}
+            onExpand={handleFocusTimerExpand}
+            edge={isEdgeInteractionActive}
+            edgeSide={edgeInteractionState?.side}
+          />
+        ) : null}
         <RemoteMessageLayer
-          message={isEdgeInteractionActive ? null : activeRemoteMessage}
+          message={
+            isEdgeInteractionActive || settingsOpen ? null : activeRemoteMessage
+          }
           onAcknowledge={handleRemoteMessageAcknowledge}
+          onReveal={handleRemoteSurpriseReveal}
+          onDismiss={handleRemoteSurpriseDismiss}
         />
-        {shouldShowPeerStatus && peerStatusView ? (
-          <PeerStatusCard
-            view={peerStatusView}
-            imageCandidates={peerStatusImageCandidates}
-          />
-        ) : null}
-        {messageComposerOpen ? (
-          <MessageComposerPanel
-            onSubmit={handleMessageComposerSubmit}
-            onClose={closeMessageComposerPanel}
-          />
-        ) : null}
         {statusPickerOpen ? (
           <ActivityStatusPicker
             currentStatus={settings.sync.activityStatus}
@@ -1440,19 +2128,87 @@ export function App() {
         ) : null}
       </section>
 
+      {composerSurfaceActive ? (
+        <div className="composer-surface">
+          {composerMode === "message" ? (
+            <MessageComposerPanel
+              onSubmit={handleMessageComposerSubmit}
+              onClose={closeComposerPanel}
+            />
+          ) : null}
+          {composerMode === "surprise" ? (
+            <SurpriseComposerPanel
+              onSubmit={handleSendSurprise}
+              onClose={closeComposerPanel}
+            />
+          ) : null}
+          {composerMode === "focus" ? (
+            <FocusTimerPanel
+              initialMinutes={
+                focusTimer.state.status === "idle"
+                  ? focusTimer.state.lastDurationMinutes
+                  : focusTimer.state.durationMinutes
+              }
+              onStart={handleFocusTimerStart}
+              onClose={closeComposerPanel}
+            />
+          ) : null}
+          {composerMode === "weather" ? (
+            <div
+              className="weather-composer-region"
+              data-desktop-interactive-region=""
+              style={{ width: 424, height: 466 }}
+            >
+              <WeatherPanel
+                state={pairWeather.state}
+                paired={Boolean(
+                  settings.sync.pairId && settings.sync.peerDeviceId,
+                )}
+                profileComplete={profileSync.isComplete}
+                onClose={closeComposerPanel}
+                onRetry={requestPairWeather}
+                onOpenSettings={openSettingsFromWeather}
+                onOpenBinding={openSettingsFromWeather}
+              />
+            </div>
+          ) : null}
+          {composerMode === "spark" ? (
+            <div
+              className="spark-composer-region"
+              data-desktop-interactive-region=""
+            >
+              <SparkLeaderboardPanel
+                state={currentSparkLeaderboardState}
+                paired={Boolean(
+                  settings.sync.pairId && settings.sync.peerDeviceId,
+                )}
+                onClose={closeComposerPanel}
+                onRetry={sparkStreak.requestLeaderboard}
+                onOpenBinding={openSettingsFromWeather}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {settingsOpen ? (
         <button
           className="settings-toggle is-visible"
           type="button"
           aria-expanded={true}
           aria-controls="settings-panel"
+          data-desktop-interactive-region=""
           onClick={handleSettingsToggle}
         >
           设置
         </button>
       ) : null}
 
-      <div id="settings-panel" className={settingsOpen ? "settings-dock" : "settings-dock is-hidden"}>
+      <div
+        id="settings-panel"
+        className={settingsOpen ? "settings-dock" : "settings-dock is-hidden"}
+        data-desktop-interactive-region=""
+      >
         <div className="settings-dock-header">
           <h2>设置</h2>
           <button type="button" aria-label="关闭设置" onClick={closeSettingsPanel}>
@@ -1506,6 +2262,7 @@ export function App() {
           className="pet-context-menu"
           role="menu"
           aria-label="桌宠菜单"
+          data-desktop-interactive-region=""
           style={{
             left: contextMenuPosition.x,
             top: contextMenuPosition.y,
@@ -1536,6 +2293,9 @@ export function App() {
         x={interactionMenuPosition?.x ?? 0}
         y={interactionMenuPosition?.y ?? 0}
         options={interactionOptions}
+        paired={Boolean(settings.sync.pairId && settings.sync.peerDeviceId)}
+        snapshot={currentSparkSnapshot}
+        sparkAvailability={currentSparkAvailability}
         onSelect={handleInteractionSelect}
       />
     </main>

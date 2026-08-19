@@ -2,13 +2,20 @@ export type EdgeSide = "left" | "right" | "top" | "bottom";
 export type EdgePhase = "enter" | "idle" | "react" | "exit";
 export type EdgeInteractionState = {
   side: EdgeSide;
-  phase: EdgePhase;
+  phase: "idle";
 } | null;
 
 export interface EdgeAnchor {
   x: number;
   y: number;
 }
+
+export const edgeStageContactAnchors: Record<EdgeSide, EdgeAnchor> = {
+  left: { x: 0, y: 0.5 },
+  right: { x: 1, y: 0.5 },
+  top: { x: 0.5, y: 0 },
+  bottom: { x: 0.5, y: 1 },
+};
 
 export interface EdgePhaseMotion {
   frames: readonly string[];
@@ -18,12 +25,40 @@ export interface EdgePhaseMotion {
   frameAnchors: readonly EdgeAnchor[];
 }
 
+export interface EdgeCompanionFramePlacement {
+  xPx: number;
+  yPx: number;
+  widthPx: number;
+  heightPx: number;
+}
+
+export interface EdgeCompanionFixedBox {
+  widthPx: number;
+  heightPx: number;
+  contactAnchor: EdgeAnchor;
+  idleFrame: EdgeCompanionFramePlacement;
+  blinkFrame: EdgeCompanionFramePlacement;
+}
+
+export interface EdgeCompanionVisualProfile {
+  side: "left" | "right" | "bottom";
+  placement: "side" | "bottom";
+  idleUrl: string;
+  blinkUrl: string;
+  mirrorX: boolean;
+  baseVisibleHeightPx: 34;
+  minVisibleHeightPx: 30;
+  maxVisibleHeightPx: 42;
+  fixedBox: EdgeCompanionFixedBox;
+}
+
 export interface EdgeInteractionProfile {
   side: EdgeSide;
   contactAnchor: EdgeAnchor;
   enter: EdgePhaseMotion;
   idle: EdgePhaseMotion;
   react: EdgePhaseMotion;
+  companion?: EdgeCompanionVisualProfile;
 }
 
 export type EdgeInteractionEvent =
@@ -43,34 +78,10 @@ export function transitionEdgeInteraction(
 
   if (state === null) {
     if (event.type === "SNAPPED") {
-      return { side: event.side, phase: "enter" };
+      return { side: event.side, phase: "idle" };
     }
 
     return null;
-  }
-
-  if (state.phase === "exit") {
-    if (event.type === "PHASE_FINISHED") {
-      return null;
-    }
-
-    return state;
-  }
-
-  if (event.type === "REQUEST_EXIT") {
-    return { side: state.side, phase: "exit" };
-  }
-
-  if (state.phase === "enter" && event.type === "PHASE_FINISHED") {
-    return { side: state.side, phase: "idle" };
-  }
-
-  if (state.phase === "idle" && event.type === "POINTER_ENTER") {
-    return { side: state.side, phase: "react" };
-  }
-
-  if (state.phase === "react" && event.type === "PHASE_FINISHED") {
-    return { side: state.side, phase: "idle" };
   }
 
   return state;

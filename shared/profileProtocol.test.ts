@@ -12,6 +12,52 @@ const validCity = {
 } as const;
 
 describe("validateProfileUpdate", () => {
+  it("accepts a vendored Chinese city with the existing weatherapi contract", () => {
+    const localCity = {
+      provider: "weatherapi",
+      providerLocationId: 1815551,
+      name: "长沙",
+      region: "湖南",
+      country: "中国",
+      latitude: 28.19874,
+      longitude: 112.97087,
+    } as const;
+
+    expect(
+      validateProfileUpdate({ version: 1, nickname: "小满", city: localCity }),
+    ).toEqual({
+      ok: true,
+      profile: { version: 1, nickname: "小满", city: localCity },
+    });
+  });
+
+  it("continues to accept a city persisted from the previous local index", () => {
+    const previouslyPersistedCity = {
+      provider: "weatherapi",
+      providerLocationId: 101250101,
+      name: "长沙",
+      region: "湖南",
+      country: "中国",
+      latitude: 28.19409,
+      longitude: 112.982279,
+    } as const;
+
+    expect(
+      validateProfileUpdate({
+        version: 1,
+        nickname: "小满",
+        city: previouslyPersistedCity,
+      }),
+    ).toEqual({
+      ok: true,
+      profile: {
+        version: 1,
+        nickname: "小满",
+        city: previouslyPersistedCity,
+      },
+    });
+  });
+
   it("normalizes a complete profile update", () => {
     expect(
       validateProfileUpdate({

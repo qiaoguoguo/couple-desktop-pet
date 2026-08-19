@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SurpriseTheme } from "../../shared/syncProtocol";
-import {
+import * as surpriseThemes from "./surpriseThemes";
+
+const {
   buildSurpriseFallbackText,
   getSurpriseThemeCopy,
+  recoverSurpriseContentFromFallbackText,
   SURPRISE_THEME_COPY,
   SURPRISE_THEME_ORDER,
-} from "./surpriseThemes";
+} = surpriseThemes;
 
 describe("surprise theme copy", () => {
   const expectedRows: Array<{
@@ -138,5 +141,75 @@ describe("buildSurpriseFallbackText", () => {
         note: "  ",
       }),
     ).toBe("一份小心意在等你。惊喜暗号：7482。");
+  });
+});
+
+describe("recoverSurpriseContentFromFallbackText", () => {
+  it("recovers the deployed Relay fallback payload as a general surprise", () => {
+    expect(
+      recoverSurpriseContentFromFallbackText(
+        "一份小心意在等你。惊喜暗号：A562。没有特别的日子，也可以有一份小惊喜。",
+      ),
+    ).toEqual({
+      kind: "surprise",
+      version: 1,
+      theme: "general",
+      secret: "A562",
+      note: "没有特别的日子，也可以有一份小惊喜。",
+    });
+  });
+
+  it("infers an exact theme default and otherwise falls back to general", () => {
+    expect(
+      recoverSurpriseContentFromFallbackText(
+        "一份小心意在等你。惊喜暗号：7482。是我不好。等你愿意的时候，我想认真听你说。",
+      ),
+    ).toEqual({
+      kind: "surprise",
+      version: 1,
+      theme: "apology",
+      secret: "7482",
+      note: "是我不好。等你愿意的时候，我想认真听你说。",
+    });
+
+    expect(
+      recoverSurpriseContentFromFallbackText(
+        "一份小心意在等你。惊喜暗号：A-1024。自己写的一句话。",
+      ),
+    ).toEqual({
+      kind: "surprise",
+      version: 1,
+      theme: "general",
+      secret: "A-1024",
+      note: "自己写的一句话。",
+    });
+  });
+
+  it("omits an empty note", () => {
+    expect(
+      recoverSurpriseContentFromFallbackText(
+        "一份小心意在等你。惊喜暗号：A-1024。",
+      ),
+    ).toEqual({
+      kind: "surprise",
+      version: 1,
+      theme: "general",
+      secret: "A-1024",
+    });
+  });
+
+  it.each([
+    ["ordinary text", "今晚早点休息"],
+    [
+      "altered prefix",
+      "一份礼物在等你。惊喜暗号：7482。没有特别的日子，也可以有一份小惊喜。",
+    ],
+    ["missing secret", "一份小心意在等你。惊喜暗号：。"],
+    ["whitespace secret", "一份小心意在等你。惊喜暗号： 7482 。"],
+    ["invalid secret", "一份小心意在等你。惊喜暗号：A_1024。"],
+    ["overlong secret", `一份小心意在等你。惊喜暗号：${"A".repeat(25)}。`],
+    ["overlong note", `一份小心意在等你。惊喜暗号：7482。${"心".repeat(121)}`],
+  ])("rejects %s", (_caseName, text) => {
+    expect(recoverSurpriseContentFromFallbackText(text)).toBeNull();
   });
 });

@@ -7,6 +7,10 @@ import {
   type DeviceProfileV1,
 } from "../../shared/profileProtocol";
 import {
+  SPARK_SYNC_CAPABILITY,
+  type SparkStreakSnapshotV1,
+} from "../../shared/sparkProtocol";
+import {
   parseServerToClientMessage,
   validateMessageText,
   type ClientToServerMessage,
@@ -38,6 +42,7 @@ export type RealtimeClientEvent =
       profile: DeviceProfileV1;
       changedAt: string;
     }
+  | { type: "spark"; snapshot: SparkStreakSnapshotV1 }
   | {
       type: "message";
       id: string;
@@ -146,7 +151,11 @@ export class RealtimeClient {
       deviceId: this.options.deviceId,
       deviceSecret: this.options.deviceSecret,
       pairId: this.options.pairId,
-      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+      capabilities: [
+        ACTIVITY_STATUS_CAPABILITY,
+        PROFILE_SYNC_CAPABILITY,
+        SPARK_SYNC_CAPABILITY,
+      ],
     });
   }
 
@@ -204,6 +213,9 @@ export class RealtimeClient {
           profile: parsed.profile,
           changedAt: parsed.changedAt,
         });
+        return;
+      case "spark.updated":
+        this.options.onEvent({ type: "spark", snapshot: parsed.snapshot });
         return;
       case "message.received":
         this.options.onEvent({

@@ -58,6 +58,48 @@ afterEach(() => {
 });
 
 describe("Relay database migrations", () => {
+  it("creates the spark schema idempotently with constraints and ranking index", () => {
+    initializeRelayDatabase(db);
+
+    const tables = db
+      .prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name LIKE 'pair_spark_%' ORDER BY name",
+      )
+      .all() as Array<{ name: string; sql: string }>;
+    expect(tables.map((table) => table.name)).toEqual([
+      "pair_spark_activity_days",
+      "pair_spark_streaks",
+    ]);
+    expect(tables.every((table) => table.sql.includes("CHECK"))).toBe(true);
+
+    const activityColumns = db
+      .prepare("PRAGMA table_info(pair_spark_activity_days)")
+      .all() as Array<{ name: string; pk: number }>;
+    expect(
+      activityColumns
+        .filter((column) => column.pk > 0)
+        .sort((left, right) => left.pk - right.pk)
+        .map((column) => column.name),
+    ).toEqual(["pair_id", "activity_date"]);
+    expect(
+      db.prepare("PRAGMA foreign_key_list(pair_spark_activity_days)").all(),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ table: "pairs", from: "pair_id" })]),
+    );
+    expect(
+      db.prepare("PRAGMA foreign_key_list(pair_spark_streaks)").all(),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ table: "pairs", from: "pair_id" })]),
+    );
+    expect(
+      db.prepare("PRAGMA index_list(pair_spark_streaks)").all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "idx_pair_spark_active_ranking" }),
+      ]),
+    );
+  });
+
   it("upgrades a pre-Task-3 schema without losing device or pair data", () => {
     db.close();
     db = openRelayDatabase(join(tempDir, "pre-task-3.sqlite"));
@@ -115,6 +157,8 @@ describe("Relay database migrations", () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
       .all();
     expect(names).toContainEqual({ name: "device_locations" });
+    expect(names).toContainEqual({ name: "pair_spark_activity_days" });
+    expect(names).toContainEqual({ name: "pair_spark_streaks" });
     expect(repository.getPeerDeviceId("pair_legacy", "dev_a")).toBe("dev_b");
     expect(
       repository.authenticateDeviceForPair({

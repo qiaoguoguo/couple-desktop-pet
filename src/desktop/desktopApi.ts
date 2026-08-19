@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type Event } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type CommandArgs = Record<string, unknown>;
 export type DesktopEventUnlisten = () => void;
@@ -17,8 +16,4 @@ export function listenToDesktopEvent<T = void>(
   handler: (payload: T) => void,
 ): Promise<DesktopEventUnlisten> {
   return listen<T>(eventName, (event: Event<T>) => handler(event.payload));
-}
-
-export function startCurrentWindowDrag(): Promise<void> {
-  return getCurrentWindow().startDragging();
 }

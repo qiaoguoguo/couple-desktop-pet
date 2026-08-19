@@ -4,6 +4,7 @@ import type {
   EdgePhaseMotion,
   EdgeSide,
 } from "../pet/edgeInteraction";
+import { getBuiltInEdgeCompanionVisual } from "./builtInEdgeCompanion";
 
 const Q_GIRL_PACKAGE_ID = "builtin:q-girl";
 const edgeSides = ["left", "right", "top", "bottom"] as const;
@@ -110,16 +111,21 @@ function createPhaseMotion(
 
 const qGirlEdgeProfiles: Record<EdgeSide, EdgeInteractionProfile> =
   Object.fromEntries(
-    edgeSides.map((side) => [
-      side,
-      {
+    edgeSides.map((side) => {
+      const companion = getBuiltInEdgeCompanionVisual(Q_GIRL_PACKAGE_ID, side);
+
+      return [
         side,
-        contactAnchor: contactAnchors[side],
-        enter: createPhaseMotion(side, "enter"),
-        idle: createPhaseMotion(side, "idle"),
-        react: createPhaseMotion(side, "react"),
-      },
-    ]),
+        {
+          side,
+          contactAnchor: contactAnchors[side],
+          enter: createPhaseMotion(side, "enter"),
+          idle: createPhaseMotion(side, "idle"),
+          react: createPhaseMotion(side, "react"),
+          ...(companion ? { companion } : {}),
+        },
+      ];
+    }),
   ) as Record<EdgeSide, EdgeInteractionProfile>;
 
 export function getBuiltInEdgeProfile(

@@ -689,6 +689,133 @@ describe("profile and weather HTTP API", () => {
   });
 });
 
+describe("spark HTTP API", () => {
+  it("returns authenticated snapshot and leaderboard contracts", async () => {
+    const pairId = await createProfilePair();
+    const credentials = { deviceId: "dev_a", deviceSecret: "secret_a", pairId };
+
+    const snapshotResponse = await postJson(
+      `${baseUrl}/pairs/spark/snapshot`,
+      credentials,
+    );
+    expect(snapshotResponse.status).toBe(200);
+    await expect(snapshotResponse.json()).resolves.toMatchObject({
+      version: 1,
+      pairId,
+      streakDays: 0,
+      tier: "unlit",
+      timezone: "Asia/Shanghai",
+    });
+
+    const leaderboardResponse = await postJson(
+      `${baseUrl}/pairs/spark/leaderboard`,
+      credentials,
+    );
+    expect(leaderboardResponse.status).toBe(200);
+    await expect(leaderboardResponse.json()).resolves.toEqual(
+      expect.objectContaining({
+        version: 1,
+        snapshot: expect.objectContaining({ pairId, streakDays: 0 }),
+        top20: [],
+        self: expect.objectContaining({
+          rank: null,
+          displayNames: ["小满", "阿岚"],
+          cities: ["杭州", "上海"],
+          streakDays: 0,
+        }),
+      }),
+    );
+  });
+
+  it.each(["snapshot", "leaderboard"])(
+    "rejects malformed, non-member, and disabled pair requests for %s",
+    async (endpoint) => {
+      const pairId = await createProfilePair();
+      expect(
+        (await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {})).status,
+      ).toBe(400);
+
+      await postJson(`${baseUrl}/pair-codes`, {
+        deviceId: "dev_outsider",
+        deviceSecret: "secret_outsider",
+        displayName: "outsider",
+      });
+      const nonMember = await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {
+        deviceId: "dev_outsider",
+        deviceSecret: "secret_outsider",
+        pairId,
+      });
+      expect(nonMember.status).toBe(401);
+      await expect(nonMember.json()).resolves.toMatchObject({
+        error: { code: "auth_failed" },
+      });
+
+      await postJson(`${baseUrl}/pairs/unpair`, {
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId,
+      });
+      const disabled = await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId,
+      });
+      expect(disabled.status).toBe(404);
+      await expect(disabled.json()).resolves.toMatchObject({
+        error: { code: "pair_not_found" },
+      });
+    },
+  );
+
+  it.each(["snapshot", "leaderboard"])(
+    "limits %s independently to thirty requests per device and source IP",
+    async (endpoint) => {
+      const firstPairId = await createProfilePair();
+      const secondCode = (await (
+        await postJson(`${baseUrl}/pair-codes`, {
+          deviceId: "dev_c",
+          deviceSecret: "secret_c",
+          displayName: "C",
+        })
+      ).json()) as { code: string };
+      const secondPair = (await (
+        await postJson(`${baseUrl}/pairs/accept`, {
+          deviceId: "dev_d",
+          deviceSecret: "secret_d",
+          displayName: "D",
+          code: secondCode.code,
+        })
+      ).json()) as { pairId: string };
+
+      for (let index = 0; index < 30; index += 1) {
+        const response = await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: firstPairId,
+        });
+        expect(response.status).toBe(200);
+      }
+
+      const deviceLimited = await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: firstPairId,
+      });
+      expect(deviceLimited.status).toBe(429);
+      await expect(deviceLimited.json()).resolves.toEqual({
+        error: { code: "rate_limited", message: "Too many requests" },
+      });
+
+      const ipLimited = await postJson(`${baseUrl}/pairs/spark/${endpoint}`, {
+        deviceId: "dev_c",
+        deviceSecret: "secret_c",
+        pairId: secondPair.pairId,
+      });
+      expect(ipLimited.status).toBe(429);
+    },
+  );
+});
+
 function postJson(url: string, body: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",

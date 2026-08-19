@@ -80,6 +80,7 @@ export function ActivityStatusPicker({
         role="dialog"
         aria-label="我的状态"
         aria-modal={true}
+        data-desktop-interactive-region=""
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="status-picker-grid">
@@ -94,7 +95,7 @@ export function ActivityStatusPicker({
               onClick={() => onSelect(option.value)}
             >
               <span className="status-picker-icon" aria-hidden="true">
-                {option.iconText}
+                <img src={option.icon.src} alt="" draggable={false} />
               </span>
               <span>{option.label}</span>
             </button>

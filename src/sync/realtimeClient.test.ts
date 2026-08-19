@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_STATUS_CAPABILITY } from "../../shared/activityStatus";
 import { PROFILE_SYNC_CAPABILITY } from "../../shared/profileProtocol";
+import { SPARK_SYNC_CAPABILITY } from "../../shared/sparkProtocol";
 import { RealtimeClient, type RealtimeClientEvent } from "./realtimeClient";
 
 class FakeWebSocket extends EventTarget {
@@ -74,7 +75,11 @@ describe("RealtimeClient", () => {
       type: "auth",
       deviceId: "dev_a",
       pairId: "pair_1",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+      capabilities: [
+        ACTIVITY_STATUS_CAPABILITY,
+        PROFILE_SYNC_CAPABILITY,
+        SPARK_SYNC_CAPABILITY,
+      ],
     });
 
     fakeSocket.emitMessage({
@@ -209,7 +214,11 @@ describe("RealtimeClient", () => {
     fakeSocket.emitOpen();
     expect(fakeSocket.sentJson[0]).toMatchObject({
       type: "auth",
-      capabilities: [ACTIVITY_STATUS_CAPABILITY, PROFILE_SYNC_CAPABILITY],
+      capabilities: [
+        ACTIVITY_STATUS_CAPABILITY,
+        PROFILE_SYNC_CAPABILITY,
+        SPARK_SYNC_CAPABILITY,
+      ],
     });
 
     fakeSocket.emitMessage({
@@ -293,6 +302,37 @@ describe("RealtimeClient", () => {
       profile,
       changedAt: profile.updatedAt,
     });
+  });
+
+  it("advertises spark-v1 and emits typed spark snapshots", () => {
+    const events: RealtimeClientEvent[] = [];
+    const client = newRealtimeClient(events, { activityStatus: null });
+    const snapshot = {
+      version: 1 as const,
+      pairId: "pair_1",
+      streakDays: 28,
+      tier: "heartflame" as const,
+      calendarState: "qualified_today" as const,
+      lastQualifiedDate: "2026-08-19",
+      timezone: "Asia/Shanghai" as const,
+      asOf: "2026-08-19T08:00:00.000Z",
+      refreshAt: "2026-08-19T16:00:00.000Z",
+    };
+
+    client.connect();
+    const socket = expectLatestSocket();
+    socket.emitOpen();
+    expect(socket.sentJson[0]).toMatchObject({
+      type: "auth",
+      capabilities: expect.arrayContaining([SPARK_SYNC_CAPABILITY]),
+    });
+    socket.emitMessage({
+      type: "spark.updated",
+      pairId: "pair_1",
+      snapshot,
+    });
+
+    expect(events).toContainEqual({ type: "spark", snapshot });
   });
 
   it("emits valid structured content from received messages", () => {

@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PET_ACTION_DURATION_MS,
   PET_ACTION_FPS,
@@ -16,11 +16,21 @@ import {
   REQUIRED_PET_ACTIONS,
   type ImportedPetPackageSummary,
 } from "../assets/petPackageContract";
+import type { StructuredMessageContent } from "../../shared/syncProtocol";
 import type {
   DeviceProfileV1,
   ProfileUpdateV1,
 } from "../../shared/profileProtocol";
+import type { SparkStreakSnapshotV1 } from "../../shared/sparkProtocol";
+import type {
+  SparkLeaderboardState,
+  SparkSnapshotState,
+} from "../spark/useSparkStreak";
 import { App } from "./App";
+
+const frameAlphaBoundsMock = vi.hoisted(() => ({
+  resolveFrameAlphaBounds: vi.fn(),
+}));
 
 const windowCommandsMock = vi.hoisted(() => ({
   openSettingsHandler: undefined as (() => void) | undefined,
@@ -29,17 +39,24 @@ const windowCommandsMock = vi.hoisted(() => ({
     | ((payload: { reason: "show" | "settings" }) => void)
     | undefined,
   clickThroughRecoveredUnlisten: vi.fn(),
+  windowHiddenHandler: undefined as (() => void) | undefined,
+  activeWindowHiddenHandlers: new Set<() => void>(),
+  windowHiddenUnlisten: vi.fn(),
+  setInteractiveRegions: vi.fn().mockResolvedValue(undefined),
   moveWindowForAutoStep: vi.fn().mockResolvedValue(undefined),
+  moveWindowForPointerDrag: vi.fn().mockResolvedValue(undefined),
   openMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
   closeMessageComposerSurface: vi.fn().mockResolvedValue(undefined),
+  readFocusTimer: vi.fn().mockResolvedValue(null),
+  writeFocusTimer: vi.fn().mockResolvedValue(undefined),
   readSettings: vi.fn().mockResolvedValue({}),
   hideWindow: vi.fn().mockResolvedValue(undefined),
   quitApp: vi.fn().mockResolvedValue(undefined),
   resetWindowPosition: vi.fn().mockResolvedValue(undefined),
   restoreWindowFromEdgePeek: vi.fn().mockResolvedValue(undefined),
+  dockWindowAtEdge: vi.fn().mockResolvedValue(undefined),
   setClickThrough: vi.fn().mockResolvedValue(undefined),
   snapWindowToEdgeIfNeeded: vi.fn().mockResolvedValue(null),
-  startWindowDrag: vi.fn().mockResolvedValue(undefined),
   writeSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -52,8 +69,10 @@ const realtimeSyncMock = vi.hoisted(() => {
             fromDeviceId: string;
             text: string;
             at: string;
+            content?: StructuredMessageContent;
           }): void;
           onPeerProfile?(deviceId: string, profile: DeviceProfileV1): void;
+          onSparkSnapshot?(snapshot: SparkStreakSnapshotV1): void;
         }
       | undefined,
     client: {
@@ -89,8 +108,10 @@ const realtimeSyncMock = vi.hoisted(() => {
             fromDeviceId: string;
             text: string;
             at: string;
+            content?: StructuredMessageContent;
           }): void;
           onPeerProfile?(deviceId: string, profile: DeviceProfileV1): void;
+          onSparkSnapshot?(snapshot: SparkStreakSnapshotV1): void;
         },
       ) => {
         mock.callbacks = callbacks;
@@ -102,17 +123,92 @@ const realtimeSyncMock = vi.hoisted(() => {
   return mock;
 });
 
+const pairWeatherHookMock = vi.hoisted(() => {
+  const mock = {
+    state: { status: "idle" as const },
+    open: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+    usePairWeather: vi.fn(),
+  };
+
+  mock.usePairWeather.mockImplementation(() => ({
+    state: mock.state,
+    open: mock.open,
+    close: mock.close,
+  }));
+
+  return mock;
+});
+
+const sparkStreakHookMock = vi.hoisted(() => {
+  const snapshot = {
+    version: 1 as const,
+    pairId: "pair_1",
+    streakDays: 28,
+    tier: "heartflame" as const,
+    calendarState: "qualified_today" as const,
+    lastQualifiedDate: "2026-08-19",
+    timezone: "Asia/Shanghai" as const,
+    asOf: "2026-08-19T08:00:00.000Z",
+    refreshAt: "2026-08-19T16:00:00.000Z",
+  };
+  const mock = {
+    snapshot,
+    snapshotState: { status: "ready", snapshot } as SparkSnapshotState,
+    leaderboardResponse: {
+      version: 1 as const,
+      snapshot,
+      top20: [
+        {
+          rank: 1,
+          displayNames: ["小满", "阿岚"] as [string, string],
+          cities: ["杭州", "上海"] as [string, string],
+          streakDays: 28,
+          tier: "heartflame" as const,
+        },
+      ],
+      self: {
+        rank: 1,
+        displayNames: ["小满", "阿岚"] as [string, string],
+        cities: ["杭州", "上海"] as [string, string],
+        streakDays: 28,
+        tier: "heartflame" as const,
+      },
+      asOf: snapshot.asOf,
+    },
+    leaderboardState: { status: "loading" } as SparkLeaderboardState,
+    acceptSnapshot: vi.fn(),
+    refreshSnapshot: vi.fn().mockResolvedValue(undefined),
+    requestLeaderboard: vi.fn().mockResolvedValue(undefined),
+    clearLeaderboard: vi.fn(),
+    useSparkStreak: vi.fn(),
+  };
+  mock.useSparkStreak.mockImplementation(() => ({
+    snapshotState: mock.snapshotState,
+    leaderboardState: mock.leaderboardState,
+    acceptSnapshot: mock.acceptSnapshot,
+    refreshSnapshot: mock.refreshSnapshot,
+    requestLeaderboard: mock.requestLeaderboard,
+    clearLeaderboard: mock.clearLeaderboard,
+  }));
+  return mock;
+});
+
 const relayHttpClientMock = vi.hoisted(() => {
   const mock = {
     acceptPairCode: vi.fn(),
     createPairCode: vi.fn(),
     getPairCodeStatus: vi.fn(),
+    saveProfile: vi.fn(),
+    searchLocations: vi.fn(),
     unpair: vi.fn(),
     constructor: vi.fn(function RelayHttpClientMock() {
       return {
         acceptPairCode: mock.acceptPairCode,
         createPairCode: mock.createPairCode,
         getPairCodeStatus: mock.getPairCodeStatus,
+        saveProfile: mock.saveProfile,
+        searchLocations: mock.searchLocations,
         unpair: mock.unpair,
       };
     }),
@@ -132,21 +228,28 @@ const dialogOpenMock = vi.hoisted(() => vi.fn());
 const edgeFramePreloaderMock = vi.hoisted(() => ({
   preloadEdgeFrames: vi.fn().mockResolvedValue(undefined),
 }));
+const edgeInteractionHookSpy = vi.hoisted(() => ({
+  requestExitThen: vi.fn(),
+}));
 
 vi.mock("../desktop/windowCommands", () => ({
   readSettings: windowCommandsMock.readSettings,
   writeSettings: windowCommandsMock.writeSettings,
+  readFocusTimer: windowCommandsMock.readFocusTimer,
+  writeFocusTimer: windowCommandsMock.writeFocusTimer,
   setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   setClickThrough: windowCommandsMock.setClickThrough,
+  setInteractiveRegions: windowCommandsMock.setInteractiveRegions,
   resetWindowPosition: windowCommandsMock.resetWindowPosition,
   restoreWindowFromEdgePeek: windowCommandsMock.restoreWindowFromEdgePeek,
+  dockWindowAtEdge: windowCommandsMock.dockWindowAtEdge,
   moveWindowForAutoStep: windowCommandsMock.moveWindowForAutoStep,
+  moveWindowForPointerDrag: windowCommandsMock.moveWindowForPointerDrag,
   openMessageComposerSurface: windowCommandsMock.openMessageComposerSurface,
   closeMessageComposerSurface: windowCommandsMock.closeMessageComposerSurface,
   hideWindow: windowCommandsMock.hideWindow,
   quitApp: windowCommandsMock.quitApp,
   snapWindowToEdgeIfNeeded: windowCommandsMock.snapWindowToEdgeIfNeeded,
-  startWindowDrag: windowCommandsMock.startWindowDrag,
   listenForOpenSettings: vi.fn((handler: () => void) => {
     windowCommandsMock.openSettingsHandler = handler;
     return Promise.resolve(windowCommandsMock.openSettingsUnlisten);
@@ -157,10 +260,29 @@ vi.mock("../desktop/windowCommands", () => ({
       return Promise.resolve(windowCommandsMock.clickThroughRecoveredUnlisten);
     },
   ),
+  listenForWindowHidden: vi.fn((handler: () => void) => {
+    windowCommandsMock.windowHiddenHandler = handler;
+    windowCommandsMock.activeWindowHiddenHandlers.add(handler);
+    return Promise.resolve(() => {
+      windowCommandsMock.activeWindowHiddenHandlers.delete(handler);
+      if (windowCommandsMock.windowHiddenHandler === handler) {
+        windowCommandsMock.windowHiddenHandler = undefined;
+      }
+      windowCommandsMock.windowHiddenUnlisten();
+    });
+  }),
 }));
 
 vi.mock("../sync/useRealtimeSync", () => ({
   useRealtimeSync: realtimeSyncMock.useRealtimeSync,
+}));
+
+vi.mock("../weather/usePairWeather", () => ({
+  usePairWeather: pairWeatherHookMock.usePairWeather,
+}));
+
+vi.mock("../spark/useSparkStreak", () => ({
+  useSparkStreak: sparkStreakHookMock.useSparkStreak,
 }));
 
 vi.mock("../sync/relayHttpClient", () => ({
@@ -174,6 +296,41 @@ vi.mock("../assets/petPackageCommands", () => ({
 vi.mock("../pet/edgeFramePreloader", () => ({
   preloadEdgeFrames: edgeFramePreloaderMock.preloadEdgeFrames,
 }));
+
+vi.mock("../pet/useEdgeInteraction", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pet/useEdgeInteraction")>();
+  const { useCallback } = await import("react");
+
+  return {
+    ...actual,
+    useEdgeInteraction: (
+      options: Parameters<typeof actual.useEdgeInteraction>[0],
+    ) => {
+      const interaction = actual.useEdgeInteraction(options);
+      const requestExitThen = useCallback(
+        (callback: () => void) => {
+          edgeInteractionHookSpy.requestExitThen(callback);
+          interaction.requestExitThen(callback);
+        },
+        [interaction.requestExitThen],
+      );
+
+      return {
+        ...interaction,
+        requestExitThen,
+      };
+    },
+  };
+});
+
+vi.mock("../renderer/frameAlphaBounds", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../renderer/frameAlphaBounds")>();
+
+  return {
+    ...actual,
+    resolveFrameAlphaBounds: frameAlphaBoundsMock.resolveFrameAlphaBounds,
+  };
+});
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: dialogOpenMock,
@@ -330,6 +487,54 @@ function motionPoolPackageSummary(
   };
 }
 
+function clientRect(left: number, top: number, width: number, height: number) {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+function taggedMotionPoolPackage(
+  tagsByMotionId: Record<string, string[]>,
+): ImportedPetPackageSummary {
+  const motions = Object.fromEntries(
+    Object.entries(tagsByMotionId).map(([motionId, tags]) => [
+      motionId,
+      {
+        fps: 5,
+        loop: true,
+        frameCount: 2,
+        durationMs: 1000,
+        frames: `motions/${motionId}/`,
+        weight: 1,
+        tags,
+      },
+    ]),
+  ) as ImportedPetPackageSummary["motions"];
+  const motionFramePaths = Object.fromEntries(
+    Object.keys(tagsByMotionId).map((motionId) => [
+      motionId,
+      [
+        `C:/app/pet-packages/motion-buddy/motions/${motionId}/0001.png`,
+        `C:/app/pet-packages/motion-buddy/motions/${motionId}/0002.png`,
+      ],
+    ]),
+  ) as ImportedPetPackageSummary["motionFramePaths"];
+
+  return motionPoolPackageSummary({
+    defaultMotion: "motion-001",
+    motions,
+    motionFramePaths,
+  });
+}
+
 async function flushAppEffects() {
   await act(async () => {
     await Promise.resolve();
@@ -353,6 +558,19 @@ async function openSettingsFromContextMenu() {
     "settings-dock",
   );
   expect(screen.getByRole("button", { name: "设置" })).toBeTruthy();
+}
+
+function pairedSyncSettings() {
+  return {
+    sync: {
+      enabled: true,
+      relayUrl: "http://159.75.175.47:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+      peerDeviceId: "dev_b",
+    },
+  };
 }
 
 const localProfile: ProfileUpdateV1 = {
@@ -392,6 +610,105 @@ function completeProfileSettings() {
       syncState: "synced",
     },
   };
+}
+
+function arrangeOnlinePair() {
+  realtimeSyncMock.state.status = "connected";
+  realtimeSyncMock.state.peerPresence = "online";
+  windowCommandsMock.readSettings.mockResolvedValueOnce(pairedSyncSettings());
+}
+
+async function openFocusTimerFromInteractionMenu() {
+  await flushAppEffects();
+  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "专注一下" }));
+  await flushAppEffects();
+  expect(screen.getByRole("region", { name: "专注计时" })).toBeTruthy();
+}
+
+async function openComposerFromInteractionMenu(
+  menuItemName: "发消息" | "外卖到啦",
+  regionName: "发送消息" | "送一份小心意",
+  petName: "Q 版小人" | "动作池小人" = "Q 版小人",
+) {
+  await flushAppEffects();
+  fireEvent.click(screen.getByRole("img", { name: petName }));
+  fireEvent.click(screen.getByRole("menuitem", { name: menuItemName }));
+  await flushAppEffects();
+  expect(screen.getByRole("region", { name: regionName })).toBeTruthy();
+}
+
+async function openWeatherFromInteractionMenu() {
+  await flushAppEffects();
+  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
+  await flushAppEffects();
+  return screen.getByRole("region", { name: "双方天气" });
+}
+
+async function openSparkFromInteractionMenu() {
+  await flushAppEffects();
+  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /续火花/u }));
+  await flushAppEffects();
+  return screen.getByRole("region", { name: "全服火花榜" });
+}
+
+function dispatchContextMenuOnPetSurface(): boolean {
+  const surface = document.querySelector<HTMLElement>(".pet-surface");
+  if (!surface) {
+    throw new Error("pet surface not found");
+  }
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: 48,
+    clientY: 52,
+  });
+
+  return surface.dispatchEvent(event);
+}
+
+function emitRemoteSurprise() {
+  act(() => {
+    realtimeSyncMock.callbacks?.onMessage({
+      id: "surprise_1",
+      fromDeviceId: "dev_b",
+      text: "一份小心意在等你。惊喜暗号：A-1024。是我不好。",
+      at: "2026-08-12T10:00:00.000Z",
+      content: {
+        kind: "surprise",
+        version: 1,
+        theme: "apology",
+        secret: "A-1024",
+        note: "是我不好。",
+      },
+    });
+  });
+}
+
+function emitRemoteText(id: string, text: string) {
+  act(() => {
+    realtimeSyncMock.callbacks?.onMessage({
+      id,
+      fromDeviceId: "dev_b",
+      text,
+      at: "2026-08-14T10:00:00.000Z",
+    });
+  });
+}
+
+async function clearDragClickSuppression() {
+  if (vi.isFakeTimers()) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    return;
+  }
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
 }
 
 async function withViewport<T>(
@@ -444,9 +761,27 @@ async function dragPetPastThresholdAndRelease(container: HTMLElement) {
     throw new Error("pet stage missing");
   }
 
-  fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
-  fireEvent.pointerMove(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
-  fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
+  fireEvent.pointerDown(petStage, {
+    pointerId: 1,
+    clientX: 10,
+    clientY: 10,
+    screenX: 100,
+    screenY: 200,
+  });
+  fireEvent.pointerMove(petStage, {
+    pointerId: 1,
+    clientX: 18,
+    clientY: 10,
+    screenX: 108,
+    screenY: 200,
+  });
+  fireEvent.pointerUp(petStage, {
+    pointerId: 1,
+    clientX: 18,
+    clientY: 10,
+    screenX: 108,
+    screenY: 200,
+  });
   await flushAppEffects();
 }
 
@@ -461,62 +796,58 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function installAnimationFrameController() {
-  const callbacks = new Map<number, FrameRequestCallback>();
-  let nextHandle = 1;
-  const requestSpy = vi
-    .spyOn(window, "requestAnimationFrame")
-    .mockImplementation((callback) => {
-      const handle = nextHandle;
-      nextHandle += 1;
-      callbacks.set(handle, callback);
-      return handle;
-    });
-  const cancelSpy = vi
-    .spyOn(window, "cancelAnimationFrame")
-    .mockImplementation((handle) => {
-      callbacks.delete(handle);
-    });
-
-  return {
-    step(timeMs: number) {
-      const pending = Array.from(callbacks.entries());
-      callbacks.clear();
-
-      for (const [, callback] of pending) {
-        act(() => callback(timeMs));
-      }
-    },
-    restore() {
-      requestSpy.mockRestore();
-      cancelSpy.mockRestore();
-    },
-  };
-}
-
 describe("App", () => {
+  beforeEach(() => {
+    frameAlphaBoundsMock.resolveFrameAlphaBounds.mockReset();
+    frameAlphaBoundsMock.resolveFrameAlphaBounds.mockResolvedValue({
+      x: 0,
+      y: 0,
+      width: 768,
+      height: 960,
+      imageWidth: 768,
+      imageHeight: 960,
+    });
+  });
+
   afterEach(() => {
     windowCommandsMock.openSettingsHandler = undefined;
     windowCommandsMock.openSettingsUnlisten.mockClear();
     windowCommandsMock.clickThroughRecoveredHandler = undefined;
     windowCommandsMock.clickThroughRecoveredUnlisten.mockClear();
+    windowCommandsMock.windowHiddenHandler = undefined;
+    windowCommandsMock.activeWindowHiddenHandlers.clear();
+    windowCommandsMock.windowHiddenUnlisten.mockClear();
+    windowCommandsMock.setInteractiveRegions.mockClear();
     windowCommandsMock.moveWindowForAutoStep.mockClear();
+    windowCommandsMock.moveWindowForPointerDrag.mockClear();
     windowCommandsMock.openMessageComposerSurface.mockClear();
     windowCommandsMock.closeMessageComposerSurface.mockClear();
+    windowCommandsMock.readFocusTimer.mockReset();
+    windowCommandsMock.readFocusTimer.mockResolvedValue(null);
+    windowCommandsMock.writeFocusTimer.mockClear();
     windowCommandsMock.readSettings.mockReset();
     windowCommandsMock.readSettings.mockResolvedValue({});
     windowCommandsMock.hideWindow.mockClear();
     windowCommandsMock.quitApp.mockClear();
     windowCommandsMock.resetWindowPosition.mockClear();
     windowCommandsMock.restoreWindowFromEdgePeek.mockClear();
+    windowCommandsMock.dockWindowAtEdge.mockReset();
+    windowCommandsMock.dockWindowAtEdge.mockResolvedValue(undefined);
     windowCommandsMock.setClickThrough.mockClear();
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockReset();
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValue(null);
-    windowCommandsMock.startWindowDrag.mockClear();
     windowCommandsMock.writeSettings.mockClear();
     realtimeSyncMock.callbacks = undefined;
     realtimeSyncMock.client.setActivityStatus.mockClear();
-    realtimeSyncMock.client.sendMessage.mockClear();
+    realtimeSyncMock.client.sendMessage.mockReset();
+    realtimeSyncMock.client.sendMessage.mockImplementation(
+      ():
+        | { ok: true; clientMessageId: string }
+        | { ok: false; message: string } => ({
+        ok: true,
+        clientMessageId: "local_test",
+      }),
+    );
     realtimeSyncMock.state.status = "disabled";
     realtimeSyncMock.state.peerPresence = "unknown";
     realtimeSyncMock.state.peerActivityStatus = null;
@@ -524,9 +855,34 @@ describe("App", () => {
     realtimeSyncMock.state.peerLastSeenAt = null;
     realtimeSyncMock.state.lastError = null;
     realtimeSyncMock.useRealtimeSync.mockClear();
+    pairWeatherHookMock.open.mockReset();
+    pairWeatherHookMock.open.mockResolvedValue(undefined);
+    pairWeatherHookMock.close.mockClear();
+    pairWeatherHookMock.usePairWeather.mockClear();
+    sparkStreakHookMock.acceptSnapshot.mockClear();
+    sparkStreakHookMock.refreshSnapshot.mockClear();
+    sparkStreakHookMock.requestLeaderboard.mockClear();
+    sparkStreakHookMock.clearLeaderboard.mockClear();
+    sparkStreakHookMock.useSparkStreak.mockClear();
+    sparkStreakHookMock.snapshotState = {
+      status: "ready",
+      snapshot: sparkStreakHookMock.snapshot,
+    };
+    sparkStreakHookMock.leaderboardState = { status: "loading" };
     relayHttpClientMock.acceptPairCode.mockReset();
     relayHttpClientMock.createPairCode.mockReset();
     relayHttpClientMock.getPairCodeStatus.mockReset();
+    relayHttpClientMock.saveProfile.mockReset();
+    relayHttpClientMock.saveProfile.mockImplementation(
+      async ({ profile }: { profile: ProfileUpdateV1 }) => ({
+        ok: true,
+        profile: {
+          ...profile,
+          updatedAt: "2026-08-18T08:00:00.000Z",
+        },
+      }),
+    );
+    relayHttpClientMock.searchLocations.mockReset();
     relayHttpClientMock.unpair.mockReset();
     relayHttpClientMock.constructor.mockClear();
     petPackageCommandsMock.listPetPackages.mockReset();
@@ -539,6 +895,7 @@ describe("App", () => {
     );
     edgeFramePreloaderMock.preloadEdgeFrames.mockReset();
     edgeFramePreloaderMock.preloadEdgeFrames.mockResolvedValue(undefined);
+    edgeInteractionHookSpy.requestExitThen.mockClear();
     dialogOpenMock.mockReset();
     vi.clearAllTimers();
     vi.useRealTimers();
@@ -552,6 +909,47 @@ describe("App", () => {
     ).toBeTruthy();
     expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
+  });
+
+  it("publishes the pet stage as a desktop interactive hit region", async () => {
+    frameAlphaBoundsMock.resolveFrameAlphaBounds.mockResolvedValue({
+      x: 192,
+      y: 96,
+      width: 384,
+      height: 768,
+      imageWidth: 768,
+      imageHeight: 960,
+    });
+    const rectSpy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock(this: Element) {
+        if (
+          this instanceof Element &&
+          this.classList.contains("pet-alpha-hit-region")
+        ) {
+          return clientRect(104, 56, 128, 256);
+        }
+
+        return clientRect(0, 0, 0, 0);
+      });
+
+    try {
+      render(<App />);
+
+      await waitFor(() =>
+        expect(windowCommandsMock.setInteractiveRegions).toHaveBeenCalledWith(
+          [{ x: 104, y: 56, width: 128, height: 256 }],
+          expect.any(Number),
+        ),
+      );
+      expect(
+        document
+          .querySelector(".pet-frame-stage")
+          ?.hasAttribute("data-desktop-interactive-region"),
+      ).toBe(false);
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   it("falls back to the built-in pet package when selected imported package is missing", async () => {
@@ -619,14 +1017,15 @@ describe("App", () => {
     expect(screen.getByRole("menuitem", { name: "双方天气" })).toBeTruthy();
   });
 
-  it("does not render a separate send message menu item", async () => {
+  it("renders message and surprise function menu items", async () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
 
-    expect(screen.queryByRole("menuitem", { name: "发消息" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "发消息" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "外卖到啦" })).toBeTruthy();
     expect(screen.getAllByRole("menuitem")).toHaveLength(6);
-    expect(screen.getByRole("menuitem", { name: "敲电脑" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "敲电脑" })).toBeNull();
   });
 
   it("opens interaction options with one left click on the pet stage", async () => {
@@ -638,12 +1037,23 @@ describe("App", () => {
       throw new Error("pet stage missing");
     }
 
-    fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(petStage, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+      screenX: 100,
+      screenY: 100,
+    });
+    fireEvent.pointerUp(petStage, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+      screenX: 100,
+      screenY: 100,
+    });
     fireEvent.click(petStage);
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
   });
 
   it("keeps every radial interaction button inside a 320 by 360 window", async () => {
@@ -656,8 +1066,20 @@ describe("App", () => {
         throw new Error("pet stage missing");
       }
 
-      fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
-      fireEvent.pointerUp(petStage, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerDown(petStage, {
+        pointerId: 1,
+        clientX: 100,
+        clientY: 100,
+        screenX: 100,
+        screenY: 100,
+      });
+      fireEvent.pointerUp(petStage, {
+        pointerId: 1,
+        clientX: 100,
+        clientY: 100,
+        screenX: 100,
+        screenY: 100,
+      });
       fireEvent.click(petStage);
 
       const menu = screen.getByRole("menu", { name: "互动选项" });
@@ -685,7 +1107,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
@@ -707,13 +1129,13 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
     expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
   });
 
-  it("opens the message composer from the typing button when the peer is online", async () => {
+  it("opens the message composer from the message button when the peer is online", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     windowCommandsMock.readSettings.mockResolvedValueOnce({
@@ -728,15 +1150,905 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu("发消息", "发送消息");
 
     expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "message",
+    );
     expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
     expect(screen.getByLabelText("消息内容")).toBeTruthy();
   });
 
-  it("renders an embedded peer status card with the selected peer portrait", async () => {
+  it("opens the weather surface while unpaired without requesting Relay weather", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      clickThrough: true,
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+    await flushAppEffects();
+    const clickThroughCallCount =
+      windowCommandsMock.setClickThrough.mock.calls.length;
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
+    await flushAppEffects();
+    const panel = screen.getByRole("region", { name: "双方天气" });
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "weather",
+    );
+    expect(screen.getByText("还没有可以一起看天气的 TA")).toBeTruthy();
+    expect(pairWeatherHookMock.open).not.toHaveBeenCalled();
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledTimes(
+      clickThroughCallCount,
+    );
+    expect(panel.closest(".composer-surface")).toBeTruthy();
+  });
+
+  it("opens spark while unpaired without dispatching a pet action", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+    const panel = await openSparkFromInteractionMenu();
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "spark",
+    );
+    expect(screen.getByText("和 TA 绑定后，一起把火花续起来")).toBeTruthy();
+    expect(sparkStreakHookMock.requestLeaderboard).toHaveBeenCalledTimes(1);
+    expect(panel.closest(".composer-surface")).toBeTruthy();
+    expect(
+      document
+        .querySelector(".pet-frame-stage")
+        ?.getAttribute("data-action"),
+    ).not.toBe("act-hug");
+  });
+
+  it("projects a retained failed snapshot into the menu as unavailable known days", async () => {
+    sparkStreakHookMock.snapshotState = {
+      status: "failed",
+      code: "relay_unavailable",
+      snapshot: sparkStreakHookMock.snapshot,
+    };
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+    });
+    render(<App />);
+    await flushAppEffects();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    const sparkButton = screen.getByRole("menuitem", {
+      name: "续火花，上次连续 28 天，数据暂不可用",
+    });
+
+    expect(sparkButton.textContent).toBe("28天");
+    expect(sparkButton.getAttribute("data-spark-availability")).toBe(
+      "unavailable",
+    );
+  });
+
+  it("does not show a previous pair snapshot or leaderboard while the new pair loads", async () => {
+    sparkStreakHookMock.snapshotState = {
+      status: "ready",
+      snapshot: sparkStreakHookMock.snapshot,
+    };
+    sparkStreakHookMock.leaderboardState = {
+      status: "ready",
+      response: sparkStreakHookMock.leaderboardResponse,
+    };
+    const settings = {
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+      sync: {
+        ...pairedSyncSettings().sync,
+        pairId: "pair_2",
+        peerDeviceId: "dev_c",
+      },
+    };
+    windowCommandsMock.readSettings.mockResolvedValueOnce(settings);
+    render(<App />);
+    await flushAppEffects();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    const sparkButton = screen.getByRole("menuitem", {
+      name: "续火花，连续天数加载中",
+    });
+    expect(sparkButton.textContent).toBe("--天");
+
+    fireEvent.click(sparkButton);
+    const panel = await screen.findByRole("region", { name: "全服火花榜" });
+    expect(panel.querySelector(".spark-loading-state")).toBeTruthy();
+    expect(within(panel).queryByText("小满")).toBeNull();
+    expect(within(panel).queryByText("杭州")).toBeNull();
+    expect(within(panel).queryByText("28天")).toBeNull();
+  });
+
+  it("opens only spark, requests once, and restores the pet surface on close", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+    });
+    render(<App />);
+    await openSparkFromInteractionMenu();
+
+    expect(sparkStreakHookMock.requestLeaderboard).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("region", { name: "双方天气" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "送一份小心意" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "专注计时" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭火花榜" }));
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(1),
+    );
+    expect(sparkStreakHookMock.clearLeaderboard).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "全服火花榜" })).toBeNull(),
+    );
+    expect(screen.getByRole("region", { name: "情侣桌宠 MVP" })).toBeTruthy();
+  });
+
+  it("forwards realtime spark snapshots without rebuilding the realtime client", async () => {
+    render(<App />);
+    await flushAppEffects();
+    const callbacks = realtimeSyncMock.callbacks;
+    const callCountBeforeSnapshot =
+      realtimeSyncMock.useRealtimeSync.mock.calls.length;
+
+    act(() => callbacks?.onSparkSnapshot?.(sparkStreakHookMock.snapshot));
+
+    expect(sparkStreakHookMock.acceptSnapshot).toHaveBeenCalledWith(
+      sparkStreakHookMock.snapshot,
+    );
+    expect(realtimeSyncMock.useRealtimeSync).toHaveBeenCalledTimes(
+      callCountBeforeSnapshot,
+    );
+    expect(realtimeSyncMock.callbacks).toBe(callbacks);
+  });
+
+  it("requests pair weather exactly once on open with complete credentials even when the peer is offline", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "offline";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+    });
+    render(<App />);
+
+    await openWeatherFromInteractionMenu();
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "weather",
+    );
+    expect(pairWeatherHookMock.open).toHaveBeenCalledTimes(1);
+    expect(pairWeatherHookMock.open).toHaveBeenCalledWith({
+      relayUrl: "http://159.75.175.47:8787",
+      deviceId: "dev_a",
+      deviceSecret: "secret_a",
+      pairId: "pair_1",
+    });
+    expect(screen.getByLabelText("天气加载中")).toBeTruthy();
+  });
+
+  it("keeps weather gutters transparent and reports only the fixed panel region as interactive", async () => {
+    const panelRect = clientRect(18, 19, 424, 466);
+    const rectSpy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock(this: Element) {
+        return this.classList.contains("weather-composer-region")
+          ? panelRect
+          : clientRect(0, 0, 0, 0);
+      });
+
+    try {
+      windowCommandsMock.readSettings.mockResolvedValueOnce({
+        ...completeProfileSettings(),
+        ...pairedSyncSettings(),
+      });
+      render(<App />);
+      const panel = await openWeatherFromInteractionMenu();
+      const region = panel.parentElement;
+      const surface = panel.closest(".composer-surface");
+
+      expect(surface?.hasAttribute("data-desktop-interactive-region")).toBe(
+        false,
+      );
+      expect(panel.hasAttribute("data-desktop-interactive-region")).toBe(false);
+      expect(region?.classList.contains("weather-composer-region")).toBe(true);
+      expect(region?.hasAttribute("data-desktop-interactive-region")).toBe(true);
+      expect(region?.style.width).toBe("424px");
+      expect(region?.style.height).toBe("466px");
+      const appCss = readFileSync(
+        join(process.cwd(), "src", "app", "app.css"),
+        "utf8",
+      );
+      expect(appCss).toMatch(
+        /\.composer-surface\s*\{[^}]*pointer-events:\s*none;/s,
+      );
+      expect(appCss).toMatch(
+        /\.weather-composer-region\s*\{[^}]*pointer-events:\s*auto;/s,
+      );
+
+      windowCommandsMock.setInteractiveRegions.mockClear();
+      act(() => window.dispatchEvent(new Event("resize")));
+
+      await waitFor(() =>
+        expect(windowCommandsMock.setInteractiveRegions).toHaveBeenCalledWith(
+          [{ x: 18, y: 19, width: 424, height: 466 }],
+          expect.any(Number),
+        ),
+      );
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it("closes weather with Escape through the shared native geometry restore path", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+    });
+    render(<App />);
+    await openWeatherFromInteractionMenu();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
+    );
+    expect(pairWeatherHookMock.close).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "双方天气" })).toBeNull(),
+    );
+  });
+
+  it("accepts only one weather open while the native surface is pending", async () => {
+    const opening = createDeferred<void>();
+    windowCommandsMock.openMessageComposerSurface.mockReturnValueOnce(
+      opening.promise,
+    );
+    windowCommandsMock.readSettings.mockResolvedValueOnce(pairedSyncSettings());
+    render(<App />);
+
+    await flushAppEffects();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(pairWeatherHookMock.open).not.toHaveBeenCalled();
+
+    await act(async () => {
+      opening.resolve();
+      await opening.promise;
+    });
+
+    expect(await screen.findByRole("region", { name: "双方天气" })).toBeTruthy();
+    expect(pairWeatherHookMock.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a pending weather open and restores native geometry before tray settings", async () => {
+    const opening = createDeferred<void>();
+    const closing = createDeferred<void>();
+    windowCommandsMock.openMessageComposerSurface.mockReturnValueOnce(
+      opening.promise,
+    );
+    windowCommandsMock.closeMessageComposerSurface.mockReturnValueOnce(
+      closing.promise,
+    );
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...completeProfileSettings(),
+      ...pairedSyncSettings(),
+    });
+    render(<App />);
+    await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+
+    await flushAppEffects();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
+    act(() => windowCommandsMock.openSettingsHandler?.());
+
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+
+    await act(async () => {
+      opening.resolve();
+      await opening.promise;
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
+    );
+    expect(pairWeatherHookMock.open).not.toHaveBeenCalled();
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+
+    await act(async () => {
+      closing.resolve();
+      await closing.promise;
+    });
+
+    expect(await screen.findByRole("region", { name: "桌宠设置" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "双方天气" })).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "binding",
+      command: "进入绑定设置",
+      settings: {
+        ...completeProfileSettings(),
+        clickThrough: true,
+        sync: {
+          enabled: true,
+          relayUrl: "http://159.75.175.47:8787",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: null,
+          peerDeviceId: null,
+        },
+      },
+    },
+    {
+      name: "basic information",
+      command: "进入基本信息设置",
+      settings: {
+        clickThrough: true,
+        ...pairedSyncSettings(),
+      },
+    },
+  ])(
+    "restores pet geometry before the weather $name action opens settings",
+    async ({ command, settings }) => {
+      const closing = createDeferred<void>();
+      windowCommandsMock.closeMessageComposerSurface.mockReturnValueOnce(
+        closing.promise,
+      );
+      windowCommandsMock.readSettings.mockResolvedValueOnce(settings);
+      render(<App />);
+      await openWeatherFromInteractionMenu();
+      windowCommandsMock.setClickThrough.mockClear();
+
+      fireEvent.click(screen.getByRole("button", { name: command }));
+
+      expect(pairWeatherHookMock.close).not.toHaveBeenCalled();
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(
+        document
+          .getElementById("settings-panel")
+          ?.classList.contains("is-hidden"),
+      ).toBe(true);
+      expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalled();
+
+      await act(async () => {
+        closing.resolve();
+        await closing.promise;
+      });
+
+      expect(await screen.findByRole("region", { name: "桌宠设置" })).toBeTruthy();
+      expect(
+        document
+          .getElementById("settings-panel")
+          ?.classList.contains("is-hidden"),
+      ).toBe(false);
+      expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+      expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+      expect(pairWeatherHookMock.close).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("keeps weather open and blocks settings when native geometry restoration fails", async () => {
+    windowCommandsMock.closeMessageComposerSurface.mockRejectedValueOnce(
+      new Error("restore failed"),
+    );
+    windowCommandsMock.readSettings.mockResolvedValueOnce(pairedSyncSettings());
+    render(<App />);
+    await openWeatherFromInteractionMenu();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "进入基本信息设置" }),
+    );
+
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
+    );
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+    expect(screen.getByRole("region", { name: "双方天气" })).toBeTruthy();
+    expect(pairWeatherHookMock.close).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "进入基本信息设置" }),
+    );
+
+    expect(await screen.findByRole("region", { name: "桌宠设置" })).toBeTruthy();
+    expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(pairWeatherHookMock.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the local focus timer while unpaired without realtime calls", async () => {
+    render(<App />);
+
+    await openFocusTimerFromInteractionMenu();
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "focus",
+    );
+    expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
+    expect(screen.getByRole("timer").textContent).toBe("25:00");
+  });
+
+  it("starts a focus timer, restores the pet surface, and exposes compact controls", async () => {
+    render(<App />);
+    await openFocusTimerFromInteractionMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "15分钟" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始专注" }));
+    await flushAppEffects();
+
+    expect(windowCommandsMock.writeFocusTimer).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "running", durationMinutes: 15 }),
+    );
+    expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "打开专注计时控制" }),
+    ).toBeTruthy();
+    expect(realtimeSyncMock.client.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("waits for the native surface before showing the message composer", async () => {
+    const opening = createDeferred<void>();
+    arrangeOnlinePair();
+    windowCommandsMock.openMessageComposerSurface.mockReturnValueOnce(
+      opening.promise,
+    );
+    render(<App />);
+
+    await flushAppEffects();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "message",
+    );
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+
+    await act(async () => {
+      opening.resolve();
+      await opening.promise;
+    });
+
+    expect(
+      await screen.findByRole("region", { name: "发送消息" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps the composer closed when the native surface fails to open", async () => {
+    arrangeOnlinePair();
+    windowCommandsMock.openMessageComposerSurface.mockRejectedValueOnce(
+      new Error("native surface unavailable"),
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    await flushAppEffects();
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "message",
+    );
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    expect(document.querySelector(".composer-surface")).toBeNull();
+  });
+
+  it("limits composer hover and focus styles to enabled controls", () => {
+    const appCss = readFileSync(
+      join(process.cwd(), "src", "app", "app.css"),
+      "utf8",
+    );
+
+    expect(appCss).toContain(".composer-action:not(:disabled):hover");
+    expect(appCss).toContain(".composer-action:not(:disabled):focus-visible");
+    expect(appCss).toContain(".composer-choice:not(:disabled):hover");
+    expect(appCss).toContain(".composer-choice:not(:disabled):focus-visible");
+    expect(appCss).toContain('.composer-choice[aria-pressed="true"]');
+    expect(appCss).not.toContain(".composer-action:hover");
+    expect(appCss).not.toContain(".composer-action:focus-visible");
+    expect(appCss).not.toContain(".composer-choice:hover");
+    expect(appCss).not.toContain(".composer-choice:focus-visible");
+  });
+
+  it.each([
+    ["发消息", "发送消息"],
+    ["外卖到啦", "送一份小心意"],
+  ] as const)(
+    "renders the %s composer beside the hidden pet surface with card-scoped hit testing",
+    async (menuItemName, regionName) => {
+      arrangeOnlinePair();
+      render(<App />);
+
+      await openComposerFromInteractionMenu(menuItemName, regionName);
+
+      const appShell = document.querySelector(".app-shell");
+      const petSurface = document.querySelector(".pet-surface");
+      const composerRegion = screen.getByRole("region", { name: regionName });
+      const composerSurface = composerRegion.closest(".composer-surface");
+      const composerCard = composerRegion.querySelector(".composer-card-shell");
+
+      expect(appShell).toBeTruthy();
+      expect(petSurface?.parentElement).toBe(appShell);
+      expect(composerSurface?.parentElement).toBe(appShell);
+      expect(petSurface?.contains(composerRegion)).toBe(false);
+      expect(petSurface?.classList.contains("composer-active")).toBe(true);
+      expect(petSurface?.getAttribute("aria-hidden")).toBe("true");
+      expect(
+        composerSurface?.hasAttribute("data-desktop-interactive-region"),
+      ).toBe(false);
+      expect(
+        composerRegion.hasAttribute("data-desktop-interactive-region"),
+      ).toBe(false);
+      expect(
+        composerCard?.hasAttribute("data-desktop-interactive-region"),
+      ).toBe(true);
+    },
+  );
+
+  it("reports the complete surprise card hit region at the current device scale", async () => {
+    const cardRect = clientRect(22, 18, 396, 420);
+    const submitRect = clientRect(266, 388, 132, 30);
+    const originalDevicePixelRatio = Object.getOwnPropertyDescriptor(
+      window,
+      "devicePixelRatio",
+    );
+    const rectSpy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock(this: Element) {
+        if (this.classList.contains("composer-card-shell")) {
+          return cardRect;
+        }
+
+        if (
+          this instanceof HTMLButtonElement &&
+          this.textContent?.trim() === "送出这份心意"
+        ) {
+          return submitRect;
+        }
+
+        return clientRect(0, 0, 0, 0);
+      });
+
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 1.5,
+    });
+
+    try {
+      arrangeOnlinePair();
+      render(<App />);
+      await openComposerFromInteractionMenu("外卖到啦", "送一份小心意");
+      windowCommandsMock.setInteractiveRegions.mockClear();
+
+      act(() => window.dispatchEvent(new Event("resize")));
+
+      await waitFor(() =>
+        expect(windowCommandsMock.setInteractiveRegions).toHaveBeenCalledWith(
+          [
+            {
+              x: cardRect.left,
+              y: cardRect.top,
+              width: cardRect.width,
+              height: cardRect.height,
+            },
+          ],
+          1.5,
+        ),
+      );
+
+      expect(cardRect.width).toBeGreaterThan(0);
+      expect(cardRect.height).toBeGreaterThan(0);
+      expect(submitRect.left).toBeGreaterThanOrEqual(cardRect.left);
+      expect(submitRect.top).toBeGreaterThanOrEqual(cardRect.top);
+      expect(submitRect.right).toBeLessThanOrEqual(cardRect.right);
+      expect(submitRect.bottom).toBeLessThanOrEqual(cardRect.bottom);
+    } finally {
+      rectSpy.mockRestore();
+
+      if (originalDevicePixelRatio) {
+        Object.defineProperty(
+          window,
+          "devicePixelRatio",
+          originalDevicePixelRatio,
+        );
+      } else {
+        Reflect.deleteProperty(window, "devicePixelRatio");
+      }
+    }
+  });
+
+  it("opens the surprise composer from the surprise button when the peer is online", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(screen.getByLabelText("对方状态")).toBeTruthy();
+
+    await openComposerFromInteractionMenu("外卖到啦", "送一份小心意");
+
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(1);
+    expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
+      "surprise",
+    );
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    expect(screen.getByRole("region", { name: "送一份小心意" })).toBeTruthy();
+    expect(screen.getByLabelText("惊喜暗号")).toBeTruthy();
+    expect(screen.queryByLabelText("对方状态")).toBeNull();
+  });
+
+  it("uses the message offline bubble for surprise without entering a pet action", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+    await flushAppEffects();
+
+    const petImage = screen.getByRole("img", { name: "Q 版小人" });
+    const stage = petImage.closest("[data-action]");
+
+    fireEvent.click(petImage);
+    fireEvent.click(screen.getByRole("menuitem", { name: "外卖到啦" }));
+
+    expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
+    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    expect(stage?.getAttribute("data-action")).toBe("idle-breathe");
+
+    await advanceTypewriterText("对方在线后再发消息吧。");
+
+    expect(document.querySelector(".bubble-layer")?.textContent).toBe(
+      "对方在线后再发消息吧。",
+    );
+  });
+
+  it("clears the availability bubble before opening the surprise composer", async () => {
+    vi.useFakeTimers();
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "offline";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "外卖到啦" }));
+    await advanceTypewriterText("对方在线后再发消息吧。");
+    expect(document.querySelector(".bubble-layer")?.textContent).toBe(
+      "对方在线后再发消息吧。",
+    );
+
+    realtimeSyncMock.state.peerPresence = "online";
+    await openComposerFromInteractionMenu("外卖到啦", "送一份小心意");
+
+    expect(screen.getByRole("region", { name: "送一份小心意" })).toBeTruthy();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(document.querySelector(".bubble-layer")).toBeNull();
+  });
+
+  it("sends surprise content with fallback text and records the local session message", async () => {
+    const motionPackage = motionPoolPackageSummary({
+      motions: {
+        "motion-001": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-001/",
+          weight: 1,
+          tags: ["idle"],
+        },
+        "motion-message": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-message/",
+          weight: 1,
+          tags: ["message"],
+        },
+        "motion-surprise": {
+          fps: 5,
+          loop: true,
+          frameCount: 2,
+          durationMs: 6000,
+          frames: "motions/motion-surprise/",
+          weight: 1,
+          tags: ["surprise"],
+        },
+      },
+      motionFramePaths: {
+        "motion-001": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
+        ],
+        "motion-message": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-message/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-message/0002.png",
+        ],
+        "motion-surprise": [
+          "C:/app/pet-packages/motion-buddy/motions/motion-surprise/0001.png",
+          "C:/app/pet-packages/motion-buddy/motions/motion-surprise/0002.png",
+        ],
+      },
+    });
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    await openComposerFromInteractionMenu(
+      "外卖到啦",
+      "送一份小心意",
+      "动作池小人",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "想说抱歉" }));
+    fireEvent.change(screen.getByLabelText("惊喜暗号"), {
+      target: { value: " A-1024 " },
+    });
+    fireEvent.change(screen.getByLabelText("想对 TA 说"), {
+      target: { value: "是我不好。" },
+    });
+
+    const expectedContent = {
+      kind: "surprise",
+      version: 1,
+      theme: "apology",
+      secret: "A-1024",
+      note: "是我不好。",
+    } as const;
+    const expectedFallback =
+      "一份小心意在等你。惊喜暗号：A-1024。是我不好。";
+
+    fireEvent.click(screen.getByRole("button", { name: "送出这份心意" }));
+
+    expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith(
+      expectedFallback,
+      expectedContent,
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.closeMessageComposerSurface).toHaveBeenCalledTimes(
+        1,
+      ),
+    );
+    expect(screen.queryByRole("region", { name: "送一份小心意" })).toBeNull();
+    expect(document.querySelector(".bubble-layer")?.textContent).not.toMatch(
+      /外卖|订单|配送|取件码|取餐/,
+    );
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-surprise");
+
+    await openSettingsFromContextMenu();
+    expect(screen.getByText(expectedFallback)).toBeTruthy();
+  });
+
+  it("keeps the surprise composer open with values when sending fails", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    realtimeSyncMock.client.sendMessage.mockReturnValueOnce({
+      ok: false,
+      message: "发送失败",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await openComposerFromInteractionMenu("外卖到啦", "送一份小心意");
+    fireEvent.click(screen.getByRole("button", { name: "想说抱歉" }));
+    fireEvent.change(screen.getByLabelText("惊喜暗号"), {
+      target: { value: "A-1024" },
+    });
+    fireEvent.change(screen.getByLabelText("想对 TA 说"), {
+      target: { value: "是我不好。" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "送出这份心意" }));
+
+    expect(realtimeSyncMock.client.sendMessage).toHaveBeenCalledWith(
+      "一份小心意在等你。惊喜暗号：A-1024。是我不好。",
+      {
+        kind: "surprise",
+        version: 1,
+        theme: "apology",
+        secret: "A-1024",
+        note: "是我不好。",
+      },
+    );
+    await waitFor(() => expect(screen.getByText("发送失败")).toBeTruthy());
+    expect(windowCommandsMock.closeMessageComposerSurface).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "送一份小心意" })).toBeTruthy();
+    expect((screen.getByLabelText("惊喜暗号") as HTMLInputElement).value).toBe(
+      "A-1024",
+    );
+    expect((screen.getByLabelText("想对 TA 说") as HTMLTextAreaElement).value).toBe(
+      "是我不好。",
+    );
+  });
+
+  it("renders an embedded peer status tag with the selected peer portrait", async () => {
     realtimeSyncMock.state.status = "connected";
     realtimeSyncMock.state.peerPresence = "online";
     realtimeSyncMock.state.peerActivityStatus = "slacking";
@@ -763,18 +2075,45 @@ describe("App", () => {
         peerDeviceId: "dev_b",
       },
     });
-    render(<App />);
+    const { container } = render(<App />);
 
     await flushAppEffects();
 
     const card = await screen.findByLabelText("对方状态");
     expect(card.getAttribute("data-status-variant")).toBe("slacking");
-    expect(screen.getByText("TA 摸鱼中")).toBeTruthy();
-    expect(screen.getByText("偷偷歇一会")).toBeTruthy();
+    expect(container.querySelector(".pet-frame-stage")?.contains(card)).toBe(true);
+    expect(card.className).toContain("peer-presence-tag");
+    expect(screen.getByText("TA摸鱼中")).toBeTruthy();
+    expect(screen.queryByText("偷偷歇一会")).toBeNull();
     expect(screen.getByRole("img", { name: "对方头像" }).getAttribute("src")).toBe(
       "asset://C:/app/pet-packages/moon-buddy/portrait.png",
     );
     expect(screen.queryByLabelText("对方在线状态")).toBeNull();
+  });
+
+  it("keeps the peer presence tag inside the scaled pet stage", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      scale: 1.45,
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+
+    const petStage = container.querySelector(".pet-frame-stage") as HTMLElement | null;
+    const presenceBubble = await screen.findByLabelText("对方状态");
+
+    expect(petStage?.contains(presenceBubble)).toBe(true);
+    expect(petStage?.style.getPropertyValue("--pet-scale")).toBe("1.45");
   });
 
   it("renders an offline peer status card with the offline portrait first", async () => {
@@ -809,7 +2148,7 @@ describe("App", () => {
 
     const card = await screen.findByLabelText("对方状态");
     expect(card.getAttribute("data-status-variant")).toBe("offline");
-    expect(screen.getByText("TA 离线")).toBeTruthy();
+    expect(screen.getByText("TA离线")).toBeTruthy();
     const offlinePortrait = screen.getByRole("img", { name: "对方头像" });
     expect(offlinePortrait.getAttribute("src")).toBe(
       "asset://C:/app/pet-packages/moon-buddy/portrait-offline.png",
@@ -834,8 +2173,9 @@ describe("App", () => {
     );
 
     fireEvent.error(motionFallback);
-    expect(screen.queryByRole("img", { name: "对方头像" })).toBeNull();
-    expect(screen.getByText("TA")).toBeTruthy();
+    const generatedFallback = screen.getByRole("img", { name: "对方头像" });
+    expect(generatedFallback.getAttribute("src")).toMatch(/peer-avatar\.png$/);
+    expect(screen.queryByText("TA")).toBeNull();
   });
 
   it("uses online peer image candidates without the offline portrait", async () => {
@@ -889,8 +2229,9 @@ describe("App", () => {
     );
 
     fireEvent.error(motionFallback);
-    expect(screen.queryByRole("img", { name: "对方头像" })).toBeNull();
-    expect(screen.getByText("TA")).toBeTruthy();
+    const generatedFallback = screen.getByRole("img", { name: "对方头像" });
+    expect(generatedFallback.getAttribute("src")).toMatch(/peer-avatar\.png$/);
+    expect(screen.queryByText("TA")).toBeNull();
   });
 
   it("does not show the peer status card when unpaired", async () => {
@@ -946,9 +2287,21 @@ describe("App", () => {
     );
 
     fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
     await flushAppEffects();
     expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
+    expect(screen.queryByLabelText("对方状态")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await flushAppEffects();
+    expect(screen.getByLabelText("对方状态")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "外卖到啦" }));
+    await flushAppEffects();
+    expect(screen.getByRole("region", { name: "送一份小心意" })).toBeTruthy();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
     expect(screen.queryByLabelText("对方状态")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await flushAppEffects();
@@ -975,6 +2328,171 @@ describe("App", () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     await dragPetPastThresholdAndRelease(screen.getByRole("region", { name: "情侣桌宠 MVP" }));
     expect(screen.queryByLabelText("对方状态")).toBeNull();
+  });
+
+  it.each([
+    ["发消息", "发送消息"],
+    ["外卖到啦", "送一份小心意"],
+  ] as const)(
+    "ignores right-click context menu while the %s composer owns the surface",
+    async (menuItemName, regionName) => {
+      arrangeOnlinePair();
+      render(<App />);
+
+      await openComposerFromInteractionMenu(menuItemName, regionName);
+      windowCommandsMock.closeMessageComposerSurface.mockClear();
+
+      const wasNotPrevented = dispatchContextMenuOnPetSurface();
+
+      expect(wasNotPrevented).toBe(false);
+      expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+      expect(screen.getByRole("region", { name: regionName })).toBeTruthy();
+      expect(windowCommandsMock.closeMessageComposerSurface).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["发消息", "发送消息"],
+    ["外卖到啦", "送一份小心意"],
+  ] as const)(
+    "ignores desktop settings events while the %s composer owns the surface",
+    async (menuItemName, regionName) => {
+      arrangeOnlinePair();
+      render(<App />);
+      await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+
+      await openComposerFromInteractionMenu(menuItemName, regionName);
+      windowCommandsMock.closeMessageComposerSurface.mockClear();
+
+      act(() => {
+        windowCommandsMock.openSettingsHandler?.();
+      });
+      await flushAppEffects();
+
+      expect(document.getElementById("settings-panel")?.className).toBe(
+        "settings-dock is-hidden",
+      );
+      expect(screen.getByRole("region", { name: regionName })).toBeTruthy();
+      expect(windowCommandsMock.closeMessageComposerSurface).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a received surprise queued while tray Settings temporarily hides its layer", async () => {
+    arrangeOnlinePair();
+    render(<App />);
+    await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+    await flushAppEffects();
+
+    emitRemoteSurprise();
+    await flushAppEffects();
+
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    expect(screen.queryByText("A-1024")).toBeNull();
+
+    expect(dispatchContextMenuOnPetSurface()).toBe(false);
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    await flushAppEffects();
+
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+    expect(screen.queryByLabelText("对方小心意消息")).toBeNull();
+    expect(screen.queryByText("A-1024")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /轻轻点开看看/ }));
+    await flushAppEffects();
+    expect(screen.getByText("A-1024")).toBeTruthy();
+    expect(screen.getByText("是我不好。")).toBeTruthy();
+
+    expect(dispatchContextMenuOnPetSurface()).toBe(false);
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+    await flushAppEffects();
+
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+    expect(screen.queryByText("A-1024")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    expect(screen.getByText("A-1024")).toBeTruthy();
+    expect(screen.getByLabelText("对方小心意消息").className).not.toContain(
+      "is-dismissing",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "我收下啦" }));
+    await flushAppEffects();
+    expect(screen.getByLabelText("对方小心意消息").className).toContain(
+      "is-dismissing",
+    );
+  });
+
+  it("opens permitted settings by clearing existing menu, status picker and bubble owners", async () => {
+    render(<App />);
+    await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
+
+    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
+    expect(document.querySelector(".bubble-layer")).toBeTruthy();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
+
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+    await flushAppEffects();
+
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(document.querySelector(".bubble-layer")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("关闭设置"));
+    await flushAppEffects();
+    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
+    expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
+
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+    await flushAppEffects();
+
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("关闭设置"));
+    await flushAppEffects();
+    fireEvent.contextMenu(screen.getByRole("region", { name: "情侣桌宠 MVP" }), {
+      clientX: 48,
+      clientY: 52,
+    });
+    expect(screen.getByRole("menu", { name: "桌宠菜单" })).toBeTruthy();
+
+    act(() => {
+      windowCommandsMock.openSettingsHandler?.();
+    });
+    await flushAppEffects();
+
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock",
+    );
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
   });
 
   it("closes the status picker before opening the right-click settings menu", async () => {
@@ -1010,75 +2528,6 @@ describe("App", () => {
     expect(document.getElementById("settings-panel")?.className).toBe(
       "settings-dock",
     );
-  });
-
-  it("closes the status picker immediately and defers the context menu until edge exit restore completes", async () => {
-    const raf = installAnimationFrameController();
-    const snapDeferred = createDeferred<"left">();
-    const restoreDeferred = createDeferred<void>();
-    realtimeSyncMock.state.status = "connected";
-    realtimeSyncMock.state.peerPresence = "online";
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockReturnValueOnce(
-      snapDeferred.promise,
-    );
-    windowCommandsMock.restoreWindowFromEdgePeek.mockReturnValueOnce(
-      restoreDeferred.promise,
-    );
-    windowCommandsMock.readSettings.mockResolvedValueOnce({
-      sync: {
-        enabled: true,
-        relayUrl: "http://159.75.175.47:8787",
-        deviceId: "dev_a",
-        deviceSecret: "secret_a",
-        pairId: "pair_1",
-        peerDeviceId: "dev_b",
-      },
-    });
-    render(<App />);
-
-    await flushAppEffects();
-
-    const surface = screen.getByRole("region", { name: "情侣桌宠 MVP" });
-    await dragPetPastThresholdAndRelease(surface);
-
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
-    expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
-
-    await act(async () => {
-      snapDeferred.resolve("left");
-      await snapDeferred.promise;
-    });
-    await flushAppEffects();
-
-    fireEvent.contextMenu(surface, { clientX: 48, clientY: 52 });
-
-    expect(screen.queryByRole("dialog", { name: "我的状态" })).toBeNull();
-    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
-    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
-
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
-    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
-      "left",
-    );
-    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
-
-    await act(async () => {
-      restoreDeferred.resolve();
-      await restoreDeferred.promise;
-    });
-    await flushAppEffects();
-
-    const settingsItem = screen.getByRole("menuitem", { name: "设置" });
-    await waitFor(() => expect(document.activeElement).toBe(settingsItem));
-    fireEvent.click(settingsItem);
-
-    expect(document.getElementById("settings-panel")?.className).toBe(
-      "settings-dock",
-    );
-    raf.restore();
   });
 
   it("persists and syncs the selected local activity status", async () => {
@@ -1170,8 +2619,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "  晚安  " },
     });
@@ -1183,7 +2631,9 @@ describe("App", () => {
         1,
       ),
     );
-    expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull(),
+    );
   });
 
   it("plays the local message tagged motion after sending a composer message", async () => {
@@ -1246,8 +2696,11 @@ describe("App", () => {
         ?.getAttribute("data-motion-id"),
     ).toBe("motion-001");
 
-    fireEvent.click(screen.getByRole("img", { name: "动作池小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu(
+      "发消息",
+      "发送消息",
+      "动作池小人",
+    );
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "晚安" },
     });
@@ -1286,8 +2739,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.change(screen.getByLabelText("消息内容"), {
       target: { value: "晚安" },
     });
@@ -1317,8 +2769,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
     await waitFor(() =>
@@ -1328,8 +2779,7 @@ describe("App", () => {
     );
     expect(screen.queryByRole("region", { name: "发送消息" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
+    await openComposerFromInteractionMenu("发消息", "发送消息");
     fireEvent.keyDown(screen.getByLabelText("消息内容"), { key: "Escape" });
 
     await waitFor(() =>
@@ -1349,132 +2799,6 @@ describe("App", () => {
     expect(appSource).not.toContain("openMessageComposerWindow");
     expect(appSource).not.toContain("listenForMessageComposerSubmit");
     expect(appSource).not.toContain("emitMessageComposerResult");
-  });
-
-  it("shows a placeholder bubble for non-typing function buttons without matching motions", async () => {
-    vi.useFakeTimers();
-    const motionPackage = motionPoolPackageSummary();
-    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
-    windowCommandsMock.readSettings.mockResolvedValueOnce({
-      appearance: {
-        selectedPetPackageId: motionPackage.id,
-        peerPetPackageByDeviceId: {},
-      },
-    });
-    render(<App />);
-    await flushAppEffects();
-
-    const petImage = screen.getByRole("img", { name: "动作池小人" });
-
-    act(() => {
-      fireEvent.click(petImage);
-    });
-    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
-
-    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
-    expect(screen.queryByText("陪我一会儿嘛。")).toBeNull();
-    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
-
-    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
-    expect(petImage.closest("[data-motion-id]")?.getAttribute("data-motion-id")).not.toBe(
-      "act-hug",
-    );
-  });
-
-  it("plays a matching motion for non-typing function buttons", async () => {
-    const motionPackage = motionPoolPackageSummary({
-      motions: {
-        "motion-001": {
-          fps: 5,
-          loop: true,
-          frameCount: 2,
-          durationMs: 6000,
-          frames: "motions/motion-001/",
-          weight: 1,
-          tags: ["idle"],
-        },
-        "act-wave": {
-          fps: 5,
-          loop: false,
-          frameCount: 2,
-          durationMs: 6000,
-          frames: "motions/act-wave/",
-          weight: 1,
-          tags: ["interaction"],
-        },
-      },
-      motionFramePaths: {
-        "motion-001": [
-          "C:/app/pet-packages/motion-buddy/motions/motion-001/0001.png",
-          "C:/app/pet-packages/motion-buddy/motions/motion-001/0002.png",
-        ],
-        "act-wave": [
-          "C:/app/pet-packages/motion-buddy/motions/act-wave/0001.png",
-          "C:/app/pet-packages/motion-buddy/motions/act-wave/0002.png",
-        ],
-      },
-    });
-    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
-    windowCommandsMock.readSettings.mockResolvedValueOnce({
-      appearance: {
-        selectedPetPackageId: motionPackage.id,
-        peerPetPackageByDeviceId: {},
-      },
-    });
-    render(<App />);
-
-    await flushAppEffects();
-    const petImage = screen.getByRole("img", { name: "动作池小人" });
-
-    fireEvent.click(petImage);
-    fireEvent.click(screen.getByRole("menuitem", { name: "打招呼" }));
-
-    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
-    expect(
-      screen
-        .getByRole("img", { name: "动作池小人" })
-        .closest("[data-motion-id]")
-        ?.getAttribute("data-motion-id"),
-    ).toBe("act-wave");
-    expect(screen.queryByText("功能开发中，先陪你待一会儿。")).toBeNull();
-  });
-
-  it("ignores configured scene data for non-typing function buttons", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const scenicPackage = importedPackageSummary();
-    scenicPackage.scenes = {
-      ...scenicPackage.scenes,
-      "act-hug": {
-        action: "act-wave",
-        bubbleCues: [{ atMs: 1000, text: "挥挥手。" }],
-        returnTo: "idle-look",
-      },
-    };
-    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([scenicPackage]);
-    windowCommandsMock.readSettings.mockResolvedValueOnce({
-      appearance: {
-        selectedPetPackageId: scenicPackage.id,
-        peerPetPackageByDeviceId: {},
-      },
-    });
-    render(<App />);
-
-    await flushAppEffects();
-    const petImage = screen.getByRole("img", { name: "月亮伙伴" });
-
-    act(() => {
-      fireEvent.click(petImage);
-    });
-    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
-
-    expect(screen.queryByText("功能开发中，先陪你待一会儿。")).toBeNull();
-    expect(screen.queryByText("挥挥手。")).toBeNull();
-    const stage = screen
-      .getByRole("img", { name: "月亮伙伴" })
-      .closest("[data-action]");
-    expect(stage?.getAttribute("data-motion-id")).toBe("act-hug");
-    expect(stage?.getAttribute("data-action")).not.toBe("act-wave");
   });
 
   it("selects the next idle segment from the active motion pool", async () => {
@@ -1545,39 +2869,6 @@ describe("App", () => {
     randomSpy.mockRestore();
   });
 
-  it("refreshes the hide timer when the same bubble is shown again", async () => {
-    vi.useFakeTimers();
-    const motionPackage = motionPoolPackageSummary();
-    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
-    windowCommandsMock.readSettings.mockResolvedValueOnce({
-      appearance: {
-        selectedPetPackageId: motionPackage.id,
-        peerPetPackageByDeviceId: {},
-      },
-    });
-    render(<App />);
-    await flushAppEffects();
-
-    const petFrame = screen.getByRole("img", { name: "动作池小人" });
-
-    act(() => {
-      fireEvent.click(petFrame);
-    });
-    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
-    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
-    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
-
-    act(() => vi.advanceTimersByTime(1000));
-    act(() => {
-      fireEvent.click(petFrame);
-    });
-    fireEvent.click(screen.getByRole("menuitem", { name: "求抱抱" }));
-    await advanceTypewriterText("功能开发中，先陪你待一会儿。");
-    act(() => vi.advanceTimersByTime(1000));
-
-    expect(screen.getByText("功能开发中，先陪你待一会儿。")).toBeTruthy();
-  });
-
   it("opens settings when the desktop open-settings event is received", async () => {
     render(<App />);
 
@@ -1594,7 +2885,7 @@ describe("App", () => {
     expect(settingsButton.classList.contains("is-visible")).toBe(true);
   });
 
-  it("persists click-through disabled when tray show recovers input", async () => {
+  it("keeps persisted click-through enabled when tray show recovers input", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
     render(<App />);
 
@@ -1612,13 +2903,10 @@ describe("App", () => {
       windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "show" });
     });
 
-    await waitFor(() =>
-      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ clickThrough: false }),
-      ),
-    );
+    await flushAppEffects();
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
     expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
-      false,
+      true,
     );
   });
 
@@ -1639,7 +2927,7 @@ describe("App", () => {
     expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
   });
 
-  it("opens settings after tray settings recovers click-through", async () => {
+  it("opens settings after tray settings recovers click-through without changing the persisted checkbox", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
     render(<App />);
 
@@ -1660,10 +2948,10 @@ describe("App", () => {
     });
 
     expect(screen.getByRole("button", { name: "设置" }).getAttribute("aria-expanded")).toBe("true");
-    await waitFor(() =>
-      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ clickThrough: false }),
-      ),
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+      true,
     );
   });
 
@@ -1898,6 +3186,248 @@ describe("App", () => {
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
   });
 
+  it("recovers a collapsed general surprise and surprise motion when Relay omits content", async () => {
+    const motionPackage = taggedMotionPoolPackage({
+      "motion-001": ["idle"],
+      "motion-message": ["message"],
+      "motion-surprise": ["surprise"],
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "surprise_compat_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：A562。没有特别的日子，也可以有一份小惊喜。",
+        at: "2026-08-12T10:00:00.000Z",
+      });
+    });
+
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect(screen.getByText("有个小惊喜在等你")).toBeTruthy();
+    expect(screen.queryByText("A562")).toBeNull();
+    expect(
+      screen.queryByText("没有特别的日子，也可以有一份小惊喜。"),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-surprise");
+  });
+
+  it("uses a surprise-tagged motion before a message-tagged motion for received surprises", async () => {
+    const motionPackage = taggedMotionPoolPackage({
+      "motion-001": ["idle"],
+      "motion-message": ["message"],
+      "motion-surprise": ["surprise"],
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "surprise_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：A-1024。是我不好。",
+        at: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "apology",
+          secret: "A-1024",
+          note: "是我不好。",
+        },
+      });
+    });
+
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    expect(screen.getByText("先收下这份小心意")).toBeTruthy();
+    expect(screen.queryByText("有个小惊喜在等你")).toBeNull();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-surprise");
+  });
+
+  it("falls back to a message-tagged motion for received surprises without surprise motion", async () => {
+    const motionPackage = taggedMotionPoolPackage({
+      "motion-001": ["idle"],
+      "motion-message": ["message"],
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "surprise_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：A-1024。",
+        at: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "A-1024",
+        },
+      });
+    });
+
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-message");
+  });
+
+  it("leaves the current motion unchanged for received surprises without surprise or message motion", async () => {
+    const motionPackage = taggedMotionPoolPackage({
+      "motion-001": ["idle"],
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-001");
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "surprise_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：A-1024。",
+        at: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "general",
+          secret: "A-1024",
+        },
+      });
+    });
+
+    expect(screen.getByLabelText("对方小心意消息")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-001");
+  });
+
+  it("continues to use message-tagged motion for ordinary received text", async () => {
+    const motionPackage = taggedMotionPoolPackage({
+      "motion-001": ["idle"],
+      "motion-message": ["message"],
+      "motion-surprise": ["surprise"],
+    });
+    petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([motionPackage]);
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      appearance: {
+        selectedPetPackageId: motionPackage.id,
+        peerPetPackageByDeviceId: {},
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_1",
+        fromDeviceId: "dev_b",
+        text: "普通消息",
+        at: "2026-08-12T10:00:00.000Z",
+      });
+    });
+
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(screen.queryByLabelText("对方小心意消息")).toBeNull();
+    expect(
+      screen
+        .getByRole("img", { name: "动作池小人" })
+        .closest("[data-motion-id]")
+        ?.getAttribute("data-motion-id"),
+    ).toBe("motion-message");
+  });
+
   it("does not render a peer visitor for missing peer package mappings", async () => {
     const moonPackage = importedPackageSummary();
     petPackageCommandsMock.listPetPackages.mockResolvedValueOnce([moonPackage]);
@@ -1978,7 +3508,7 @@ describe("App", () => {
     );
   });
 
-  it("starts desktop window dragging only after pet movement crosses the drag threshold", () => {
+  it("moves the desktop window with custom pointer deltas after pet movement crosses the drag threshold", async () => {
     const { container } = render(<App />);
     const petStage = container.querySelector(".pet-frame-stage");
 
@@ -1986,20 +3516,152 @@ describe("App", () => {
       throw new Error("pet stage missing");
     }
 
-    fireEvent.pointerDown(petStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
+    fireEvent.pointerDown(petStage, {
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+      screenX: 100,
+      screenY: 200,
+    });
 
-    fireEvent.pointerMove(petStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
+    fireEvent.pointerMove(petStage, {
+      pointerId: 1,
+      clientX: 18,
+      clientY: 10,
+      screenX: 108,
+      screenY: 200,
+    });
+    fireEvent.pointerUp(petStage, {
+      pointerId: 1,
+      clientX: 18,
+      clientY: 10,
+      screenX: 108,
+      screenY: 200,
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.moveWindowForPointerDrag).toHaveBeenCalledWith(
+        8,
+        0,
+      ),
+    );
   });
 
-  it("enters edge interaction after drag end returns an edge side", async () => {
+  it("waits for the final pointer drag move before snapping to an edge", async () => {
+    const finalMove = createDeferred<void>();
+    windowCommandsMock.moveWindowForPointerDrag.mockReturnValueOnce(finalMove.promise);
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce(null);
+    const { container } = render(<App />);
+    const petStage = container.querySelector(".pet-frame-stage");
+
+    if (!petStage) {
+      throw new Error("pet stage missing");
+    }
+
+    fireEvent.pointerDown(petStage, {
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+      screenX: 100,
+      screenY: 200,
+    });
+    fireEvent.pointerMove(petStage, {
+      pointerId: 1,
+      clientX: 18,
+      clientY: 10,
+      screenX: 108,
+      screenY: 200,
+    });
+    fireEvent.pointerUp(petStage, {
+      pointerId: 1,
+      clientX: 18,
+      clientY: 10,
+      screenX: 108,
+      screenY: 200,
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.moveWindowForPointerDrag).toHaveBeenCalledWith(
+        8,
+        0,
+      ),
+    );
+    await flushAppEffects();
+    expect(windowCommandsMock.snapWindowToEdgeIfNeeded).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finalMove.resolve();
+      await finalMove.promise;
+    });
+
+    await waitFor(() =>
+      expect(windowCommandsMock.snapWindowToEdgeIfNeeded).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("enters static edge idle after drag end returns an edge side", async () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     const { container } = render(<App />);
 
     await dragPetPastThresholdAndRelease(container);
 
-    expect(await screen.findByAltText("桌宠边缘进入")).toBeTruthy();
+    const frame = await screen.findByAltText("边缘微型桌宠");
+    expect(frame.getAttribute("data-frame-kind")).toBe("idle");
+    expect(frame.getAttribute("src")).toContain(
+      "edge-companion/side/idle.png",
+    );
+    expect(
+      container.querySelector(".pet-frame-stage")?.getAttribute(
+        "data-edge-interaction-side",
+      ),
+    ).toBe("left");
+    expect(screen.queryByAltText("桌宠边缘进入")).toBeNull();
+    expect(screen.queryByAltText("桌宠边缘退出")).toBeNull();
+  });
+
+  it("does not restore or open interactions from a simple static mascot click", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    await screen.findByAltText("边缘微型桌宠");
+    await clearDragClickSuppression();
+
+    fireEvent.click(screen.getByTestId("edge-companion-alpha-hit-region"));
+
+    expect(edgeInteractionHookSpy.requestExitThen).not.toHaveBeenCalled();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "互动选项" })).toBeNull();
+    expect(screen.getByAltText("边缘微型桌宠")).toBeTruthy();
+  });
+
+  it("keeps static edge idle when the alpha region receives a context menu event", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    const hitRegion = await screen.findByTestId(
+      "edge-companion-alpha-hit-region",
+    );
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 50,
+    });
+
+    let wasNotPrevented = true;
+    act(() => {
+      wasNotPrevented = hitRegion.dispatchEvent(contextMenuEvent);
+    });
+
+    expect(wasNotPrevented).toBe(false);
+    expect(edgeInteractionHookSpy.requestExitThen).not.toHaveBeenCalled();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(screen.getByAltText("边缘微型桌宠").getAttribute("data-frame-kind")).toBe(
+      "idle",
+    );
     expect(
       container.querySelector(".pet-frame-stage")?.getAttribute(
         "data-edge-interaction-side",
@@ -2007,225 +3669,342 @@ describe("App", () => {
     ).toBe("left");
   });
 
-  it("plays exit and restores before opening the interaction menu", async () => {
-    const raf = installAnimationFrameController();
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
-    const { container } = render(<App />);
-
-    await dragPetPastThresholdAndRelease(container);
-    fireEvent.click(await screen.findByAltText("桌宠边缘进入"));
-
-    expect(
-      screen.queryByRole("menu", { name: "互动选项" }),
-    ).toBeNull();
-    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
-
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
-
-    await waitFor(() =>
-      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
-        "left",
-      ),
-    );
-    expect(await screen.findByRole("menu", { name: "互动选项" })).toBeTruthy();
-    raf.restore();
-  });
-
-  it("plays exit and restores before starting a drag from edge interaction", async () => {
-    const raf = installAnimationFrameController();
+  it("keeps static edge idle when an expanded notice card receives a context menu event", async () => {
+    arrangeOnlinePair();
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("right");
     const { container } = render(<App />);
 
-    await dragPetPastThresholdAndRelease(container);
-    windowCommandsMock.startWindowDrag.mockClear();
-
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
-
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
-    }
-
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
-
-    raf.step(0);
-    raf.step(750);
     await flushAppEffects();
+    emitRemoteText("edge-context-message", "右键也不要唤醒");
+    await dragPetPastThresholdAndRelease(container);
+    const card = screen.getByRole("button", {
+      name: "右键也不要唤醒 有一句话想让你看见",
+    });
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 40,
+      clientY: 50,
+    });
+
+    let wasNotPrevented = true;
+    act(() => {
+      wasNotPrevented = card.dispatchEvent(contextMenuEvent);
+    });
+
+    expect(wasNotPrevented).toBe(false);
+    expect(edgeInteractionHookSpy.requestExitThen).not.toHaveBeenCalled();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
+    expect(screen.getByAltText("边缘微型桌宠").getAttribute("data-frame-kind")).toBe(
+      "idle",
+    );
+    expect(
+      container.querySelector(".pet-frame-stage")?.getAttribute(
+        "data-edge-interaction-side",
+      ),
+    ).toBe("right");
+    expect(screen.getByRole("button", {
+      name: "右键也不要唤醒 有一句话想让你看见",
+    })).toBeTruthy();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+  });
+
+  it("restores only after an alpha-surface drag crosses the threshold and keeps moving", async () => {
+    windowCommandsMock.snapWindowToEdgeIfNeeded
+      .mockResolvedValueOnce("right")
+      .mockResolvedValueOnce(null);
+    const { container } = render(<App />);
+
+    await dragPetPastThresholdAndRelease(container);
+    const hitRegion = await screen.findByTestId(
+      "edge-companion-alpha-hit-region",
+    );
+    windowCommandsMock.moveWindowForPointerDrag.mockClear();
+
+    fireEvent.pointerDown(hitRegion, {
+      pointerId: 7,
+      screenX: 200,
+      screenY: 300,
+    });
+    fireEvent.pointerMove(hitRegion, {
+      pointerId: 7,
+      screenX: 202,
+      screenY: 300,
+    });
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).not.toHaveBeenCalled();
+
+    fireEvent.pointerMove(hitRegion, {
+      pointerId: 7,
+      screenX: 208,
+      screenY: 300,
+    });
 
     await waitFor(() =>
       expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
         "right",
       ),
     );
-    expect(windowCommandsMock.startWindowDrag).toHaveBeenCalledTimes(1);
-    raf.restore();
-  });
-
-  it("does not start a delayed native drag when edge drag is released before exit completes", async () => {
-    const raf = installAnimationFrameController();
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
-    const { container } = render(<App />);
-
-    await dragPetPastThresholdAndRelease(container);
-    windowCommandsMock.startWindowDrag.mockClear();
-
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
-
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
-    }
-
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
-
     await waitFor(() =>
-      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
-        "left",
+      expect(windowCommandsMock.moveWindowForPointerDrag).toHaveBeenCalledWith(
+        8,
+        0,
       ),
     );
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
-    raf.restore();
-  });
+    expect(edgeInteractionHookSpy.requestExitThen).toHaveBeenCalledTimes(1);
 
-  it("does not start a delayed native drag when the edge drag pointer leaves before exit completes", async () => {
-    const raf = installAnimationFrameController();
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
-    const { container } = render(<App />);
-
-    await dragPetPastThresholdAndRelease(container);
-    windowCommandsMock.startWindowDrag.mockClear();
-
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
-
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
+    const stage = container.querySelector(".pet-frame-stage");
+    if (!stage) {
+      throw new Error("pet stage missing");
     }
 
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    fireEvent.pointerLeave(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
+    fireEvent.pointerMove(stage, {
+      pointerId: 7,
+      screenX: 213,
+      screenY: 298,
+    });
+    fireEvent.pointerUp(stage, {
+      pointerId: 7,
+      screenX: 213,
+      screenY: 298,
+    });
 
     await waitFor(() =>
-      expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
-        "left",
+      expect(windowCommandsMock.moveWindowForPointerDrag).toHaveBeenCalledWith(
+        5,
+        -2,
       ),
     );
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
-    raf.restore();
-  });
-
-  it("opens the context menu only after right-click exits edge interaction", async () => {
-    const raf = installAnimationFrameController();
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
-    const { container } = render(<App />);
-
-    await dragPetPastThresholdAndRelease(container);
-
-    fireEvent.contextMenu(screen.getByRole("region", { name: "情侣桌宠 MVP" }), {
-      clientX: 48,
-      clientY: 52,
-    });
-
-    expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
-
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
-
-    const settingsItem = await screen.findByRole("menuitem", { name: "设置" });
-    expect(settingsItem.closest('[role="menu"]')?.getAttribute("aria-label")).toBe(
-      "桌宠菜单",
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledTimes(
+      1,
     );
-    raf.restore();
   });
 
-  it("hides bubble and remote message layers while edge interaction is active and restores them after a canceled edge drag", async () => {
-    const raf = installAnimationFrameController();
-    realtimeSyncMock.state.status = "connected";
-    realtimeSyncMock.state.peerPresence = "online";
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+  it("projects no edge notice for peer presence changes", async () => {
+    arrangeOnlinePair();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("top");
     const { container } = render(<App />);
+
     await flushAppEffects();
-
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "敲电脑" }));
-    expect(document.querySelector(".bubble-layer")?.textContent).toBe("对");
-
-    act(() => {
-      realtimeSyncMock.callbacks?.onMessage({
-        id: "msg_edge",
-        fromDeviceId: "dev_b",
-        text: "想你啦",
-        at: "2026-08-03T12:00:00.000Z",
-      });
-    });
-    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
-
     await dragPetPastThresholdAndRelease(container);
 
-    expect(screen.getByAltText("桌宠边缘进入")).toBeTruthy();
-    expect(document.querySelector(".bubble-layer")).toBeNull();
+    expect(await screen.findByAltText("桌宠边缘待机")).toBeTruthy();
+    expect(container.querySelector(".edge-pet-stage")).toBeTruthy();
+    expect(screen.queryByTestId("edge-notice-surface")).toBeNull();
+    expect(document.querySelector(".edge-notice-marker")).toBeNull();
+    expect(screen.queryByLabelText("对方状态")).toBeNull();
+  });
+
+  it("keeps a text card expanded until restore, then acknowledges full content without docking", async () => {
+    vi.useFakeTimers();
+    const restoreDeferred = createDeferred<void>();
+    arrangeOnlinePair();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    windowCommandsMock.restoreWindowFromEdgePeek.mockReturnValueOnce(
+      restoreDeferred.promise,
+    );
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+    emitRemoteText("edge-message", "今晚一起看电影吗？");
+    await dragPetPastThresholdAndRelease(container);
+
+    const card = screen.getByRole("button", {
+      name: "今晚一起看电影吗？ 有一句话想让你看见",
+    });
+    const companionStage = screen.getByTestId("edge-companion-stage");
+    const noticeSurface = screen.getByTestId("edge-notice-surface");
+    const hitRegion = screen.getByTestId("edge-companion-alpha-hit-region");
+
+    expect(document.querySelector(".edge-notice-marker")).toBeNull();
+    expect(companionStage.hasAttribute("data-desktop-interactive-region")).toBe(
+      false,
+    );
+    expect(noticeSurface.hasAttribute("data-desktop-interactive-region")).toBe(
+      false,
+    );
+    expect(hitRegion.hasAttribute("data-desktop-interactive-region")).toBe(
+      true,
+    );
+    expect(card.hasAttribute("data-desktop-interactive-region")).toBe(true);
     expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
 
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
+    fireEvent.pointerEnter(card);
+    fireEvent.pointerLeave(card);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
 
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
-    }
+    expect(
+      screen.getByRole("button", {
+        name: "今晚一起看电影吗？ 有一句话想让你看见",
+      }),
+    ).toBeTruthy();
+    expect(document.querySelector(".edge-notice-marker")).toBeNull();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
 
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    raf.step(0);
-    raf.step(750);
+    fireEvent.click(card);
+    expect(edgeInteractionHookSpy.requestExitThen).toHaveBeenCalledTimes(1);
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+      "left",
+    );
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+
+    await act(async () => {
+      restoreDeferred.resolve();
+      await restoreDeferred.promise;
+    });
     await flushAppEffects();
 
-    await waitFor(() =>
-      expect(document.querySelector(".bubble-layer")?.textContent).toBe("对"),
-    );
-    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
-    raf.restore();
+    const fullMessage = screen.getByLabelText("对方桌宠消息");
+    expect(fullMessage.className).toContain("is-visible");
+
+    fireEvent.pointerEnter(fullMessage);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    await flushAppEffects();
+
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect(windowCommandsMock.dockWindowAtEdge).not.toHaveBeenCalled();
   });
 
-  it("restores from edge image load failure once without running a queued command", async () => {
+  it("keeps the expanded text card and FIFO unchanged when edge restore fails", async () => {
+    arrangeOnlinePair();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    windowCommandsMock.restoreWindowFromEdgePeek.mockRejectedValueOnce(
+      new Error("restore failed"),
+    );
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+    emitRemoteText("edge-message", "今晚一起看电影吗？");
+    emitRemoteText("queued-message", "下一条消息");
+    await dragPetPastThresholdAndRelease(container);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "今晚一起看电影吗？ 有一句话想让你看见",
+      }),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.resetWindowPosition).toHaveBeenCalledTimes(1),
+    );
+
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "今晚一起看电影吗？ 有一句话想让你看见",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", {
+        name: "下一条消息 有一句话想让你看见",
+      }),
+    ).toBeNull();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+      "left",
+    );
+    expect(windowCommandsMock.dockWindowAtEdge).not.toHaveBeenCalled();
+  });
+
+  it("keeps a surprise card expanded until restore and promotes FIFO only after full dismissal", async () => {
+    vi.useFakeTimers();
+    arrangeOnlinePair();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("bottom");
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+    emitRemoteSurprise();
+    emitRemoteText("queued-message", "下一条消息");
+    await dragPetPastThresholdAndRelease(container);
+
+    const card = screen.getByRole("button", {
+      name: "有一份心意正在等你 点一下，让惊喜慢慢打开",
+    });
+    const noticeSurface = card.closest(".edge-notice-surface");
+
+    expect(noticeSurface?.innerHTML).not.toMatch(
+      /A-1024|是我不好|外卖|取件码|暗号/,
+    );
+    expect(document.querySelector(".edge-notice-marker")).toBeNull();
+
+    fireEvent.pointerEnter(card);
+    fireEvent.pointerLeave(card);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "有一份心意正在等你 点一下，让惊喜慢慢打开",
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(card);
+    await flushAppEffects();
+
+    expect(screen.getByLabelText("对方小心意消息").className).toContain(
+      "is-collapsed",
+    );
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /轻轻点开看看/ }));
+    fireEvent.click(screen.getByRole("button", { name: "我收下啦" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    await flushAppEffects();
+
+    expect(screen.queryByLabelText("对方小心意消息")).toBeNull();
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect(windowCommandsMock.dockWindowAtEdge).not.toHaveBeenCalled();
+  });
+
+  it("keeps the expanded surprise card and FIFO unchanged when edge restore fails", async () => {
+    arrangeOnlinePair();
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("bottom");
+    windowCommandsMock.restoreWindowFromEdgePeek.mockRejectedValueOnce(
+      new Error("restore failed"),
+    );
+    const { container } = render(<App />);
+
+    await flushAppEffects();
+    emitRemoteSurprise();
+    emitRemoteText("queued-message", "下一条消息");
+    await dragPetPastThresholdAndRelease(container);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "有一份心意正在等你 点一下，让惊喜慢慢打开",
+      }),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.resetWindowPosition).toHaveBeenCalledTimes(1),
+    );
+
+    expect(screen.queryByLabelText("对方小心意消息")).toBeNull();
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "有一份心意正在等你 点一下，让惊喜慢慢打开",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", {
+        name: "下一条消息 有一句话想让你看见",
+      }),
+    ).toBeNull();
+    expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
+      "bottom",
+    );
+    expect(windowCommandsMock.dockWindowAtEdge).not.toHaveBeenCalled();
+  });
+
+  it("restores from a static edge image load failure once", async () => {
     windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
     const { container } = render(<App />);
 
     await dragPetPastThresholdAndRelease(container);
-    windowCommandsMock.startWindowDrag.mockClear();
-
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
-
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
-    }
-
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    const edgeImage = screen.getByAltText("桌宠边缘退出");
+    const edgeImage = await screen.findByAltText("边缘微型桌宠");
     fireEvent.error(edgeImage);
     fireEvent.error(edgeImage);
     await flushAppEffects();
@@ -2234,8 +4013,7 @@ describe("App", () => {
     expect(windowCommandsMock.restoreWindowFromEdgePeek).toHaveBeenCalledWith(
       "left",
     );
-    expect(windowCommandsMock.startWindowDrag).not.toHaveBeenCalled();
-    expect(screen.queryByAltText("桌宠边缘退出")).toBeNull();
+    expect(screen.queryByAltText("边缘微型桌宠")).toBeNull();
   });
 
   it("does not snap imported packages that have no edge interaction profile", async () => {
@@ -2254,53 +4032,10 @@ describe("App", () => {
 
     expect(windowCommandsMock.snapWindowToEdgeIfNeeded).not.toHaveBeenCalled();
     expect(screen.getByRole("img", { name: "月亮伙伴" })).toBeTruthy();
-    expect(screen.queryByAltText("桌宠边缘进入")).toBeNull();
+    expect(screen.queryByAltText("边缘微型桌宠")).toBeNull();
   });
 
-  it("pauses auto movement and idle scheduling while edge interaction is active, then resumes after exit", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const raf = installAnimationFrameController();
-    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
-    const { container } = render(<App />);
-
-    await dragPetPastThresholdAndRelease(container);
-    expect(screen.getByAltText("桌宠边缘进入")).toBeTruthy();
-    windowCommandsMock.moveWindowForAutoStep.mockClear();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
-
-    expect(windowCommandsMock.moveWindowForAutoStep).not.toHaveBeenCalled();
-    expect(
-      container.querySelector(".pet-frame-stage")?.getAttribute("data-action"),
-    ).toBe("idle-breathe");
-
-    const edgeStage = screen
-      .getByAltText("桌宠边缘进入")
-      .closest(".edge-pet-stage");
-
-    if (!edgeStage) {
-      throw new Error("edge pet stage missing");
-    }
-
-    fireEvent.pointerDown(edgeStage, { pointerId: 1, clientX: 10, clientY: 10 });
-    fireEvent.pointerMove(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    fireEvent.pointerUp(edgeStage, { pointerId: 1, clientX: 18, clientY: 10 });
-    raf.step(0);
-    raf.step(750);
-    await flushAppEffects();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15000);
-    });
-
-    expect(windowCommandsMock.moveWindowForAutoStep).toHaveBeenCalledTimes(1);
-    raf.restore();
-  });
-
-  it("disables and persists click-through before opening settings from the context menu", async () => {
+  it("temporarily disables click-through before opening settings from the context menu", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
     render(<App />);
 
@@ -2318,8 +4053,58 @@ describe("App", () => {
     const settingsButton = screen.getByRole("button", { name: "设置" });
     expect(settingsButton.getAttribute("aria-expanded")).toBe("true");
     expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
-    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ clickThrough: false }),
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+      true,
+    );
+  });
+
+  it("restores full click-through after closing settings opened with a temporary recovery", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
+    render(<App />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+    });
+    windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
+
+    await openSettingsFromContextMenu();
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+    windowCommandsMock.setClickThrough.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+      true,
+    );
+  });
+
+  it("restores full click-through after closing settings with the bottom settings toggle", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({ clickThrough: true });
+    render(<App />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+    });
+    windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
+
+    await openSettingsFromContextMenu();
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+    windowCommandsMock.setClickThrough.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    expect(document.getElementById("settings-panel")?.className).toBe(
+      "settings-dock is-hidden",
+    );
+    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(
+      true,
     );
   });
 
@@ -2480,12 +4265,14 @@ describe("App", () => {
       within(screen.getByLabelText("对方桌宠消息")).getByText("摸摸头"),
     ).toBeTruthy();
 
-    act(() => vi.advanceTimersByTime(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    await flushAppEffects();
     expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
   });
 
-  it("temporarily disables click-through while a remote message waits for acknowledgement", async () => {
-    vi.useFakeTimers();
+  it("keeps global click-through enabled for remote messages and lets tray Settings inspect them", async () => {
     windowCommandsMock.readSettings.mockResolvedValueOnce({
       clickThrough: true,
       sync: {
@@ -2515,16 +4302,154 @@ describe("App", () => {
     });
 
     await flushAppEffects();
-    expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(false);
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(false);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+
+    act(() => {
+      windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "settings" });
+      windowCommandsMock.openSettingsHandler?.();
+    });
+
+    expect(screen.getByRole("button", { name: "设置" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
     expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
 
-    fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
-    await flushAppEffects();
-    act(() => vi.advanceTimersByTime(800));
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+
+    expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+  });
+
+  it("opens tray Settings over an unread edge notice without changing global click-through or the FIFO", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...pairedSyncSettings(),
+      clickThrough: true,
+    });
+    windowCommandsMock.snapWindowToEdgeIfNeeded.mockResolvedValueOnce("left");
+    const { container } = render(<App />);
 
     await flushAppEffects();
-    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    windowCommandsMock.setClickThrough.mockClear();
+    emitRemoteText("edge-global-click-through", "边缘未读消息");
+    await flushAppEffects();
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(false);
+
+    await dragPetPastThresholdAndRelease(container);
+    await clearDragClickSuppression();
+    expect(
+      screen.getByRole("button", {
+        name: "边缘未读消息 有一句话想让你看见",
+      }),
+    ).toBeTruthy();
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(false);
+
+    act(() => {
+      windowCommandsMock.clickThroughRecoveredHandler?.({ reason: "settings" });
+      windowCommandsMock.openSettingsHandler?.();
+    });
+
+    expect(screen.getByRole("button", { name: "设置" }).getAttribute("aria-expanded")).toBe("true");
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    expect(
+      screen.getByRole("button", {
+        name: "边缘未读消息 有一句话想让你看见",
+      }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText("点击穿透") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("reveals and dismisses a received surprise before promoting queued text", async () => {
+    vi.useFakeTimers();
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      clickThrough: true,
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    render(<App />);
+
+    await flushAppEffects();
     expect(windowCommandsMock.setClickThrough).toHaveBeenCalledWith(true);
+    expect(realtimeSyncMock.callbacks).toBeTruthy();
+    windowCommandsMock.setClickThrough.mockClear();
+    windowCommandsMock.writeSettings.mockClear();
+
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "surprise_1",
+        fromDeviceId: "dev_b",
+        text: "一份小心意在等你。惊喜暗号：A-1024。是我不好。",
+        at: "2026-08-12T10:00:00.000Z",
+        content: {
+          kind: "surprise",
+          version: 1,
+          theme: "apology",
+          secret: "A-1024",
+          note: "是我不好。",
+        },
+      });
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_2",
+        fromDeviceId: "dev_b",
+        text: "第二条",
+        at: "2026-08-12T10:00:01.000Z",
+      });
+    });
+
+    await flushAppEffects();
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(false);
+    expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
+    const surpriseLayer = screen.getByLabelText("对方小心意消息");
+    expect(surpriseLayer).toBeTruthy();
+    expect(screen.queryByText("A-1024")).toBeNull();
+    expect(screen.queryByText("是我不好。")).toBeNull();
+    expect(within(surpriseLayer).queryByText("第二条")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /轻轻点开看看/ }));
+    await flushAppEffects();
+    expect(screen.getByText("惊喜暗号")).toBeTruthy();
+    expect(screen.getByText("A-1024")).toBeTruthy();
+    expect(screen.getByText("是我不好。")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "我收下啦" }));
+    await flushAppEffects();
+    expect(screen.getByLabelText("对方小心意消息").className).toContain(
+      "is-dismissing",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    await flushAppEffects();
+
+    expect(screen.queryByLabelText("对方小心意消息")).toBeNull();
+    const secondRemoteLayer = screen.getByLabelText("对方桌宠消息");
+    await advanceTypewriterText("第二条");
+    expect(within(secondRemoteLayer).getByText("第二条")).toBeTruthy();
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(true);
+
+    fireEvent.pointerEnter(secondRemoteLayer);
+    await flushAppEffects();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    await flushAppEffects();
+
+    expect(screen.queryByLabelText("对方桌宠消息")).toBeNull();
+    expect(windowCommandsMock.setClickThrough).not.toHaveBeenCalledWith(true);
     expect(windowCommandsMock.writeSettings).not.toHaveBeenCalled();
   });
 
@@ -2566,7 +4491,10 @@ describe("App", () => {
 
     fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
     await flushAppEffects();
-    act(() => vi.advanceTimersByTime(800));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    await flushAppEffects();
 
     const secondRemoteLayer = screen.getByLabelText("对方桌宠消息");
     await advanceTypewriterText("第二条");
@@ -2773,6 +4701,164 @@ describe("App", () => {
     expect(relayHttpClientMock.acceptPairCode).not.toHaveBeenCalled();
   });
 
+  it("retries a pending local profile when realtime reconnects", async () => {
+    realtimeSyncMock.state.status = "disconnected";
+    relayHttpClientMock.saveProfile.mockResolvedValueOnce({
+      ok: true,
+      profile: {
+        ...localProfile,
+        updatedAt: "2026-08-18T08:00:00.000Z",
+      },
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    const view = render(<App />);
+    await flushAppEffects();
+
+    expect(relayHttpClientMock.saveProfile).not.toHaveBeenCalled();
+
+    realtimeSyncMock.state.status = "connected";
+    view.rerender(<App />);
+
+    await waitFor(() =>
+      expect(relayHttpClientMock.saveProfile).toHaveBeenCalledWith({
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        profile: localProfile,
+      }),
+    );
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profile: expect.objectContaining({ syncState: "synced" }),
+        }),
+      ),
+    );
+  });
+
+  it("retries a failed pending upload only after the next reconnect edge", async () => {
+    realtimeSyncMock.state.status = "disconnected";
+    relayHttpClientMock.saveProfile.mockResolvedValue({
+      ok: false,
+      code: "relay_unavailable",
+      message: "Relay unavailable",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: "pair_1",
+        peerDeviceId: "dev_b",
+      },
+    });
+    const view = render(<App />);
+    await flushAppEffects();
+
+    realtimeSyncMock.state.status = "connected";
+    view.rerender(<App />);
+    await waitFor(() =>
+      expect(relayHttpClientMock.saveProfile).toHaveBeenCalledTimes(1),
+    );
+    await flushAppEffects();
+    expect(relayHttpClientMock.saveProfile).toHaveBeenCalledTimes(1);
+
+    realtimeSyncMock.state.status = "disconnected";
+    view.rerender(<App />);
+    await flushAppEffects();
+    realtimeSyncMock.state.status = "connected";
+    view.rerender(<App />);
+
+    await waitFor(() =>
+      expect(relayHttpClientMock.saveProfile).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("marks a pending profile synced after creating a pair code", async () => {
+    relayHttpClientMock.createPairCode.mockResolvedValueOnce({
+      ok: true,
+      code: "123456",
+      expiresAt: "2026-08-03T12:10:00.000Z",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
+
+    await waitFor(() => expect(screen.getByLabelText("当前绑定码")).toBeTruthy());
+    expect(windowCommandsMock.writeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: expect.objectContaining({ syncState: "synced" }),
+      }),
+    );
+  });
+
+  it("keeps a pending profile pending when pair-code creation fails", async () => {
+    relayHttpClientMock.createPairCode.mockResolvedValueOnce({
+      ok: false,
+      code: "relay_unavailable",
+      message: "Relay unavailable",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    windowCommandsMock.writeSettings.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "生成绑定码" }));
+
+    await screen.findByText("Relay unavailable");
+    expect(screen.getByText("等待同步")).toBeTruthy();
+    expect(
+      windowCommandsMock.writeSettings.mock.calls.some(
+        ([settings]) => settings.profile?.syncState === "synced",
+      ),
+    ).toBe(false);
+  });
+
   it("includes the complete profile when accepting and caches the returned peer profile", async () => {
     relayHttpClientMock.acceptPairCode.mockResolvedValueOnce({
       ok: true,
@@ -2781,7 +4867,10 @@ describe("App", () => {
       peerProfile,
     });
     windowCommandsMock.readSettings.mockResolvedValueOnce({
-      ...completeProfileSettings(),
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
       sync: {
         enabled: true,
         relayUrl: "http://159.75.175.47:8787",
@@ -2815,10 +4904,49 @@ describe("App", () => {
           peerDeviceId: "dev_b",
         }),
         profile: expect.objectContaining({
+          syncState: "synced",
           peerByDeviceId: { dev_b: peerProfile },
         }),
       }),
     );
+  });
+
+  it("keeps a pending profile pending when accepting a pair code fails", async () => {
+    relayHttpClientMock.acceptPairCode.mockResolvedValueOnce({
+      ok: false,
+      code: "relay_unavailable",
+      message: "Relay unavailable",
+    });
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      profile: {
+        ...completeProfileSettings().profile,
+        syncState: "pending",
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    windowCommandsMock.writeSettings.mockClear();
+    fireEvent.change(screen.getByLabelText("输入绑定码"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "绑定" }));
+
+    await screen.findByText("Relay unavailable");
+    expect(screen.getByText("等待同步")).toBeTruthy();
+    expect(
+      windowCommandsMock.writeSettings.mock.calls.some(
+        ([settings]) => settings.profile?.syncState === "synced",
+      ),
+    ).toBe(false);
   });
 
   it("stores realtime peer profiles through the profile sync cache", async () => {
