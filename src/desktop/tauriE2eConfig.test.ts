@@ -357,7 +357,7 @@ describe("macOS Tauri embedded E2E config", () => {
     const waitSpec = edgeSpec.slice(edgeSpec.indexOf("async function waitForWindowNearEdge"));
 
     expect(edgeSpec).toMatch(
-      /await\s+invokeTauri<WindowState>\("e2e_move_near_edge",\s*\{\s*side\s*\}\);[\s\S]*?const\s+nearEdgeState\s*=\s*await\s+waitForWindowNearEdge\(side\);[\s\S]*?await\s+dispatchDragReleaseOnPetStage\(\);/,
+      /await\s+invokeTauri<WindowState>\("e2e_move_near_edge",\s*\{\s*side\s*\}\);[\s\S]*?const\s+nearEdgeState\s*=\s*await\s+waitForWindowNearEdge\(side\);[\s\S]*?await\s+dispatchDragReleaseOnPetStage\(side\);/,
     );
     expect(waitSpec).toContain("waitForWindowState");
     expect(waitSpec).toContain("EDGE_TRIGGER_THRESHOLD_PHYSICAL_PX = 24");
@@ -373,6 +373,57 @@ describe("macOS Tauri embedded E2E config", () => {
     expect(edgeSpec).not.toContain("e2e_trigger_edge_snap");
     expect(waitSpec).not.toContain("browser.pause");
     expect(waitSpec).not.toContain("setTimeout");
+  });
+
+  it("drags outward from each requested edge through the real pointer path", () => {
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    const dragSpec = spec.slice(spec.indexOf("async function dispatchDragReleaseOnPetStage"));
+
+    expect(dragSpec).toContain("dispatchDragReleaseOnPetStage(side: EdgeSide)");
+    for (const delta of [
+      'left: { x: -32, y: 0 }',
+      'right: { x: 32, y: 0 }',
+      'top: { x: 0, y: -32 }',
+      'bottom: { x: 0, y: 32 }',
+    ]) {
+      expect(dragSpec).toContain(delta);
+    }
+    expect(dragSpec).toContain("const endX = startX + dragDelta.x");
+    expect(dragSpec).toContain("const endY = startY + dragDelta.y");
+    expect(dragSpec).toContain('makePointerEvent("pointermove", endX, endY)');
+    expect(dragSpec).toContain('makePointerEvent("pointerup", endX, endY)');
+    expect(dragSpec).not.toContain("startX + 32");
+    expect(dragSpec).not.toContain("e2e_trigger_edge_snap");
+  });
+
+  it("waits for the requested native dock boundary before screenshot and restore", () => {
+    const spec = readText("e2e/macos/specs/native-parity.e2e.ts");
+    const edgeSpec = spec.slice(
+      spec.indexOf("async function verifyCurrentEdgeBehavior"),
+      spec.indexOf("async function openSettingsFromContextMenu"),
+    );
+    const dockWaitSpec = edgeSpec.slice(
+      edgeSpec.indexOf("async function waitForWindowDockedAtEdge"),
+    );
+
+    expect(edgeSpec).toMatch(
+      /const\s+dockedState\s*=\s*await\s+waitForWindowDockedAtEdge\(side\);[\s\S]*?await\s+saveNativeParityScreenshot\(edgeScreenshotFiles\[side\],[\s\S]*?await\s+invokeTauri<WindowState>\("e2e_restore_edge"/,
+    );
+    expect(dockWaitSpec).toContain("waitForWindowState");
+    expect(dockWaitSpec).toContain("DOCKED_BOUNDARY_TOLERANCE_PHYSICAL_PX = 1");
+    expect(dockWaitSpec).toContain("Math.abs(state.position.x - workArea.x)");
+    expect(dockWaitSpec).toMatch(
+      /Math\.abs\(\s*state\.position\.x\s*\+\s*state\.size\.width\s*-\s*\(workArea\.x\s*\+\s*workArea\.width\)\s*,?\s*\)/,
+    );
+    expect(dockWaitSpec).toContain("Math.abs(state.position.y - workArea.y)");
+    expect(dockWaitSpec).toMatch(
+      /Math\.abs\(\s*state\.position\.y\s*\+\s*state\.size\.height\s*-\s*\(workArea\.y\s*\+\s*workArea\.height\)\s*,?\s*\)/,
+    );
+    expect(dockWaitSpec).not.toContain("Math.max");
+    expect(dockWaitSpec).not.toContain("browser.pause");
+    expect(dockWaitSpec).not.toContain("setTimeout");
+    expect(edgeSpec).toContain("dockedX");
+    expect(edgeSpec).toContain("dockedY");
   });
 
   it("registers native parity driver commands only behind the e2e feature", () => {

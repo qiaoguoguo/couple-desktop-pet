@@ -452,14 +452,12 @@ async function verifyCurrentEdgeBehavior(): Promise<void> {
     await invokeTauri<WindowState>("e2e_move_near_edge", { side });
     const nearEdgeState = await waitForWindowNearEdge(side);
     const nearEdgeMargin = readPhysicalEdgeMargin(nearEdgeState, side);
-    await dispatchDragReleaseOnPetStage();
+    await dispatchDragReleaseOnPetStage(side);
+    let screenshotSelector: string;
     if (side === "top") {
       const edgeStage = await $(`.edge-pet-stage[data-edge-phase="idle"]`);
       await expect(edgeStage).toBeDisplayed();
-      await saveNativeParityScreenshot(
-        edgeScreenshotFiles[side],
-        '.edge-pet-stage[data-edge-phase="idle"]',
-      );
+      screenshotSelector = '.edge-pet-stage[data-edge-phase="idle"]';
     } else {
       const companionSelector = `.edge-companion-stage[data-edge-side="${side}"]`;
       const companionStage = await $(companionSelector);
@@ -468,14 +466,20 @@ async function verifyCurrentEdgeBehavior(): Promise<void> {
         '.edge-companion-frame[data-frame-kind="idle"]',
       );
       await expect(companionFrame).toBeDisplayed();
-      await saveNativeParityScreenshot(edgeScreenshotFiles[side], companionSelector);
+      screenshotSelector = companionSelector;
     }
+    const dockedState = await waitForWindowDockedAtEdge(side);
+    const dockedBoundaryDelta = readPhysicalDockBoundaryDelta(dockedState, side);
+    await saveNativeParityScreenshot(edgeScreenshotFiles[side], screenshotSelector);
     const edgeEvidence = {
       side,
       idle: true,
       nearEdgeX: nearEdgeState.position.x,
       nearEdgeY: nearEdgeState.position.y,
       nearEdgeMargin,
+      dockedX: dockedState.position.x,
+      dockedY: dockedState.position.y,
+      dockedBoundaryDelta,
     };
     writeNativeParityLog(`edge-${side}.log`, edgeEvidence);
     recordNativeParityEvent(`edge-${side}`, edgeEvidence);
@@ -514,6 +518,43 @@ function readPhysicalEdgeMargin(state: WindowState, side: EdgeSide): number | nu
       return Math.max(
         0,
         workArea.y + workArea.height - (state.position.y + state.size.height),
+      );
+  }
+}
+
+async function waitForWindowDockedAtEdge(side: EdgeSide): Promise<WindowState> {
+  const DOCKED_BOUNDARY_TOLERANCE_PHYSICAL_PX = 1;
+
+  return waitForWindowState((state) => {
+    const boundaryDelta = readPhysicalDockBoundaryDelta(state, side);
+    return (
+      boundaryDelta !== null &&
+      boundaryDelta <= DOCKED_BOUNDARY_TOLERANCE_PHYSICAL_PX
+    );
+  });
+}
+
+function readPhysicalDockBoundaryDelta(
+  state: WindowState,
+  side: EdgeSide,
+): number | null {
+  const workArea = state.work_area;
+  if (!workArea) {
+    return null;
+  }
+
+  switch (side) {
+    case "left":
+      return Math.abs(state.position.x - workArea.x);
+    case "right":
+      return Math.abs(
+        state.position.x + state.size.width - (workArea.x + workArea.width),
+      );
+    case "top":
+      return Math.abs(state.position.y - workArea.y);
+    case "bottom":
+      return Math.abs(
+        state.position.y + state.size.height - (workArea.y + workArea.height),
       );
   }
 }
@@ -662,10 +703,17 @@ async function waitForSavedWindowPosition(
   return latest;
 }
 
-async function dispatchDragReleaseOnPetStage(): Promise<void> {
+async function dispatchDragReleaseOnPetStage(side: EdgeSide): Promise<void> {
+  const dragDeltaBySide: Record<EdgeSide, { x: number; y: number }> = {
+    left: { x: -32, y: 0 },
+    right: { x: 32, y: 0 },
+    top: { x: 0, y: -32 },
+    bottom: { x: 0, y: 32 },
+  };
+  const dragDelta = dragDeltaBySide[side];
   const stage = await $(".pet-frame-stage");
   await expect(stage).toBeDisplayed();
-  await browser.execute((target) => {
+  await browser.execute((target, dragDelta) => {
     if (!(target instanceof HTMLElement)) {
       throw new Error("pet frame stage not found for edge drag release");
     }
@@ -673,6 +721,8 @@ async function dispatchDragReleaseOnPetStage(): Promise<void> {
     const rect = target.getBoundingClientRect();
     const startX = Math.round(rect.left + rect.width / 2);
     const startY = Math.round(rect.top + rect.height / 2);
+    const endX = startX + dragDelta.x;
+    const endY = startY + dragDelta.y;
     const eventInit = {
       bubbles: true,
       cancelable: true,
@@ -692,7 +742,7 @@ async function dispatchDragReleaseOnPetStage(): Promise<void> {
         : new MouseEvent(type, { ...eventInit, clientX: x, clientY: y, screenX: x, screenY: y });
 
     target.dispatchEvent(makePointerEvent("pointerdown", startX, startY));
-    target.dispatchEvent(makePointerEvent("pointermove", startX + 32, startY));
-    target.dispatchEvent(makePointerEvent("pointerup", startX + 32, startY));
-  }, stage);
+    target.dispatchEvent(makePointerEvent("pointermove", endX, endY));
+    target.dispatchEvent(makePointerEvent("pointerup", endX, endY));
+  }, stage, dragDelta);
 }
