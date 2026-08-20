@@ -14,6 +14,15 @@ export const BUILT_IN_PET_PACKAGE_IDS = [
   Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
   Q_BOY_BUILT_IN_PET_PACKAGE_ID,
 ] as const;
+const BUILT_IN_PET_PACKAGE_ID_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["builtin:star-sleeper", Q_GIRL_BUILT_IN_PET_PACKAGE_ID],
+  ["imported:q-girl-complete-v3", Q_GIRL_BUILT_IN_PET_PACKAGE_ID],
+  ["imported:q-boy-complete-v3", Q_BOY_BUILT_IN_PET_PACKAGE_ID],
+]);
+export const SHADOWED_BUILT_IN_IMPORT_MANIFEST_IDS = [
+  "q-girl-complete-v3",
+  "q-boy-complete-v3",
+] as const;
 export const IMPORTED_PET_PACKAGE_PREFIX = "imported:" as const;
 export type PetPackageFormatVersion = 2 | 3;
 export type PetPackageRenderer = "frame-sequence" | "motion-pool";
@@ -121,6 +130,18 @@ export interface ImportedPetMotionSummary extends PetMotionManifest {
 
 export function toImportedPetPackageId(manifestId: string): string {
   return `${IMPORTED_PET_PACKAGE_PREFIX}${manifestId}`;
+}
+
+export function normalizeBuiltInPetPackageId(id: string): string {
+  return BUILT_IN_PET_PACKAGE_ID_ALIASES.get(id) ?? id;
+}
+
+export function isShadowedBuiltInImportManifestId(
+  manifestId: string,
+): boolean {
+  return SHADOWED_BUILT_IN_IMPORT_MANIFEST_IDS.some(
+    (shadowedId) => shadowedId === manifestId,
+  );
 }
 
 export function isImportedPetPackageId(id: string): boolean {

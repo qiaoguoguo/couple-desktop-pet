@@ -18,6 +18,7 @@ import {
   BUILT_IN_PET_PACKAGE_ID,
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
+  isShadowedBuiltInImportManifestId,
   type ImportedPetPackageSummary,
   type PetPackageSceneManifest,
 } from "./petPackageContract";
@@ -55,11 +56,15 @@ export function buildPetPackageRegistry(
   return [
     buildBuiltInGirlPackage(),
     buildBuiltInBoyPackage(),
-    ...importedPackages.flatMap((pkg) => {
-      const resolved = buildImportedPackage(pkg, convertFileSrc);
+    ...importedPackages
+      .filter(
+        (pkg) => !isShadowedBuiltInImportManifestId(pkg.manifestId),
+      )
+      .flatMap((pkg) => {
+        const resolved = buildImportedPackage(pkg, convertFileSrc);
 
-      return resolved ? [resolved] : [];
-    }),
+        return resolved ? [resolved] : [];
+      }),
   ];
 }
 

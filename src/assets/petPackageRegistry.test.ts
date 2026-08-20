@@ -66,6 +66,41 @@ describe("pet package registry", () => {
     ]);
   });
 
+  it("suppresses only exact historical built-in import manifests", () => {
+    const packages = buildPetPackageRegistry(
+      [
+        importedPackageSummary({
+          id: "imported:legacy-girl",
+          manifestId: "q-girl-complete-v3",
+          name: "Legacy Girl",
+        }),
+        importedPackageSummary({
+          id: "imported:legacy-boy",
+          manifestId: "q-boy-complete-v3",
+          name: "Legacy Boy",
+        }),
+        importedPackageSummary({
+          id: "imported:q-photo-chibi",
+          manifestId: "q-photo-chibi",
+          name: "Photo Chibi",
+        }),
+        importedPackageSummary({
+          id: "imported:q-boy-remix",
+          manifestId: "q-boy-complete-v3-remix",
+          name: "Boy Remix",
+        }),
+      ],
+      (path) => `asset://${path}`,
+    );
+
+    expect(packages.map(({ id }) => id)).toEqual([
+      Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
+      Q_BOY_BUILT_IN_PET_PACKAGE_ID,
+      "imported:q-photo-chibi",
+      "imported:q-boy-remix",
+    ]);
+  });
+
   it("exposes built-in v2 actions as runtime motions", () => {
     const packages = buildPetPackageRegistry([], (path) => `asset://${path}`);
     const builtIn = packages[0];

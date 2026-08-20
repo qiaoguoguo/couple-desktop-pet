@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "./defaultSettings";
 import {
   loadSettings,
@@ -154,23 +154,27 @@ describe("mergeSettings", () => {
     });
   });
 
-  it("migrates legacy built-in pet package ids to the q girl package", () => {
+  it("migrates every historical selected and peer pet package id", () => {
     expect(
       mergeSettings({
         appearance: {
-          selectedPetPackageId: "builtin:star-sleeper",
+          selectedPetPackageId: "imported:q-boy-complete-v3",
           peerPetPackageByDeviceId: {
-            dev_a: "builtin:star-sleeper",
-            dev_b: "imported:moon-buddy",
+            dev_star: "builtin:star-sleeper",
+            dev_girl: "imported:q-girl-complete-v3",
+            dev_boy: "imported:q-boy-complete-v3",
+            dev_custom: "imported:moon-buddy",
           },
         },
       }),
     ).toMatchObject({
       appearance: {
-        selectedPetPackageId: "builtin:q-girl",
+        selectedPetPackageId: "builtin:q-boy",
         peerPetPackageByDeviceId: {
-          dev_a: "builtin:q-girl",
-          dev_b: "imported:moon-buddy",
+          dev_star: "builtin:q-girl",
+          dev_girl: "builtin:q-girl",
+          dev_boy: "builtin:q-boy",
+          dev_custom: "imported:moon-buddy",
         },
       },
     });
@@ -495,6 +499,113 @@ describe("settings persistence", () => {
         syncState: "synced",
       },
     });
+  });
+
+  it("persists selected and peer package migrations exactly once", async () => {
+    const writeSettings = vi.fn(async (_settings: PetSettings) => undefined);
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => ({
+        appearance: {
+          selectedPetPackageId: "imported:q-boy-complete-v3",
+          peerPetPackageByDeviceId: {
+            dev_star: "builtin:star-sleeper",
+            dev_girl: "imported:q-girl-complete-v3",
+            dev_boy: "imported:q-boy-complete-v3",
+            dev_custom: "imported:q-photo-chibi",
+            dev_invalid: 3,
+          },
+        },
+      }),
+      writeSettings,
+    };
+
+    const loadedSettings = await loadSettings(api);
+
+    expect(loadedSettings.appearance).toEqual({
+      selectedPetPackageId: "builtin:q-boy",
+      peerPetPackageByDeviceId: {
+        dev_star: "builtin:q-girl",
+        dev_girl: "builtin:q-girl",
+        dev_boy: "builtin:q-boy",
+        dev_custom: "imported:q-photo-chibi",
+      },
+    });
+    expect(writeSettings).toHaveBeenCalledTimes(1);
+    expect(writeSettings).toHaveBeenCalledWith(loadedSettings);
+  });
+
+  it("persists combined relay and appearance migrations exactly once", async () => {
+    const writeSettings = vi.fn(async (_settings: PetSettings) => undefined);
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => ({
+        appearance: {
+          selectedPetPackageId: "imported:q-girl-complete-v3",
+          peerPetPackageByDeviceId: {
+            dev_b: "imported:q-boy-complete-v3",
+          },
+        },
+        sync: {
+          enabled: true,
+          relayUrl: "http://192.168.1.47:8787",
+          deviceId: "dev_a",
+          deviceSecret: "secret_a",
+          pairId: "pair_old_lan",
+          peerDeviceId: "dev_b",
+          activityStatus: "overtime",
+        },
+      }),
+      writeSettings,
+    };
+
+    const loadedSettings = await loadSettings(api);
+
+    expect(writeSettings).toHaveBeenCalledTimes(1);
+    const persistedSettings = writeSettings.mock.calls[0]?.[0];
+    expect(persistedSettings).toBe(loadedSettings);
+    expect(persistedSettings).toMatchObject({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_b: "builtin:q-boy",
+        },
+      },
+      sync: {
+        enabled: true,
+        relayUrl: "http://159.75.175.47:8787",
+        deviceId: "dev_a",
+        deviceSecret: "secret_a",
+        pairId: null,
+        peerDeviceId: null,
+        activityStatus: "overtime",
+      },
+    });
+  });
+
+  it("returns migrated appearance settings when persistence rejects", async () => {
+    const writeSettings = vi.fn(async (_settings: PetSettings) => {
+      throw new Error("settings write failed");
+    });
+    const api: SettingsPersistenceApi = {
+      readSettings: async () => ({
+        appearance: {
+          selectedPetPackageId: "imported:q-girl-complete-v3",
+          peerPetPackageByDeviceId: {
+            dev_boy: "imported:q-boy-complete-v3",
+          },
+        },
+      }),
+      writeSettings,
+    };
+
+    await expect(loadSettings(api)).resolves.toMatchObject({
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {
+          dev_boy: "builtin:q-boy",
+        },
+      },
+    });
+    expect(writeSettings).toHaveBeenCalledTimes(1);
   });
 
   it("loads validated settings from persistence", async () => {

@@ -5,6 +5,9 @@ import {
   PET_ACTION_FPS,
   PET_FRAMES_PER_ACTION,
   REQUIRED_PET_ACTIONS,
+  SHADOWED_BUILT_IN_IMPORT_MANIFEST_IDS,
+  isShadowedBuiltInImportManifestId,
+  normalizeBuiltInPetPackageId,
   readPetMotionPoolManifest,
   readPetPackageManifest,
 } from "./petPackageContract";
@@ -123,6 +126,41 @@ function validMotionPoolManifest(overrides: Record<string, unknown> = {}) {
 describe("pet package v2 contract", () => {
   it("uses the q-girl package as the built-in default", () => {
     expect(BUILT_IN_PET_PACKAGE_ID).toBe("builtin:q-girl");
+  });
+
+  it("normalizes historical built-in aliases without changing custom ids", () => {
+    expect(normalizeBuiltInPetPackageId("builtin:star-sleeper")).toBe(
+      "builtin:q-girl",
+    );
+    expect(
+      normalizeBuiltInPetPackageId("imported:q-girl-complete-v3"),
+    ).toBe("builtin:q-girl");
+    expect(
+      normalizeBuiltInPetPackageId("imported:q-boy-complete-v3"),
+    ).toBe("builtin:q-boy");
+    expect(normalizeBuiltInPetPackageId("imported:q-photo-chibi")).toBe(
+      "imported:q-photo-chibi",
+    );
+  });
+
+  it.each(["constructor", "toString", "__proto__"])(
+    "preserves prototype-like unknown id %s",
+    (id) => {
+      expect(normalizeBuiltInPetPackageId(id)).toBe(id);
+    },
+  );
+
+  it("matches only exact historical built-in import manifest ids", () => {
+    expect(SHADOWED_BUILT_IN_IMPORT_MANIFEST_IDS).toEqual([
+      "q-girl-complete-v3",
+      "q-boy-complete-v3",
+    ]);
+    expect(isShadowedBuiltInImportManifestId("q-girl-complete-v3")).toBe(true);
+    expect(isShadowedBuiltInImportManifestId("q-boy-complete-v3")).toBe(true);
+    expect(isShadowedBuiltInImportManifestId("q-photo-chibi")).toBe(false);
+    expect(
+      isShadowedBuiltInImportManifestId("q-boy-complete-v3-remix"),
+    ).toBe(false);
   });
 
   it("requires 30 frames at 5 fps for each 6 second action", () => {

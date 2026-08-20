@@ -1,4 +1,4 @@
-import { BUILT_IN_PET_PACKAGE_ID } from "../assets/petPackageContract";
+import { normalizeBuiltInPetPackageId } from "../assets/petPackageContract";
 import { isNullableActivityStatus } from "../../shared/activityStatus";
 import {
   readDeviceProfile,
@@ -7,8 +7,6 @@ import {
 } from "../../shared/profileProtocol";
 import { defaultSettings } from "./defaultSettings";
 import type { MovementRange, PetSettings } from "./settingsTypes";
-
-const LEGACY_BUILT_IN_PET_PACKAGE_ID = "builtin:star-sleeper";
 
 export type {
   MovementRange,
@@ -49,7 +47,10 @@ export async function loadSettings(
 
     const settings = mergeSettings(storedSettings as Partial<PetSettings>);
 
-    if (shouldPersistRelayMigration(storedSettings)) {
+    if (
+      shouldPersistRelayMigration(storedSettings) ||
+      hasAppearancePetPackageMigration(storedSettings)
+    ) {
       await api.writeSettings(settings).catch(() => undefined);
     }
 
@@ -138,6 +139,36 @@ function shouldPersistRelayMigration(settings: Record<string, unknown>): boolean
   return normalizeRelayUrlForSettings(sync.relayUrl).migrated;
 }
 
+function hasAppearancePetPackageMigration(
+  settings: Record<string, unknown>,
+): boolean {
+  const appearance = settings.appearance;
+
+  if (!isRecord(appearance)) {
+    return false;
+  }
+
+  if (hasPetPackageIdMigration(appearance.selectedPetPackageId)) {
+    return true;
+  }
+
+  const peerPetPackageByDeviceId = appearance.peerPetPackageByDeviceId;
+
+  return (
+    isRecord(peerPetPackageByDeviceId) &&
+    Object.values(peerPetPackageByDeviceId).some(hasPetPackageIdMigration)
+  );
+}
+
+function hasPetPackageIdMigration(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  const packageId = value.trim();
+  return normalizeBuiltInPetPackageId(packageId) !== packageId;
+}
+
 function isLegacyPrivateRelayUrl(relayUrl: string): boolean {
   let url: URL;
 
@@ -190,7 +221,7 @@ function readAppearanceSettings(value: unknown): PetSettings["appearance"] {
   }
 
   return {
-    selectedPetPackageId: normalizePetPackageId(
+    selectedPetPackageId: normalizeBuiltInPetPackageId(
       readNonEmptyString(
         value.selectedPetPackageId,
         defaultSettings.appearance.selectedPetPackageId,
@@ -257,15 +288,9 @@ function readPetPackageMapping(value: unknown): Record<string, string> {
   return Object.fromEntries(
     Object.entries(readStringRecord(value)).map(([key, packageId]) => [
       key,
-      normalizePetPackageId(packageId),
+      normalizeBuiltInPetPackageId(packageId),
     ]),
   );
-}
-
-function normalizePetPackageId(packageId: string): string {
-  return packageId === LEGACY_BUILT_IN_PET_PACKAGE_ID
-    ? BUILT_IN_PET_PACKAGE_ID
-    : packageId;
 }
 
 function readStringRecord(value: unknown): Record<string, string> {
