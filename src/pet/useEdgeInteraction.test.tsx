@@ -44,7 +44,6 @@ function createProfile(side: EdgeSide): EdgeInteractionProfile {
             side,
             placement: side === "bottom" ? ("bottom" as const) : ("side" as const),
             idleUrl: `/${side}/companion/idle.png`,
-            blinkUrl: `/${side}/companion/blink.png`,
             mirrorX: side === "left",
             baseVisibleHeightPx: 34 as const,
             minVisibleHeightPx: 30 as const,
@@ -54,7 +53,6 @@ function createProfile(side: EdgeSide): EdgeInteractionProfile {
               heightPx: 100,
               contactAnchor: { x: 0.5, y: 0.5 },
               idleFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
-              blinkFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
             },
           },
         }
@@ -165,7 +163,6 @@ describe("useEdgeInteraction", () => {
     const requestedFrames = preloadFrames.mock.calls.flatMap(([frames]) => frames);
     expect(requestedFrames).not.toContain("/left/enter/0001.png");
     expect(requestedFrames).not.toContain("/left/react/0001.png");
-    expect(requestedFrames).not.toContain("/left/companion/blink.png");
   });
 
   it("preloads the first legacy idle frame for top", async () => {

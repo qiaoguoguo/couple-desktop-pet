@@ -10,46 +10,46 @@ Runtime contract:
 
 - `formatVersion: 2`
 - `renderer: frame-sequence`
-- 12 actions
-- 30 PNG frames per action
-- 5 fps
-- 6000 ms per action
-- frame path pattern: `frames/<action>/0001.png` to `0030.png`
+- 12 main actions, each with 30 PNG frames at 5 FPS for 6000 ms
+- main-action frame path pattern: `frames/<action>/0001.png` to
+  `frames/<action>/0030.png`
+- `motion-message-pair` with 48 PNG frames at 8 FPS for 6000 ms
+- paired-message frame path pattern: `frames/motion-message-pair/0001.png` to
+  `frames/motion-message-pair/0048.png`
 
 ## Main Action Frames
 
 Current status:
 
-- The checked-in frames are temporary local verification assets generated from the project reference image with chroma-key removal and lightweight transforms.
-- They are only meant to keep the q-girl code path, build, import contract, and playback tests verifiable.
-- They are not final action-quality animation resources and should be replaced with project-owned ImageGen-rendered action frames before user-facing release.
+- The checked-in 12 x 30 main-action frames and 48-frame paired-message motion
+  are the product-approved complete built-in Taotao release resource.
+- They are project-created from the approved character reference with the
+  documented local generation workflow, chroma-key removal, and lightweight
+  transforms.
+- The manifest, build, import contract, and playback tests consume these exact
+  committed files.
 
-The final assets must not contain third-party logos, readable clothing text, watermarks, unrelated props, visible green fringe, half-body splits, missing glasses, missing feet, or character drift.
+The release assets must not contain third-party logos, readable clothing text,
+watermarks, unrelated props, visible green fringe, half-body splits, missing
+glasses, missing feet, or character drift.
 
-## Edge Interaction Frames
+## Static Edge Assets
 
-`edge-interaction/` contains project-owned, purpose-made RGBA PNG sequences for desktop edge interaction V2. These are separate from the temporary main action placeholders above and are not derived by clipping or transforming `preview.png`.
+`edge-interaction/top/idle/0001.png` is the only retained hanging sprite. It is
+a project-owned 640x720 transparent RGBA image frozen on its first frame while
+the pet is docked at the top edge.
 
-Each direction uses a 640x720 transparent canvas for the 320x360 desktop window:
-
-- `left/enter`: 6 frames, 8 fps, 750 ms.
-- `left/idle`: 22 frames, 4 fps, 5500 ms loop.
-- `left/react`: 6 frames, 6 fps, 1000 ms.
-- `right/enter`: 6 frames, 8 fps, 750 ms.
-- `right/idle`: 22 frames, 4 fps, 5500 ms loop.
-- `right/react`: 6 frames, 6 fps, 1000 ms.
-- `top/enter`: 6 frames, 8 fps, 750 ms.
-- `top/idle`: 22 frames, 4 fps, 5500 ms loop.
-- `top/react`: 6 frames, 6 fps, 1000 ms.
-- `bottom/enter`: 6 frames, 8 fps, 750 ms.
-- `bottom/idle`: 22 frames, 4 fps, 5500 ms loop.
-- `bottom/react`: 6 frames, 6 fps, 1000 ms.
+Left, right, and bottom docking use the static transparent sprites in
+`edge-companion/side/idle.png` and `edge-companion/bottom/idle.png`. Message and
+surprise notice cards remain separate UI surfaces. Animated phase sequences and
+blink variants are intentionally absent from the runtime package.
 
 The edge registry uses these normalized contact anchors:
 
-- left: x `0.275`
-- right: x `0.725`
+- left: x `0.2203125`
+- right: x `0.778125`
 - top: y `0.05`
 - bottom: y `0.367`
 
-All edge frames must stay 640x720 RGBA with transparent corners and must remain aligned to their direction's contact anchor.
+All retained edge assets must remain RGBA PNGs with transparent corners and
+stay aligned to their direction's contact anchor.

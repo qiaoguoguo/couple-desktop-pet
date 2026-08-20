@@ -29,7 +29,6 @@ function createVisual(
     side: "right",
     placement: "side",
     idleUrl: "/edge/side/idle.png",
-    blinkUrl: "/edge/side/blink.png",
     mirrorX: false,
     baseVisibleHeightPx: 34,
     minVisibleHeightPx: 30,
@@ -39,7 +38,6 @@ function createVisual(
       heightPx: 100,
       contactAnchor: { x: 0.8, y: 0.5 },
       idleFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
-      blinkFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
     },
     ...overrides,
   };

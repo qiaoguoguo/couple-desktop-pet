@@ -52,7 +52,6 @@ export function getEdgeCompanionLayout(
   profile: EdgeCompanionVisualProfile,
   scale: number,
   alphaBounds: FrameAlphaBounds | null,
-  frameKind: "idle" | "blink" = "idle",
 ): EdgeCompanionLayout {
   const visibleHeightPx = getEdgeCompanionVisibleHeight(scale, profile);
   const sourceScale = alphaBounds
@@ -61,10 +60,7 @@ export function getEdgeCompanionLayout(
   const boxWidth = profile.fixedBox.widthPx * sourceScale;
   const boxHeight = profile.fixedBox.heightPx * sourceScale;
   const boxPosition = getFixedBoxPosition(profile, boxWidth, boxHeight);
-  const placement =
-    frameKind === "blink"
-      ? profile.fixedBox.blinkFrame
-      : profile.fixedBox.idleFrame;
+  const placement = profile.fixedBox.idleFrame;
   const sourceFrameX = profile.mirrorX
     ? profile.fixedBox.widthPx - placement.xPx - placement.widthPx
     : placement.xPx;

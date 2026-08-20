@@ -150,7 +150,6 @@ function createCompanionVisual(
     side,
     placement: side === "bottom" ? "bottom" : "side",
     idleUrl: `/edge/${side}/micro-idle.png`,
-    blinkUrl: `/edge/${side}/micro-blink.png`,
     mirrorX: side === "left",
     baseVisibleHeightPx: 34,
     minVisibleHeightPx: 30,
@@ -163,7 +162,6 @@ function createCompanionVisual(
         y: side === "bottom" ? 0.9 : 0.5,
       },
       idleFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
-      blinkFrame: { xPx: 0, yPx: 0, widthPx: 100, heightPx: 100 },
     },
   };
 }

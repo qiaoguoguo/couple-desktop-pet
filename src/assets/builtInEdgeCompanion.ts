@@ -10,16 +10,8 @@ const sideIdleUrl = new URL(
   "./pets/q-girl/edge-companion/side/idle.png",
   import.meta.url,
 ).href;
-const sideBlinkUrl = new URL(
-  "./pets/q-girl/edge-companion/side/blink.png",
-  import.meta.url,
-).href;
 const bottomIdleUrl = new URL(
   "./pets/q-girl/edge-companion/bottom/idle.png",
-  import.meta.url,
-).href;
-const bottomBlinkUrl = new URL(
-  "./pets/q-girl/edge-companion/bottom/blink.png",
   import.meta.url,
 ).href;
 
@@ -32,7 +24,6 @@ const sideFixedBox = {
   heightPx: 1268,
   contactAnchor: { x: rightSideContactX, y: 0.5 },
   idleFrame: { xPx: 0, yPx: 0, widthPx: 1254, heightPx: 1254 },
-  blinkFrame: { xPx: 0, yPx: 0, widthPx: 1254, heightPx: 1254 },
 } as const satisfies EdgeCompanionFixedBox;
 
 const bottomFixedBox = {
@@ -40,7 +31,6 @@ const bottomFixedBox = {
   heightPx: 1207,
   contactAnchor: { x: bottomContactX, y: bottomContactY },
   idleFrame: { xPx: 11, yPx: 0, widthPx: 1303, heightPx: 1207 },
-  blinkFrame: { xPx: 11, yPx: 0, widthPx: 1303, heightPx: 1207 },
 } as const satisfies EdgeCompanionFixedBox;
 
 const qGirlCompanionVisuals = {
@@ -48,7 +38,6 @@ const qGirlCompanionVisuals = {
     side: "left",
     placement: "side",
     idleUrl: sideIdleUrl,
-    blinkUrl: sideBlinkUrl,
     mirrorX: true,
     baseVisibleHeightPx: 34,
     minVisibleHeightPx: 30,
@@ -62,7 +51,6 @@ const qGirlCompanionVisuals = {
     side: "right",
     placement: "side",
     idleUrl: sideIdleUrl,
-    blinkUrl: sideBlinkUrl,
     mirrorX: false,
     baseVisibleHeightPx: 34,
     minVisibleHeightPx: 30,
@@ -73,7 +61,6 @@ const qGirlCompanionVisuals = {
     side: "bottom",
     placement: "bottom",
     idleUrl: bottomIdleUrl,
-    blinkUrl: bottomBlinkUrl,
     mirrorX: false,
     baseVisibleHeightPx: 34,
     minVisibleHeightPx: 30,

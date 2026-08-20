@@ -89,7 +89,7 @@ export function EdgeCompanionStage({
   }, [profile.idleUrl, recoverFromLoadFailure]);
 
   const layout = useMemo(
-    () => getEdgeCompanionLayout(profile, scale, alphaBounds, "idle"),
+    () => getEdgeCompanionLayout(profile, scale, alphaBounds),
     [alphaBounds, profile, scale],
   );
   const handleAssetError = useCallback(() => {

@@ -37,14 +37,12 @@ export interface EdgeCompanionFixedBox {
   heightPx: number;
   contactAnchor: EdgeAnchor;
   idleFrame: EdgeCompanionFramePlacement;
-  blinkFrame: EdgeCompanionFramePlacement;
 }
 
 export interface EdgeCompanionVisualProfile {
   side: "left" | "right" | "bottom";
   placement: "side" | "bottom";
   idleUrl: string;
-  blinkUrl: string;
   mirrorX: boolean;
   baseVisibleHeightPx: 34;
   minVisibleHeightPx: 30;
