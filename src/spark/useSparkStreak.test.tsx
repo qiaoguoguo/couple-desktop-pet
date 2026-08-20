@@ -1,5 +1,5 @@
 import { act, render, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SparkLeaderboardResponseV1,
   SparkStreakSnapshotV1,
@@ -33,6 +33,10 @@ const leaderboard: SparkLeaderboardResponseV1 = {
 };
 
 describe("useSparkStreak", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse(snapshot.asOf));
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
