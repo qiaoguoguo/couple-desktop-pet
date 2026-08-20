@@ -339,7 +339,7 @@ expect(screen.getByRole("option", { name: "桃桃" })).toBeTruthy();
 expect(screen.getByRole("option", { name: "青禾" })).toBeTruthy();
 ```
 
-Then select Qinghe for the peer and project an existing remote-message event; assert the resolved motion ID is `motion-message-pair` and its frame URL contains `pets/q-boy/motions/motion-message-pair/`.
+With Qinghe selected as the current pet, project an existing remote-message event and assert the current pet resolves `motion-message-pair` with a frame URL containing `pets/q-boy/motions/motion-message-pair/`. Separately keep Taotao as the current pet, select Qinghe for the peer, and assert the peer mapping persists as `builtin:q-boy` and the peer status identity uses Qinghe's q-boy preview; peer selection must not drive the current pet's message motion.
 
 - [ ] **Step 2: Run focused UI tests and confirm stale names fail**
 

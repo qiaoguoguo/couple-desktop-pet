@@ -227,7 +227,7 @@ describe("FramePetStage DOM frame rendering", () => {
   it("renders the generated pet frame image instead of the fallback when a frame URL exists", () => {
     const { stage } = renderStage();
 
-    const frameImage = screen.getByRole("img", { name: "Q 版小人" });
+    const frameImage = screen.getByRole("img", { name: "桃桃" });
 
     expect(stage.getAttribute("data-motion-id")).toBe("idle-breathe");
     expect(frameImage.getAttribute("src")).toContain(
@@ -252,9 +252,9 @@ describe("FramePetStage DOM frame rendering", () => {
   it("shows the fallback only after the generated frame image fails to load", () => {
     renderStage();
 
-    fireEvent.error(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.error(screen.getByRole("img", { name: "桃桃" }));
 
-    expect(screen.getByLabelText("Q 版小人开发占位")).toBeTruthy();
+    expect(screen.getByLabelText("桃桃开发占位")).toBeTruthy();
   });
 
   it("renders from the supplied motion while preserving the legacy action", () => {
@@ -367,7 +367,7 @@ describe("FramePetStage DOM frame rendering", () => {
     expect(onEdgePointerEnter).not.toHaveBeenCalled();
     expect(onEdgePointerLeave).not.toHaveBeenCalled();
     expect(onPetClick).not.toHaveBeenCalled();
-    expect(screen.queryByRole("img", { name: "Q 版小人" })).toBeNull();
+    expect(screen.queryByRole("img", { name: "桃桃" })).toBeNull();
   });
 
   it.each(["idle", "react"] as const)(
@@ -498,13 +498,13 @@ describe("FramePetStage DOM frame rendering", () => {
     vi.useFakeTimers();
     renderStage();
 
-    expect(screen.getByRole("img", { name: "Q 版小人" }).getAttribute("src")).toContain(
+    expect(screen.getByRole("img", { name: "桃桃" }).getAttribute("src")).toContain(
       "idle-breathe/0001",
     );
 
     act(() => vi.advanceTimersByTime(200));
 
-    expect(screen.getByRole("img", { name: "Q 版小人" }).getAttribute("src")).toContain(
+    expect(screen.getByRole("img", { name: "桃桃" }).getAttribute("src")).toContain(
       "idle-breathe/0002",
     );
   });

@@ -45,7 +45,7 @@ const settingsSelector = 'section[aria-label="桌宠设置"]';
 const appearanceSelector = 'section[aria-label="形象管理"]';
 const currentPackageSelectSelector =
   '//section[@aria-label="形象管理"]//label[.//span[normalize-space(.)="当前形象"]]//select';
-const builtInPackageName = "Q 版小人";
+const builtInPackageName = "桃桃";
 const edgeScreenshotFiles: Record<EdgeSide, string> = {
   left: "edge-left.png",
   right: "edge-right.png",

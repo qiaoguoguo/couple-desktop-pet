@@ -28,6 +28,8 @@ import type {
 } from "../spark/useSparkStreak";
 import { App } from "./App";
 
+const taotaoName = "桃桃";
+
 const frameAlphaBoundsMock = vi.hoisted(() => ({
   resolveFrameAlphaBounds: vi.fn(),
 }));
@@ -620,7 +622,7 @@ function arrangeOnlinePair() {
 
 async function openFocusTimerFromInteractionMenu() {
   await flushAppEffects();
-  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("img", { name: taotaoName }));
   fireEvent.click(screen.getByRole("menuitem", { name: "专注一下" }));
   await flushAppEffects();
   expect(screen.getByRole("region", { name: "专注计时" })).toBeTruthy();
@@ -629,7 +631,7 @@ async function openFocusTimerFromInteractionMenu() {
 async function openComposerFromInteractionMenu(
   menuItemName: "发消息" | "外卖到啦",
   regionName: "发送消息" | "送一份小心意",
-  petName: "Q 版小人" | "动作池小人" = "Q 版小人",
+  petName: typeof taotaoName | "动作池小人" = taotaoName,
 ) {
   await flushAppEffects();
   fireEvent.click(screen.getByRole("img", { name: petName }));
@@ -640,7 +642,7 @@ async function openComposerFromInteractionMenu(
 
 async function openWeatherFromInteractionMenu() {
   await flushAppEffects();
-  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("img", { name: taotaoName }));
   fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
   await flushAppEffects();
   return screen.getByRole("region", { name: "双方天气" });
@@ -648,7 +650,7 @@ async function openWeatherFromInteractionMenu() {
 
 async function openSparkFromInteractionMenu() {
   await flushAppEffects();
-  fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+  fireEvent.click(screen.getByRole("img", { name: taotaoName }));
   fireEvent.click(screen.getByRole("menuitem", { name: /续火花/u }));
   await flushAppEffects();
   return screen.getByRole("region", { name: "全服火花榜" });
@@ -907,7 +909,7 @@ describe("App", () => {
     expect(
       await screen.findByRole("region", { name: "情侣桌宠 MVP" }),
     ).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "设置" })).toBeNull();
   });
 
@@ -961,7 +963,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: taotaoName })).toBeTruthy();
   });
 
   it("renders an imported v3 package from its default motion frames", async () => {
@@ -1011,7 +1013,7 @@ describe("App", () => {
   it("opens interaction options when clicking the pet", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
 
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "双方天气" })).toBeTruthy();
@@ -1020,7 +1022,7 @@ describe("App", () => {
   it("renders message and surprise function menu items", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
 
     expect(screen.getByRole("menuitem", { name: "发消息" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "外卖到啦" })).toBeTruthy();
@@ -1030,7 +1032,7 @@ describe("App", () => {
 
   it("opens interaction options with one left click on the pet stage", async () => {
     const { container } = render(<App />);
-    await screen.findByRole("img", { name: "Q 版小人" });
+    await screen.findByRole("img", { name: taotaoName });
     const petStage = container.querySelector(".pet-frame-stage");
 
     if (!petStage) {
@@ -1059,7 +1061,7 @@ describe("App", () => {
   it("keeps every radial interaction button inside a 320 by 360 window", async () => {
     await withViewport(320, 360, async () => {
       const { container } = render(<App />);
-      await screen.findByRole("img", { name: "Q 版小人" });
+      await screen.findByRole("img", { name: taotaoName });
       const petStage = container.querySelector(".pet-frame-stage");
 
       if (!petStage) {
@@ -1106,7 +1108,7 @@ describe("App", () => {
   it("shows a pet bubble instead of opening the message composer when unpaired", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
@@ -1128,7 +1130,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).not.toHaveBeenCalled();
@@ -1177,7 +1179,7 @@ describe("App", () => {
     await flushAppEffects();
     const clickThroughCallCount =
       windowCommandsMock.setClickThrough.mock.calls.length;
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
     await flushAppEffects();
     const panel = screen.getByRole("region", { name: "双方天气" });
@@ -1233,7 +1235,7 @@ describe("App", () => {
     render(<App />);
     await flushAppEffects();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     const sparkButton = screen.getByRole("menuitem", {
       name: "续火花，上次连续 28 天，数据暂不可用",
     });
@@ -1266,7 +1268,7 @@ describe("App", () => {
     render(<App />);
     await flushAppEffects();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     const sparkButton = screen.getByRole("menuitem", {
       name: "续火花，连续天数加载中",
     });
@@ -1430,9 +1432,9 @@ describe("App", () => {
     render(<App />);
 
     await flushAppEffects();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledTimes(
@@ -1466,7 +1468,7 @@ describe("App", () => {
     await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
 
     await flushAppEffects();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "双方天气" }));
     act(() => windowCommandsMock.openSettingsHandler?.());
 
@@ -1638,7 +1640,7 @@ describe("App", () => {
     render(<App />);
 
     await flushAppEffects();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
 
     expect(windowCommandsMock.openMessageComposerSurface).toHaveBeenCalledWith(
@@ -1663,7 +1665,7 @@ describe("App", () => {
     );
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
     await flushAppEffects();
 
@@ -1834,7 +1836,7 @@ describe("App", () => {
     render(<App />);
     await flushAppEffects();
 
-    const petImage = screen.getByRole("img", { name: "Q 版小人" });
+    const petImage = screen.getByRole("img", { name: taotaoName });
     const stage = petImage.closest("[data-action]");
 
     fireEvent.click(petImage);
@@ -1868,7 +1870,7 @@ describe("App", () => {
     render(<App />);
 
     await flushAppEffects();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "外卖到啦" }));
     await advanceTypewriterText("对方在线后再发消息吧。");
     expect(document.querySelector(".bubble-layer")?.textContent).toBe(
@@ -2270,7 +2272,7 @@ describe("App", () => {
     await flushAppEffects();
     expect(screen.getByLabelText("对方状态")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     expect(screen.queryByLabelText("对方状态")).toBeNull();
 
@@ -2286,7 +2288,7 @@ describe("App", () => {
       screen.getByRole("region", { name: "情侣桌宠 MVP" }),
     );
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
     await flushAppEffects();
     expect(screen.getByRole("region", { name: "发送消息" })).toBeTruthy();
@@ -2295,7 +2297,7 @@ describe("App", () => {
     await flushAppEffects();
     expect(screen.getByLabelText("对方状态")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "外卖到啦" }));
     await flushAppEffects();
@@ -2393,7 +2395,7 @@ describe("App", () => {
     act(() => {
       windowCommandsMock.openSettingsHandler?.();
     });
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     await flushAppEffects();
 
     expect(screen.queryByRole("menu", { name: "桌宠菜单" })).toBeNull();
@@ -2441,10 +2443,10 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(windowCommandsMock.openSettingsHandler).toBeTruthy());
 
-    fireEvent.click(await screen.findByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(await screen.findByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "发消息" }));
     expect(document.querySelector(".bubble-layer")).toBeTruthy();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     expect(screen.getByRole("menu", { name: "互动选项" })).toBeTruthy();
 
     act(() => {
@@ -2460,7 +2462,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByLabelText("关闭设置"));
     await flushAppEffects();
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
     expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
 
@@ -2512,7 +2514,7 @@ describe("App", () => {
 
     await flushAppEffects();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
     expect(screen.getByRole("dialog", { name: "我的状态" })).toBeTruthy();
 
@@ -2547,7 +2549,7 @@ describe("App", () => {
 
     await flushAppEffects();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
     fireEvent.click(screen.getByRole("button", { name: "发呆中" }));
 
@@ -2585,7 +2587,7 @@ describe("App", () => {
 
     await flushAppEffects();
 
-    fireEvent.click(screen.getByRole("img", { name: "Q 版小人" }));
+    fireEvent.click(screen.getByRole("img", { name: taotaoName }));
     fireEvent.click(screen.getByRole("menuitem", { name: "我的状态" }));
     fireEvent.click(screen.getByRole("button", { name: "加班中" }));
 
@@ -2850,7 +2852,7 @@ describe("App", () => {
 
     expect(
       screen
-        .getByRole("img", { name: "Q 版小人" })
+        .getByRole("img", { name: taotaoName })
         .closest("[data-action]")
         ?.getAttribute("data-action"),
     ).toBe("act-cute");
@@ -2862,7 +2864,7 @@ describe("App", () => {
 
     expect(
       screen
-        .getByRole("img", { name: "Q 版小人" })
+        .getByRole("img", { name: taotaoName })
         .closest("[data-action]")
         ?.getAttribute("data-action"),
     ).toBe("idle-breathe");
@@ -3024,6 +3026,100 @@ describe("App", () => {
     );
   });
 
+  it("uses Qinghe frames and message motion when Qinghe is the current pet", async () => {
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...pairedSyncSettings(),
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    const currentSelect = screen.getByLabelText("当前形象");
+
+    expect(
+      within(currentSelect).getByRole("option", { name: taotaoName }),
+    ).toBeTruthy();
+    expect(
+      within(currentSelect).getByRole("option", { name: "青禾" }),
+    ).toBeTruthy();
+    fireEvent.change(currentSelect, {
+      target: { value: "builtin:q-boy" },
+    });
+    const qingheImage = await screen.findByRole("img", { name: "青禾" });
+    expect(qingheImage.getAttribute("src")).toContain(
+      "pets/q-boy/motions/motion-001/",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    act(() => {
+      realtimeSyncMock.callbacks?.onMessage({
+        id: "msg_qinghe_1",
+        fromDeviceId: "dev_b",
+        text: "我来串门啦",
+        at: "2026-08-20T02:00:00.000Z",
+      });
+    });
+
+    expect(
+      qingheImage.closest("[data-motion-id]")?.getAttribute("data-motion-id"),
+    ).toBe("motion-message-pair");
+    expect(qingheImage.getAttribute("src")).toContain(
+      "pets/q-boy/motions/motion-message-pair/",
+    );
+  });
+
+  it("persists Qinghe as the peer identity without changing current Taotao", async () => {
+    realtimeSyncMock.state.status = "connected";
+    realtimeSyncMock.state.peerPresence = "online";
+    realtimeSyncMock.state.peerActivityStatus = "slacking";
+    windowCommandsMock.readSettings.mockResolvedValueOnce({
+      ...pairedSyncSettings(),
+      appearance: {
+        selectedPetPackageId: "builtin:q-girl",
+        peerPetPackageByDeviceId: {},
+      },
+    });
+    render(<App />);
+
+    await openSettingsFromContextMenu();
+    const peerSelect = screen.getByLabelText("对方形象");
+
+    expect(
+      within(peerSelect).getByRole("option", { name: taotaoName }),
+    ).toBeTruthy();
+    expect(
+      within(peerSelect).getByRole("option", { name: "青禾" }),
+    ).toBeTruthy();
+
+    fireEvent.change(peerSelect, {
+      target: { value: "builtin:q-boy" },
+    });
+    await waitFor(() =>
+      expect(windowCommandsMock.writeSettings).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          appearance: {
+            selectedPetPackageId: "builtin:q-girl",
+            peerPetPackageByDeviceId: {
+              dev_b: "builtin:q-boy",
+            },
+          },
+        }),
+      ),
+    );
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    await flushAppEffects();
+
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "对方头像" }).getAttribute("src"),
+    ).toContain("pets/q-boy/preview.png");
+  });
+
   it("deletes a non-selected imported pet package", async () => {
     petPackageCommandsMock.listPetPackages
       .mockResolvedValueOnce([importedPackageSummary()])
@@ -3090,7 +3186,7 @@ describe("App", () => {
     await flushAppEffects();
 
     expect(realtimeSyncMock.callbacks).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
 
     act(() => {
       realtimeSyncMock.callbacks?.onMessage({
@@ -3103,11 +3199,13 @@ describe("App", () => {
 
     expect(screen.getByLabelText("对方桌宠消息")).toBeTruthy();
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
-    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(
+      screen.queryByRole("img", { name: `${taotaoName}来访` }),
+    ).toBeNull();
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
     expect(
       screen
-        .getByRole("img", { name: "Q 版小人" })
+        .getByRole("img", { name: taotaoName })
         .closest("[data-motion-id]")
         ?.getAttribute("data-motion-id"),
     ).toBe("motion-message-pair");
@@ -3182,7 +3280,9 @@ describe("App", () => {
         .closest("[data-motion-id]")
         ?.getAttribute("data-motion-id"),
     ).toBe("motion-message-pair");
-    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: `${taotaoName}来访` }),
+    ).toBeNull();
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
   });
 
@@ -3468,7 +3568,9 @@ describe("App", () => {
         .closest("[data-motion-id]")
         ?.getAttribute("data-motion-id"),
     ).toBe("idle-breathe");
-    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: `${taotaoName}来访` }),
+    ).toBeNull();
     expect(screen.queryByRole("img", { name: "月亮伙伴来访" })).toBeNull();
   });
 
@@ -4163,10 +4265,12 @@ describe("App", () => {
 
     const remoteLayer = screen.getByLabelText("对方桌宠消息");
     expect(remoteLayer).toBeTruthy();
-    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: `${taotaoName}来访` }),
+    ).toBeNull();
     expect(
       screen
-        .getByRole("img", { name: "Q 版小人" })
+        .getByRole("img", { name: taotaoName })
         .closest("[data-motion-id]")
         ?.getAttribute("data-motion-id"),
     ).toBe("motion-message-pair");
@@ -4204,7 +4308,7 @@ describe("App", () => {
     });
 
     const petStage = screen
-      .getByRole("img", { name: "Q 版小人" })
+      .getByRole("img", { name: taotaoName })
       .closest("[data-motion-id]");
 
     expect(petStage?.getAttribute("data-motion-id")).toBe(
@@ -4255,8 +4359,10 @@ describe("App", () => {
       });
     });
 
-    expect(screen.queryByRole("img", { name: "Q 版小人来访" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Q 版小人" })).toBeTruthy();
+    expect(
+      screen.queryByRole("img", { name: `${taotaoName}来访` }),
+    ).toBeNull();
+    expect(screen.getByRole("img", { name: taotaoName })).toBeTruthy();
     await advanceTypewriterText("摸摸头");
     fireEvent.pointerEnter(screen.getByLabelText("对方桌宠消息"));
     await flushAppEffects();
@@ -5141,7 +5247,7 @@ describe("App", () => {
 
   it("opens the pet context menu with right-click and can open settings", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
+    const petFrame = await screen.findByRole("img", { name: taotaoName });
     const contextMenuEvent = new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -5165,7 +5271,7 @@ describe("App", () => {
 
   it("routes pet context menu commands through the desktop facade", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
+    const petFrame = await screen.findByRole("img", { name: taotaoName });
 
     fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     fireEvent.click(screen.getByRole("menuitem", { name: "重置位置" }));
@@ -5182,7 +5288,7 @@ describe("App", () => {
 
   it("closes the pet context menu with Escape", async () => {
     render(<App />);
-    const petFrame = await screen.findByRole("img", { name: "Q 版小人" });
+    const petFrame = await screen.findByRole("img", { name: taotaoName });
 
     fireEvent.contextMenu(petFrame, { clientX: 48, clientY: 52 });
     expect(screen.getByRole("menu", { name: "桌宠菜单" })).toBeTruthy();

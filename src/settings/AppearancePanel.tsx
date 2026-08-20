@@ -38,7 +38,7 @@ export function AppearancePanel({
       <div className="appearance-panel-header">
         <div>
           <h2>形象管理</h2>
-          <p>{selectedPackage?.name ?? "Q 版小人"}</p>
+          <p>{selectedPackage?.name ?? "桃桃"}</p>
         </div>
         {selectedPackage?.previewUrl ? (
           <img src={selectedPackage.previewUrl} alt={`${selectedPackage.name}预览`} />
