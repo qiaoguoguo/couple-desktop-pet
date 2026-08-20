@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_PET_PACKAGE_ID,
+  BUILT_IN_PET_PACKAGE_IDS,
   PET_ACTION_FPS,
   PET_FRAMES_PER_ACTION,
+  Q_BOY_BUILT_IN_PET_PACKAGE_ID,
+  Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
 } from "./petPackageContract";
 import {
   builtInPetManifest,
@@ -38,8 +41,16 @@ const bundledFrameUrls = import.meta.glob<string>(
 );
 
 describe("builtInPetManifest", () => {
-  it("uses the built-in runtime package id", () => {
-    expect(builtInPetManifest.id).toBe(BUILT_IN_PET_PACKAGE_ID);
+  it("keeps Taotao as the ordered default built-in package", () => {
+    expect(BUILT_IN_PET_PACKAGE_ID).toBe(Q_GIRL_BUILT_IN_PET_PACKAGE_ID);
+    expect(BUILT_IN_PET_PACKAGE_IDS).toEqual([
+      Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
+      Q_BOY_BUILT_IN_PET_PACKAGE_ID,
+    ]);
+    expect(builtInPetManifest).toMatchObject({
+      id: Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
+      name: "桃桃",
+    });
   });
 
   it("declares dedicated presence portrait assets", () => {

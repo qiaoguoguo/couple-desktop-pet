@@ -7,7 +7,13 @@ import {
   type PetActionName,
 } from "./petActionNames";
 
-export const BUILT_IN_PET_PACKAGE_ID = "builtin:q-girl" as const;
+export const Q_GIRL_BUILT_IN_PET_PACKAGE_ID = "builtin:q-girl" as const;
+export const Q_BOY_BUILT_IN_PET_PACKAGE_ID = "builtin:q-boy" as const;
+export const BUILT_IN_PET_PACKAGE_ID = Q_GIRL_BUILT_IN_PET_PACKAGE_ID;
+export const BUILT_IN_PET_PACKAGE_IDS = [
+  Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
+  Q_BOY_BUILT_IN_PET_PACKAGE_ID,
+] as const;
 export const IMPORTED_PET_PACKAGE_PREFIX = "imported:" as const;
 export type PetPackageFormatVersion = 2 | 3;
 export type PetPackageRenderer = "frame-sequence" | "motion-pool";

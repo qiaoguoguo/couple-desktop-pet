@@ -4,6 +4,8 @@ import {
   PET_ACTION_DURATION_MS,
   PET_ACTION_FPS,
   PET_FRAMES_PER_ACTION,
+  Q_BOY_BUILT_IN_PET_PACKAGE_ID,
+  Q_GIRL_BUILT_IN_PET_PACKAGE_ID,
   REQUIRED_PET_ACTIONS,
   type ImportedPetPackageSummary,
 } from "./petPackageContract";
@@ -18,7 +20,7 @@ describe("pet package registry", () => {
     const builtIn = packages[0];
 
     expect(builtIn.id).toBe(BUILT_IN_PET_PACKAGE_ID);
-    expect(builtIn.name).toBe("Q 版小人");
+    expect(builtIn.name).toBe("桃桃");
     expect(builtIn.frameSize).toEqual({ width: 768, height: 960 });
     expect(builtIn.actions["act-cute"].fps).toBe(PET_ACTION_FPS);
     expect(builtIn.actions["act-cute"].frameCount).toBe(PET_FRAMES_PER_ACTION);
@@ -37,6 +39,31 @@ describe("pet package registry", () => {
       "pets/q-girl/portrait-offline.png",
     );
     expect(builtIn.scenes["remote-message"].waitForAcknowledge).toBe(true);
+  });
+
+  it("orders Taotao and Qinghe before imported packages", () => {
+    const builtIns = buildPetPackageRegistry([], (path) => `asset://${path}`);
+
+    expect(builtIns.slice(0, 2).map(({ id, name }) => ({ id, name }))).toEqual([
+      { id: Q_GIRL_BUILT_IN_PET_PACKAGE_ID, name: "桃桃" },
+      { id: Q_BOY_BUILT_IN_PET_PACKAGE_ID, name: "青禾" },
+    ]);
+    expect(builtIns[1].motions["motion-001"].frames).toHaveLength(20);
+    expect(builtIns[1].motions["motion-message-pair"].frames).toHaveLength(48);
+    expect(builtIns[1].actions["act-cute"].frames).toEqual(
+      builtIns[1].motions["motion-001"].frames,
+    );
+
+    const withImported = buildPetPackageRegistry(
+      [importedPackageSummary()],
+      (path) => `asset://${path}`,
+    );
+
+    expect(withImported.map(({ id, name }) => ({ id, name }))).toEqual([
+      { id: Q_GIRL_BUILT_IN_PET_PACKAGE_ID, name: "桃桃" },
+      { id: Q_BOY_BUILT_IN_PET_PACKAGE_ID, name: "青禾" },
+      { id: "imported:moon-buddy", name: "Moon Buddy" },
+    ]);
   });
 
   it("exposes built-in v2 actions as runtime motions", () => {

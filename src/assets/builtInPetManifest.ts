@@ -154,7 +154,7 @@ const actionDefinition = (action: PetActionName): PetActionDefinition => ({
 
 export const builtInPetManifest = {
   id: BUILT_IN_PET_PACKAGE_ID,
-  name: "Q 版小人",
+  name: "桃桃",
   preview: "pets/q-girl/preview.png",
   portrait: "pets/q-girl/portrait.png",
   offlinePortrait: "pets/q-girl/portrait-offline.png",

@@ -3,6 +3,10 @@ import {
   getBuiltInPetAssetUrl,
 } from "../renderer/frameAtlas";
 import {
+  builtInBoyManifest,
+  type BuiltInMotionPoolManifest,
+} from "./builtInBoyManifest";
+import {
   builtInPetManifest,
   getActionDefinition,
   type PetActionDefinition,
@@ -49,7 +53,8 @@ export function buildPetPackageRegistry(
   convertFileSrc: (path: string) => string,
 ): ResolvedPetPackage[] {
   return [
-    buildBuiltInPackage(),
+    buildBuiltInGirlPackage(),
+    buildBuiltInBoyPackage(),
     ...importedPackages.flatMap((pkg) => {
       const resolved = buildImportedPackage(pkg, convertFileSrc);
 
@@ -75,7 +80,7 @@ export function getDefaultPetMotion(
   return pkg.motions[pkg.defaultMotionId] ?? Object.values(pkg.motions)[0];
 }
 
-function buildBuiltInPackage(): ResolvedPetPackage {
+function buildBuiltInGirlPackage(): ResolvedPetPackage {
   const actions = buildActionRecord((action) => {
     const actionDefinition = getActionDefinition(action);
 
@@ -112,6 +117,38 @@ function buildBuiltInPackage(): ResolvedPetPackage {
       ...buildBuiltInExtraMotions(builtInPetManifest.motions),
     },
     actions,
+  };
+}
+
+function buildBuiltInBoyPackage(): ResolvedPetPackage {
+  const motions = buildBuiltInMotionPoolMotions(builtInBoyManifest.motions);
+  const defaultMotion = motions[builtInBoyManifest.defaultMotionId];
+
+  if (!defaultMotion) {
+    throw new Error("Qinghe built-in default motion is missing");
+  }
+
+  const previewUrl = resolveRequiredBuiltInPetAssetUrl(
+    builtInBoyManifest.preview,
+  );
+
+  return {
+    id: builtInBoyManifest.id,
+    name: builtInBoyManifest.name,
+    baseSize: builtInBoyManifest.baseSize,
+    frameSize: builtInBoyManifest.frameSize,
+    previewUrl,
+    portraitUrl: resolveRequiredBuiltInPetAssetUrl(
+      builtInBoyManifest.portrait,
+    ),
+    offlinePortraitUrl: resolveRequiredBuiltInPetAssetUrl(
+      builtInBoyManifest.offlinePortrait,
+    ),
+    source: "built-in",
+    defaultMotionId: builtInBoyManifest.defaultMotionId,
+    motions,
+    actions: buildActionFallbackFromDefaultMotion(defaultMotion),
+    scenes: builtInBoyManifest.scenes,
   };
 }
 
@@ -273,6 +310,54 @@ function buildBuiltInExtraMotions(
       },
     ]),
   );
+}
+
+function buildBuiltInMotionPoolMotions(
+  motions: BuiltInMotionPoolManifest["motions"],
+): Record<string, ResolvedPetMotion> {
+  return Object.fromEntries(
+    Object.entries(motions).map(([motionId, motion]) => {
+      const frames = motion.frames.map(resolveRequiredBuiltInFrameAssetUrl);
+
+      if (frames.length !== motion.frameCount) {
+        throw new Error(`Built-in motion frame count mismatch: ${motionId}`);
+      }
+
+      return [
+        motionId,
+        {
+          id: motionId,
+          fps: motion.fps,
+          loop: motion.loop,
+          frameCount: motion.frameCount,
+          durationMs: motion.durationMs,
+          frames,
+          weight: motion.weight,
+          tags: motion.tags,
+        },
+      ];
+    }),
+  );
+}
+
+function resolveRequiredBuiltInPetAssetUrl(assetPath: string): string {
+  const url = getBuiltInPetAssetUrl(assetPath);
+
+  if (!url) {
+    throw new Error(`Missing built-in pet asset: ${assetPath}`);
+  }
+
+  return url;
+}
+
+function resolveRequiredBuiltInFrameAssetUrl(framePath: string): string {
+  const url = getBuiltInFrameAssetUrl(framePath);
+
+  if (!url) {
+    throw new Error(`Missing built-in pet frame: ${framePath}`);
+  }
+
+  return url;
 }
 
 function buildActionFallbackFromDefaultMotion(

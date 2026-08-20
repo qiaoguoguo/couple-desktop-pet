@@ -3,17 +3,11 @@ import {
   type PetActionName,
 } from "../assets/builtInPetManifest";
 
-const petFrameUrls = import.meta.glob<string>(
-  "../assets/pets/q-girl/frames/**/*.png",
-  {
-    eager: true,
-    import: "default",
-    query: "?url",
-  },
-);
-
 const builtInPetAssetUrls = import.meta.glob<string>(
-  "../assets/pets/q-girl/*.png",
+  [
+    "../assets/pets/q-girl/**/*.png",
+    "../assets/pets/q-boy/**/*.png",
+  ],
   {
     eager: true,
     import: "default",
@@ -30,7 +24,7 @@ export function getBuiltInPetAssetUrl(assetPath: string): string | null {
 }
 
 export function getBuiltInFrameAssetUrl(framePath: string): string | null {
-  return petFrameUrls[`../assets/${framePath}`] ?? null;
+  return builtInPetAssetUrls[`../assets/${framePath}`] ?? null;
 }
 
 export function getActionDefinition(action: PetActionName) {
